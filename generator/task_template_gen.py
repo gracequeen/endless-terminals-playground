@@ -215,7 +215,7 @@ def generate_templates_batch(
     *,
     model: str = "qwen/Qwen2.5-3B-Instruct",
     temperature: float = 1.0,
-    max_tokens: int = 2048,
+    max_tokens: int = 8192,
     max_concurrency: int = 128,
 ) -> list[dict]:
     """Generate multiple task templates in one batched LLM call set.
@@ -248,8 +248,8 @@ def generate_templates_batch(
         try:
             content = resp.choices[0].message.content.strip()
             results.append(parse_template(content))
-        except Exception:
-            # Skip malformed entries
+        except Exception as e:
+            print(f"[Stage1] Parse failed: {e!r}")
             continue
     return results
 
