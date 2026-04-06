@@ -1,0 +1,51 @@
+Bootstrap: localimage
+From: ./ubuntu_22.04.sif
+
+%post
+    # Update and install required packages
+    apt-get update && apt-get install -y \
+        python3 \
+        python3-pip \
+        grep \
+        sed \
+        gawk \
+        coreutils \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Install pytest
+    pip3 install pytest
+
+    # Create user directory structure
+    mkdir -p /home/user/build_logs
+
+    # Create the iOS build log file with the specified content
+    cat > /home/user/build_logs/ios_build_20240115.log << 'EOF'
+[2024-01-15 09:00:01] Starting Xcode build for MyApp.xcworkspace
+[2024-01-15 09:00:02] Build configuration: Release
+[2024-01-15 09:00:05] /Users/ci/MyApp/Sources/NetworkManager.swift:45:12: warning: variable 'response' was never used; consider replacing with '_'
+[2024-01-15 09:00:06] /Users/ci/MyApp/Sources/LoginViewController.swift:123:8: warning: result of call to 'dismiss(animated:completion:)' is unused
+[2024-01-15 09:00:07] Build phase 'Compile Sources' completed in 45 seconds
+[2024-01-15 09:00:08] /Users/ci/MyApp/Sources/DataParser.swift:67:15: Warning: implicit conversion loses precision
+[2024-01-15 09:00:09] /Users/ci/MyApp/Sources/NetworkManager.swift:89:3: warning: function 'fetchData' is deprecated
+[2024-01-15 09:00:10] Build phase 'Link Binary' completed in 12 seconds
+[2024-01-15 09:00:11] /Users/ci/MyApp/Sources/CacheManager.swift:34:20: error: cannot find 'URLCache' in scope
+[2024-01-15 09:00:12] Build phase 'Copy Resources' completed in 8 seconds
+[2024-01-15 09:00:13] /Users/ci/MyApp/Sources/AppDelegate.swift:15:5: ERROR: missing return in function expected to return 'Bool'
+[2024-01-15 09:00:14] /Users/ci/MyApp/Sources/UserModel.swift:22:10: warning: 'Codable' is redundant
+[2024-01-15 09:00:15] Build phase 'Code Signing' completed in 23 seconds
+[2024-01-15 09:00:16] /Users/ci/MyApp/Sources/LoginViewController.swift:200:14: Warning: String interpolation produces a debug description
+[2024-01-15 09:00:17] Build failed with 2 errors and 6 warnings
+[2024-01-15 09:00:18] Total build duration: 88 seconds
+EOF
+
+    # Set permissions - make everything readable and the home directory writable
+    chmod -R 755 /home/user
+    chmod 644 /home/user/build_logs/ios_build_20240115.log
+
+%environment
+    export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+
+%runscript
+    exec /bin/bash "$@"

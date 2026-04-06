@@ -1,0 +1,46 @@
+Bootstrap: localimage
+From: ./ubuntu_22.04.sif
+
+%post
+    # Update and install required packages
+    apt-get update && apt-get install -y \
+        python3 \
+        python3-pip \
+        sed \
+        grep \
+        gawk \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Install pytest
+    pip3 install pytest
+
+    # Create the user directory structure
+    mkdir -p /home/user/app_config
+
+    # Create the services.conf file with the initial content
+    cat > /home/user/app_config/services.conf << 'EOF'
+# Application Configuration
+DATABASE_HOST=localhost
+DATABASE_PORT=5432
+PAYMENT_API_KEY=sk_live_abc123xyz789
+LOGGING_LEVEL=INFO
+ANALYTICS_API_KEY=ak_prod_def456uvw
+CACHE_TTL=3600
+NOTIFICATION_API_KEY=nk_main_ghi789rst
+SERVICE_ENDPOINT=https://api.example.com
+EOF
+
+    # Set permissions so non-root user can read and write
+    chmod -R 755 /home/user
+    chmod 644 /home/user/app_config/services.conf
+
+    # Make the directory writable so the user can create the backup file
+    chmod 777 /home/user/app_config
+    chmod 666 /home/user/app_config/services.conf
+
+%environment
+    export LC_ALL=C
+    export PATH="/usr/local/bin:$PATH"
+
+%runscript
+    exec /bin/bash "$@"

@@ -83,11 +83,17 @@ def build_and_test(def_template: str, test_py: str) -> tuple[bool, str]:
         test_file = td_path / "test_initial_state.py"
         test_file.write_text(test_py)
 
+        # Symlink the base ubuntu SIF so that "From: ./ubuntu_22.04.sif" resolves
+        repo_root = Path(__file__).resolve().parents[1]
+        base_sif = repo_root / "ubuntu_22.04.sif"
+        if base_sif.exists():
+            (td_path / "ubuntu_22.04.sif").symlink_to(base_sif)
+
         # ------------------------------------------------------------------
         # 2. Build the container image from the .def file
         # ------------------------------------------------------------------
         sif_path = td_path / "img.sif"
-        build_rc = subprocess.run(["apptainer", "build", str(sif_path), str(def_path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180).returncode
+        build_rc = subprocess.run(["apptainer", "build", "--fakeroot", str(sif_path), str(def_path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=180).returncode
         if build_rc:
             print(f"Apptainer build failed: {build_rc}")
             return False, "Apptainer build failed"
