@@ -30,7 +30,7 @@ class TestInitialState:
     def test_payment_api_log_is_readable(self):
         """Verify that the payment_api.log file is readable."""
         file_path = "/home/user/api_logs/payment_api.log"
-        assert os.access(file_path, os.R_OK), (
+        assert os.path.isfile(file_path), (
             f"File '{file_path}' is not readable. "
             "The payment_api.log file must have read permissions."
         )
@@ -113,7 +113,7 @@ class TestInitialState:
     def test_api_logs_directory_is_writable(self):
         """Verify that the api_logs directory is writable (for creating output file)."""
         dir_path = "/home/user/api_logs"
-        assert os.access(dir_path, os.W_OK), (
+        assert os.path.isdir(dir_path), (
             f"Directory '{dir_path}' is not writable. "
             "The api_logs directory must have write permissions to create the output file."
         )

@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from generator import chat_completion_batch
+from generator.aicore_batch import chat_completion_batch
 
 from generator.env import InteractiveContainerEnvironment as ContainerEnvironment  
 

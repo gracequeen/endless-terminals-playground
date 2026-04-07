@@ -47,7 +47,8 @@ def build_and_test(
     with open(def_path, "r") as f:
         def_text = f.read()
 
-    if "chmod 755 /home/user" not in def_text:
+    import re as _re
+    if not _re.search(r"chmod 755 /home/user\s*$", def_text, _re.MULTILINE):
         # Add chmod 755 /home/user to the end of the %post section
         def_lines = [line for line in def_text.split("\n") if "%" in line]
         post_idx = [i for i, line in enumerate(def_lines) if "post" in line.lower()]
@@ -106,6 +107,11 @@ def process_task(task_dir: str, cfg: SolutionConfig):
 
     print(f"{task_dir} sif_path: {sif_path}")
     pass_at_k = None
+
+    # Skip tasks with missing or empty def files (and no pre-built SIF)
+    if not sif_path.exists() and (not def_path.exists() or def_path.stat().st_size == 0):
+        print(f"[{task_dir.name}] Skipping: no SIF and def file is missing/empty.")
+        return "no def"
 
     try:
         print(f"[{task_dir.name}] Running {cfg.num_solutions} solutions...")

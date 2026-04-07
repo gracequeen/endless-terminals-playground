@@ -1,0 +1,41 @@
+Bootstrap: localimage
+From: ./ubuntu_22.04.sif
+
+%post
+    # Update and install required packages
+    apt-get update
+    apt-get install -y python3 python3-pip gzip coreutils
+
+    # Install pytest
+    pip3 install pytest
+
+    # Create user and home directory
+    useradd -m -s /bin/bash user
+
+    # Create the backups directory
+    mkdir -p /home/user/backups
+
+    # Create the SQL file content
+    cat > /home/user/backups/database_dump.sql << 'EOF'
+-- Database backup created 2024-01-15
+CREATE TABLE users (id INT, name VARCHAR(100));
+INSERT INTO users VALUES (1, 'Alice');
+INSERT INTO users VALUES (2, 'Bob');
+EOF
+
+    # Compress the SQL file with gzip
+    gzip /home/user/backups/database_dump.sql
+
+    # Set proper ownership and permissions
+    chown -R user:user /home/user
+    chmod 755 /home/user
+    chmod 755 /home/user/backups
+    chmod 644 /home/user/backups/database_dump.sql.gz
+
+%environment
+    export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+    export LC_ALL=C.UTF-8
+    export LANG=C.UTF-8
+
+%runscript
+    exec /bin/bash "$@"

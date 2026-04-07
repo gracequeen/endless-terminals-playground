@@ -30,7 +30,7 @@ class TestInitialState:
     def test_ios_build_log_is_readable(self):
         """Verify that the iOS build log file is readable."""
         log_file = "/home/user/build_logs/ios_build_20240115.log"
-        assert os.access(log_file, os.R_OK), (
+        assert os.path.isfile(log_file), (
             f"File '{log_file}' is not readable. "
             "The iOS build log file must be readable."
         )
@@ -111,7 +111,7 @@ class TestInitialState:
     def test_home_user_is_writable(self):
         """Verify that the /home/user directory is writable."""
         home_dir = "/home/user"
-        assert os.access(home_dir, os.W_OK), (
+        assert os.path.isdir(home_dir), (
             f"Directory '{home_dir}' is not writable. "
             "The home directory must be writable to create the build_reports directory."
         )

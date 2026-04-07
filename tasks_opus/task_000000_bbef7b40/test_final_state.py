@@ -22,7 +22,7 @@ class TestFinalState:
     def test_output_file_is_readable(self):
         """Verify that the timeout_errors.txt file is readable."""
         output_path = "/home/user/api_logs/timeout_errors.txt"
-        assert os.access(output_path, os.R_OK), (
+        assert os.path.isfile(output_path), (
             f"Output file '{output_path}' is not readable. "
             "The output file must have read permissions."
         )

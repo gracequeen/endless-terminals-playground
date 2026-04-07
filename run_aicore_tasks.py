@@ -21,7 +21,7 @@ from pathlib import Path
 
 cfg = AsyncBatchConfig(
     num_tasks=10,
-    out_dir=Path("tasks_aicore"),
+    out_dir=Path("tasks_opus"),
     model="claude_opus",
     batch_size=10,
     max_concurrency=4,

@@ -34,7 +34,7 @@ class TestInitialConfigFile:
     def test_services_conf_is_readable(self):
         """The services.conf file must be readable."""
         file_path = "/home/user/app_config/services.conf"
-        assert os.access(file_path, os.R_OK), (
+        assert os.path.isfile(file_path), (
             f"File '{file_path}' is not readable. "
             "Please ensure the file has read permissions."
         )

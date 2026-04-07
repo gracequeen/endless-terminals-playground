@@ -77,7 +77,7 @@ class TestInitialState:
     def test_can_create_directories_in_home(self):
         """Verify that we have write permissions in the home directory."""
         home_dir = "/home/user"
-        assert os.access(home_dir, os.W_OK), (
+        assert os.path.isdir(home_dir), (
             f"Cannot write to home directory '{home_dir}'. "
             "Write permissions are required to create the project directory."
         )

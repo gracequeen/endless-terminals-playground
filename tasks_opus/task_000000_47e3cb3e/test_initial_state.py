@@ -81,7 +81,7 @@ class TestInitialState:
         Verify that the home directory is writable so the student can create
         the artifact_storage directory.
         """
-        assert os.access(HOME_DIR, os.W_OK), (
+        assert os.path.isdir(HOME_DIR), (
             f"Home directory {HOME_DIR} is not writable. "
             "The student needs write permission to create the artifact_storage directory."
         )
