@@ -1,0 +1,191 @@
+[?2004hroot@75f6e9821bf7:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@75f6e9821bf7:/home/user# clear
+[?2004l[H[J[?2004hroot@75f6e9821bf7:/home/user# head -20 /home/user/disk_inventory.txt
+[?2004l15728640	/var/data/logs/app.log
+5242880	/var/data/logs/debug.log
+52428800	/var/data/backups/full_backup.tar.gz
+10485760	/var/data/backups/incremental.tar.gz
+2097152	/var/data/backups/config.bak
+1048576	/var/data/cache/thumbnails/img001.jpg
+524288	/var/data/cache/thumbnails/img002.jpg
+262144	/var/data/cache/thumbnails/img003.jpg
+20971520	/var/data/cache/session_data.db
+3145728	/var/data/uploads/document.pdf
+7340032	/var/data/uploads/spreadsheet.xlsx
+15728640	/var/data/uploads/presentation.pptx
+1048576	/var/data/uploads/readme
+524288	/var/data/uploads/notes.txt
+104857600	/var/data/archives/2023_archive.tar.gz
+31457280	/var/data/archives/2022_archive.tar.gz
+8388608	/var/data/archives/old_logs
+4096	/var/data/logs
+4096	/var/data/backups
+4096	/var/data/cache/thumbnails
+[?2004hroot@75f6e9821bf7:/home/user# wc -l /home/user/disk_inventory.txt
+[?2004l24 /home/user/disk_inventory.txt
+[?2004hroot@75f6e9821bf7:/home/user# mkdir -p /home/user/reports
+[?2004l[?2004hroot@75f6e9821bf7:/home/user# cat /home/user/disk_inventory.txt
+[?2004l15728640	/var/data/logs/app.log
+5242880	/var/data/logs/debug.log
+52428800	/var/data/backups/full_backup.tar.gz
+10485760	/var/data/backups/incremental.tar.gz
+2097152	/var/data/backups/config.bak
+1048576	/var/data/cache/thumbnails/img001.jpg
+524288	/var/data/cache/thumbnails/img002.jpg
+262144	/var/data/cache/thumbnails/img003.jpg
+20971520	/var/data/cache/session_data.db
+3145728	/var/data/uploads/document.pdf
+7340032	/var/data/uploads/spreadsheet.xlsx
+15728640	/var/data/uploads/presentation.pptx
+1048576	/var/data/uploads/readme
+524288	/var/data/uploads/notes.txt
+104857600	/var/data/archives/2023_archive.tar.gz
+31457280	/var/data/archives/2022_archive.tar.gz
+8388608	/var/data/archives/old_logs
+4096	/var/data/logs
+4096	/var/data/backups
+4096	/var/data/cache/thumbnails
+4096	/var/data/cache
+4096	/var/data/uploads
+4096	/var/data/archives
+4096	/var/data
+[?2004hroot@75f6e9821bf7:/home/user# cat > process_reports.py << 'EOF'
+[?2004lath in entries:
+    if path == '/var/data':
+        continue
+    if path.startswith('/var/data/'):
+        # Get immediate subdirectory name
+        rel_path = path[len('/var/data/'):]
+        subdir = rel_path.split('/')[0]
+        subdir_bytes[subdir] += size
+        total_bytes += size
+
+# Sort by total bytes descending
+dir_summary = sorted(subdir_bytes.items(), key=lambda x: -x[1])
+
+with open('/home/user/reports/directory_rollup.txt', 'w') as f:
+    for dirname, dir_total in dir_summary:
+        percentage = (dir_total / total_bytes * 100) if total_bytes > 0 else 0
+        f.write(f"{dirname} {dir_total} {percentage:.1f}%\n")
+
+print("Reports generated successfully!")
+EOF
+[?2004h> import os
+[?2004l[?2004h> import re
+[?2004l[?2004h> from collections import defaultdict
+[?2004l[?2004h> 
+[?2004l[?2004h> # Read the inventory file
+[?2004l[?2004h> with open('/home/user/disk_inventory.txt', 'r') as f:
+[?2004l[?2004h>     lines = f.readlines()
+[?2004l[?2004h> 
+[?2004l[?2004h> # Parse all entries
+[?2004l[?2004h> entries = []
+[?2004l[?2004h> for line in lines:
+[?2004l[?2004h>     parts = line.strip().split('\t')
+[?2004l[?2004h>     if len(parts) == 2:
+[?2004l[?2004h>         size = int(parts[0])
+[?2004l[?2004h>         path = parts[1]
+[?2004l[?2004h>         entries.append((size, path))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Identify directories (paths that are prefixes of other paths)
+[?2004l[?2004h> directories = set()
+[?2004l[?2004h> all_paths = [path for _, path in entries]
+[?2004l[?2004h> for path in all_paths:
+[?2004l[?2004h>     # Check if this path is a parent of any other path
+[?2004l[?2004h>     for other_path in all_paths:
+[?2004l[?2004h>         if other_path != path and other_path.startswith(path + '/'):
+[?2004l[?2004h>             directories.add(path)
+[?2004l[?2004h>             break
+[?2004l[?2004h> 
+[?2004l[?2004h> # Also add /var/data itself as a directory
+[?2004l[?2004h> directories.add('/var/data')
+[?2004l[?2004h> 
+[?2004l[?2004h> # Report 1: Large files (>= 10MB)
+[?2004l[?2004h> large_files = []
+[?2004l[?2004h> for size, path in entries:
+[?2004l[?2004h>     if size >= 10485760 and path not in directories:
+[?2004l[?2004h>         mb_size = size // 1048576  # Floor division to get MB
+[?2004l[?2004h>         large_files.append((mb_size, path))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Sort by size descending, then path ascending
+[?2004l[?2004h> large_files.sort(key=lambda x: (-x[0], x[1]))
+[?2004l[?2004h> 
+[?2004l[?2004h> with open('/home/user/reports/large_files.txt', 'w') as f:
+[?2004l[?2004h>     for mb_size, path in large_files:
+[?2004l[?2004h>         f.write(f"{mb_size}MB {path}\n")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Report 2: Extension summary
+[?2004l[?2004h> extension_bytes = defaultdict(int)
+[?2004l[?2004h> for size, path in entries:
+[?2004l[?2004h>     if path not in directories:
+[?2004l[?2004h>         filename = os.path.basename(path)
+[?2004l[?2004h>         if '.' in filename:
+[?2004l[?2004h>             ext = filename.rsplit('.', 1)[1].lower()
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             ext = 'NO_EXTENSION'
+[?2004l[?2004h>         extension_bytes[ext] += size
+[?2004l[?2004h> 
+[?2004l[?2004h> # Sort by total bytes descending
+[?2004l[?2004h> ext_summary = sorted(extension_bytes.items(), key=lambda x: -x[1])
+[?2004l[?2004h> 
+[?2004l[?2004h> with open('/home/user/reports/extension_summary.csv', 'w') as f:
+[?2004l[?2004h>     f.write("extension,total_bytes\n")
+[?2004l[?2004h>     for ext, total in ext_summary:
+[?2004l[?2004h>         f.write(f"{ext},{total}\n")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Report 3: Directory rollup
+[?2004l[?2004h> # Find immediate subdirectories of /var/data
+[?2004l[?2004h> subdir_bytes = defaultdict(int)
+[?2004l[?2004h> total_bytes = 0
+[?2004l[?2004h> 
+[?2004l[?2004h> for size, path in entries:
+[?2004l[?2004h>     if path == '/var/data':
+[?2004l[?2004h>         continue
+[?2004l[?2004h>     if path.startswith('/var/data/'):
+[?2004l[?2004h>         # Get immediate subdirectory name
+[?2004l[?2004h>         rel_path = path[len('/var/data/'):]
+[?2004l[?2004h>         subdir = rel_path.split('/')[0]
+[?2004l[?2004h>         subdir_bytes[subdir] += size
+[?2004l[?2004h>         total_bytes += size
+[?2004l[?2004h> 
+[?2004l[?2004h> # Sort by total bytes descending
+[?2004l[?2004h> dir_summary = sorted(subdir_bytes.items(), key=lambda x: -x[1])
+[?2004l[?2004h> 
+[?2004l[?2004h> with open('/home/user/reports/directory_rollup.txt', 'w') as f:
+[?2004l[?2004h>     for dirname, dir_total in dir_summary:
+[?2004l[?2004h>         percentage = (dir_total / total_bytes * 100) if total_bytes > 0 else 0
+[?2004l[?2004h>         f.write(f"{dirname} {dir_total} {percentage:.1f}%\n")
+[?2004l[?2004h> 
+[?2004l[?2004h> print("Reports generated successfully!")
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@75f6e9821bf7:/home/user# python3 process_reports.py
+[?2004lReports generated successfully!
+[?2004hroot@75f6e9821bf7:/home/user# cat /home/user/reports/large_files.txt
+[?2004l100MB /var/data/archives/2023_archive.tar.gz
+50MB /var/data/backups/full_backup.tar.gz
+30MB /var/data/archives/2022_archive.tar.gz
+20MB /var/data/cache/session_data.db
+15MB /var/data/logs/app.log
+15MB /var/data/uploads/presentation.pptx
+10MB /var/data/backups/incremental.tar.gz
+[?2004hroot@75f6e9821bf7:/home/user# cat /home/user/reports/extension_summary.csv
+[?2004lextension,total_bytes
+gz,199229440
+log,20971520
+db,20971520
+pptx,15728640
+NO_EXTENSION,9437184
+xlsx,7340032
+pdf,3145728
+bak,2097152
+jpg,1835008
+txt,524288
+[?2004hroot@75f6e9821bf7:/home/user# cat /home/user/reports/directory_rollup.txt
+[?2004larchives 144707584 51.4%
+backups 65015808 23.1%
+uploads 27791360 9.9%
+cache 22814720 8.1%
+logs 20975616 7.5%
+[?2004hroot@75f6e9821bf7:/home/user# 

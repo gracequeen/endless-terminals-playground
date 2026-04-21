@@ -1,0 +1,35 @@
+New Terminal Output:
+
+root@a3bdda27b05d:/home/user# cp /etc/monitoring/alerts.yaml.bak /etc/monitoring/alerts.yaml
+root@a3bdda27b05d:/home/user# python3 << 'PYEOF'
+> import re
+>
+> with open('/etc/monitoring/alerts.yaml', 'r') as f:
+>     content = f.read()
+>
+> # Change HighLatency for duration from 5m to 3m
+> content = re.sub(r'(- alert: HighLatency.*?for: )5m', r'\g<1>3m', content, flags=re.DOTALL)
+>
+> # Add escalation_level to ServiceDown
+> content = re.sub(r'(- alert: ServiceDown.*?team: platform)', r'\g<1>\n          escalation_level: critical', content, flags=re.DOTALL)
+>
+> # Add DiskSpaceLow alert before HighMemoryUsage
+> new_alert = '''      - alert: DiskSpaceLow
+>         expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.1
+>         for: 10m
+>         labels:
+>           severity: warning
+>           team: infrastructure
+>         annotations:
+>           summary: "Disk space below 10% on {{ $labels.instance }}"
+>
+> '''
+> content = re.sub(r'(      - alert: HighMemoryUsage)', new_alert + r'\1', content)
+>
+> with open('/etc/monitoring/alerts.yaml', 'w') as f:
+>     f.write(content)
+>
+> print("YAML changes completed")
+> PYEOF
+YAML changes completed
+root@a3bdda27b05d:/home/user#

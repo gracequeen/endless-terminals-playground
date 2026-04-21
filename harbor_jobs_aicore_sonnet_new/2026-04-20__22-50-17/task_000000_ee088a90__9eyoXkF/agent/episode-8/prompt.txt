@@ -1,0 +1,152 @@
+New Terminal Output:
+
+root@e602b083bad1:/home/user/credential-rotation# cat > generate_report.py << 'EOF'
+> #!/usr/bin/env python3
+--------|------------|------------|--------|------------|\n')
+    for entry in aws_entries:
+        f.write(f"| {entry['service']} | {entry['old_key']} | {entry['new_key']} | {entry['status']} | {entry['rotated_by']} |\n")
+    f.write('\n')
+
+    # Database Credentials
+    f.write('### Database Credentials\n\n')
+    f.write('| Service | Old Key ID | New Key ID | Status | Rotated By |\n')
+    f.write('|---------|------------|------------|--------|------------|\n')
+    for entry in db_entries:
+        f.write(f"| {entry['service']} | {entry['old_key']} | {entry['new_key']} | {entry['status']} | {entry['rotated_by']} |\n")
+    f.write('\n')
+
+    # API Keys
+    f.write('### API Keys\n\n')
+    f.write('| Service | Old Key ID | New Key ID | Status | Rotated By |\n')
+    f.write('|---------|------------|------------|--------|------------|\n')
+    for entry in api_entries:
+        f.write(f"| {entry['service']} | {entry['old_key']} | {entry['new_key']} | {entry['status']} | {entry['rotated_by']} |\n")
+    f.write('\n')
+
+    # Failed Rotations
+    f.write('## Fa> import re
+> from datetime import datetime
+> from collections import defaultdict
+>
+> # Parse log files
+> def parse_log_file(filename):
+>     entries = []
+>     with open(filename, 'r') as f:
+>         for line in f:
+>             line = line.strip()
+>             if not line:
+>                 continue
+>             # Parse: [TIMESTAMP] SERVICE_NAME | OLD_KEY_ID | NEW_KEY_ID | STATUS | ROTATED_BY
+>             match = re.match(r'\[(.+?)\]\s+(.+?)\s+\|\s+(.+?)\s+\|\s+(.+?)\s+\|\s+(.+?)\s+\|\s+(.+)', line)
+>             if match:
+>                 timestamp, service, old_key, new_key, status, rotated_by = match.groups()
+>                 entries.append({
+>                     'timestamp': timestamp,
+>                     'service': service,
+>                     'old_key': old_key,
+>                     'new_key': new_key,
+>                     'status': status,
+>                     'rotated_by': rotated_by
+>                 })
+>     return entries
+>
+> # Parse all logs
+> aws_entries = parse_log_file('aws-rotation.log')
+> db_entries = parse_log_file('db-rotation.log')
+> api_entries = parse_log_file('api-keys.log')
+>
+> # Sort entries alphabetically by service name
+> aws_entries.sort(key=lambda x: x['service'])
+> db_entries.sort(key=lambda x: x['service'])
+> api_entries.sort(key=lambda x: x['service'])
+>
+> # Calculate statistics
+> def get_stats(entries):
+>     total = len(entries)
+>     success = sum(1 for e in entries if e['status'] == 'SUCCESS')
+>     failed = sum(1 for e in entries if e['status'] == 'FAILED')
+>     return total, success, failed
+>
+> aws_stats = get_stats(aws_entries)
+> db_stats = get_stats(db_entries)
+> api_stats = get_stats(api_entries)
+>
+> total_rotations = len(aws_entries) + len(db_entries) + len(api_entries)
+>
+> # Collect failed rotations
+> failed_rotations = []
+> for entry in aws_entries:
+>     if entry['status'] == 'FAILED':
+>         failed_rotations.append((entry['service'], 'AWS IAM'))
+> for entry in db_entries:
+>     if entry['status'] == 'FAILED':
+>         failed_rotations.append((entry['service'], 'Database'))
+> for entry in api_entries:
+>     if entry['status'] == 'FAILED':
+>         failed_rotations.append((entry['service'], 'API Keys'))
+>
+> # Generate markdown report
+> generated_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+>
+> with open('ROTATION_REPORT.md', 'w') as f:
+>     f.write('# Credential Rotation Report\n\n')
+>     f.write(f'**Generated:** {generated_time}\n')
+>     f.write(f'**Total Credentials Rotated:** {total_rotations}\n\n')
+>
+>     f.write('## Summary by Category\n\n')
+>     f.write('| Category | Count | Success | Failed |\n')
+>     f.write('|----------|-------|---------|--------|\n')
+>     f.write(f'| AWS IAM | {aws_stats[0]} | {aws_stats[1]} | {aws_stats[2]} |\n')
+>     f.write(f'| Database | {db_stats[0]} | {db_stats[1]} | {db_stats[2]} |\n')
+>     f.write(f'| API Keys | {api_stats[0]} | {api_stats[1]} | {api_stats[2]} |\n\n')
+>
+>     f.write('## Detailed Rotation Log\n\n')
+>
+>     # AWS IAM Credentials
+>     f.write('### AWS IAM Credentials\n\n')
+>     f.write('| Service | Old Key ID | New Key ID | Status | Rotated By |\n')
+>     f.write('|---------|------------|------------|--------|------------|\n')
+>     for entry in aws_entries:
+>         f.write(f"| {entry['service']} | {entry['old_key']} | {entry['new_key']} | {entry['status']} | {entry['rotated_by']} |\n")
+>     f.write('\n')
+>
+>     # Database Credentials
+>     f.write('### Database Credentials\n\n')
+>     f.write('| Service | Old Key ID | New Key ID | Status | Rotated By |\n')
+>     f.write('|---------|------------|------------|--------|------------|\n')
+>     for entry in db_entries:
+>         f.write(f"| {entry['service']} | {entry['old_key']} | {entry['new_key']} | {entry['status']} | {entry['rotated_by']} |\n")
+>     f.write('\n')
+>
+>     # API Keys
+>     f.write('### API Keys\n\n')
+>     f.write('| Service | Old Key ID | New Key ID | Status | Rotated By |\n')
+>     f.write('|---------|------------|------------|--------|------------|\n')
+>     for entry in api_entries:
+>         f.write(f"| {entry['service']} | {entry['old_key']} | {entry['new_key']} | {entry['status']} | {entry['rotated_by']} |\n")
+>     f.write('\n')
+>
+>     # Failed Rotations
+>     f.write('## Failed Rotations\n\n')
+>     if failed_rotations:
+>         f.write('> **Action Required:** Manual intervention needed for failed rotations.\n\n')
+>         for service, category in failed_rotations:
+>             f.write(f'- {service} ({category}): Manual intervention required\n')
+>     else:
+>         f.write('> No failed rotations. All credentials rotated successfully.\n')
+>     f.write('\n')
+>
+>     # Sign-off
+>     f.write('## Sign-off\n\n')
+>     f.write('- [ ] All successful rotations verified\n')
+>     f.write('- [ ] Failed rotations escalated\n')
+>     f.write('- [ ] Old credentials scheduled for deletion\n')
+>
+> print('Report generated successfully!')
+> EOF
+root@e602b083bad1:/home/user/credential-rotation# python3 generate_report.py
+Report generated successfully!
+root@e602b083bad1:/home/user/credential-rotation# markdownlint ROTATION_REPORT.md
+root@e602b083bad1:/home/user/credential-rotation# echo "Exit code: $?"
+Exit code: 0
+root@e602b083bad1:/home/user/credential-rotation#

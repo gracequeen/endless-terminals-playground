@@ -1,0 +1,197 @@
+New Terminal Output:
+
+root@247d8bb0b1e1:/home/user# cat > process_audit.py << 'EOF'
+> import json
+> import hashlib
+               'line_number': line_num,
+                'e> import re
+> from datetime import datetime
+> from collections import defaultdict
+>
+> # Configuration
+> INPUT_FILE = '/home/user/audit/raw_transactions.jsonl'
+> OUTPUT_FILE = '/home/user/audit/clean_audit.jsonl'
+> ERROR_FILE = '/home/user/audit/error_log.jsonl'
+> SUMMARY_FILE = '/home/user/audit/processing_summary.txt'
+>
+> # Validation patterns
+> TXN_ID_PATTERN = re.compile(r'^TXN-\d{8}$')
+> TIMESTAMP_PATTERN = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
+> CURRENCY_PATTERN = re.compile(r'^[A-Z]{3}$')
+> VALID_STATUSES = {'completed', 'pending', 'failed', 'reversed'}
+>
+> valid_transactions = []
+> errors = []
+> error_counts = defaultdict(int)
+> processing_timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+>
+> def validate_transaction(data, line_num, raw_line):
+>     """Validate a transaction record and return error if invalid."""
+>
+>     # Check required fields exist
+>     required_fields = ['transaction_id', 'timestamp', 'account_id', 'amount', 'currency', 'status']
+>     for field in required_fields:
+>         if field not in data:
+>             return {
+>                 'line_number': line_num,
+>                 'error_type': 'missing_field',
+>                 'error_detail': f'missing field: {field}',
+>                 'raw_content': raw_line[:200]
+>             }
+>
+>     # Validate transaction_id format
+>     if not isinstance(data['transaction_id'], str) or not TXN_ID_PATTERN.match(data['transaction_id']):
+>         return {
+>             'line_number': line_num,
+>             'error_type': 'invalid_format',
+>             'error_detail': f'invalid transaction_id format: {data["transaction_id"]}',
+>             'raw_content': raw_line[:200]
+>         }
+>
+>     # Validate timestamp format
+>     if not isinstance(data['timestamp'], str) or not TIMESTAMP_PATTERN.match(data['timestamp']):
+>         return {
+>             'line_number': line_num,
+>             'error_type': 'invalid_format',
+>             'error_detail': f'invalid timestamp format: {data["timestamp"]}',
+>             'raw_content': raw_line[:200]
+>         }
+>
+>     # Validate account_id is non-empty string
+>     if not isinstance(data['account_id'], str) or len(data['account_id']) == 0:
+>         return {
+>             'line_number': line_num,
+>             'error_type': 'invalid_value',
+>             'error_detail': 'account_id must be non-empty string',
+>             'raw_content': raw_line[:200]
+>         }
+>
+>     # Validate amount is a number
+>     if not isinstance(data['amount'], (int, float)):
+>         return {
+>             'line_number': line_num,
+>             'error_type': 'invalid_format',
+>             'error_detail': f'amount must be a number, got: {type(data["amount"]).__name__}',
+>             'raw_content': raw_line[:200]
+>         }
+>
+>     # Validate currency format (3 uppercase letters)
+>     if not isinstance(data['currency'], str) or not CURRENCY_PATTERN.match(data['currency']):
+>         return {
+>             'line_number': line_num,
+>             'error_type': 'invalid_format',
+>             'error_detail': f'invalid currency format: {data["currency"]}',
+>             'raw_content': raw_line[:200]
+>         }
+>
+>     # Validate status
+>     if not isinstance(data['status'], str) or data['status'] not in VALID_STATUSES:
+>         return {
+>             'line_number': line_num,
+>             'error_type': 'invalid_value',
+>             'error_detail': f'invalid status: {data["status"]}',
+>             'raw_content': raw_line[:200]
+>         }
+>
+>     return None  # Valid
+>
+> def compute_hash(txn):
+>     """Compute SHA-256 hash of canonical form."""
+>     amount_formatted = f"{txn['amount']:.2f}"
+>     canonical = f"{txn['transaction_id']}|{txn['timestamp']}|{txn['account_id']}|{amount_formatted}|{txn['currency']}|{txn['status']}"
+>     return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+>
+> # Process input file
+> line_num = 0
+> with open(INPUT_FILE, 'r') as f:
+>     for line in f:
+>         line_num += 1
+>         raw_line = line.rstrip('\n')
+>
+>         # Try to parse JSON
+>         try:
+>             data = json.loads(raw_line)
+>         except json.JSONDecodeError as e:
+>             errors.append({
+>                 'line_number': line_num,
+>                 'error_type': 'malformed_json',
+>                 'error_detail': f'JSON parse error: {str(e)}',
+>                 'raw_content': raw_line[:200]
+>             })
+>             error_counts['malformed_json'] += 1
+>             continue
+>
+>         # Validate transaction
+>         error = validate_transaction(data, line_num, raw_line)
+>         if error:
+>             errors.append(error)
+>             error_counts[error['error_type']] += 1
+>             continue
+>
+>         # Valid transaction - compute hash and add metadata
+>         txn = {
+>             'transaction_id': data['transaction_id'],
+>             'timestamp': data['timestamp'],
+>             'account_id': data['account_id'],
+>             'amount': data['amount'],
+>             'currency': data['currency'],
+>             'status': data['status'],
+>             'integrity_hash': compute_hash(data),
+>             'processed_at': processing_timestamp
+>         }
+>         valid_transactions.append(txn)
+>
+> # Sort valid transactions by timestamp
+> valid_transactions.sort(key=lambda x: x['timestamp'])
+>
+> # Write clean audit file
+> with open(OUTPUT_FILE, 'w') as f:
+>     for txn in valid_transactions:
+>         f.write(json.dumps(txn) + '\n')
+>
+> # Write error log
+> with open(ERROR_FILE, 'w') as f:
+>     for error in errors:
+>         f.write(json.dumps(error) + '\n')
+>
+> # Generate summary report
+> total_lines = line_num
+> valid_count = len(valid_transactions)
+> failed_count = len(errors)
+> success_rate = (valid_count / total_lines * 100) if total_lines > 0 else 0.0
+>
+> summary = f"""AUDIT PROCESSING SUMMARY
+> ========================
+> Input file: {INPUT_FILE}
+> Total lines processed: {total_lines}
+> Valid transactions: {valid_count}
+> Failed records: {failed_count}
+> Success rate: {success_rate:.2f}%
+>
+> Errors by type:
+>   malformed_json: {error_counts['malformed_json']}
+>   missing_field: {error_counts['missing_field']}
+>   invalid_format: {error_counts['invalid_format']}
+>   invalid_value: {error_counts['invalid_value']}
+>
+> Processing completed at: {processing_timestamp}
+> """
+>
+> with open(SUMMARY_FILE, 'w') as f:
+>     f.write(summary)
+>
+> print(f"Processing complete!")
+> print(f"Valid transactions: {valid_count}")
+> print(f"Failed records: {failed_count}")
+> print(f"Output written to {OUTPUT_FILE}")
+> print(f"Errors written to {ERROR_FILE}")
+> print(f"Summary written to {SUMMARY_FILE}")
+> EOF
+root@247d8bb0b1e1:/home/user# python3 process_audit.py
+Processing complete!
+Valid transactions: 13
+Failed records: 12
+Output written to /home/user/audit/clean_audit.jsonl
+Errors written to /home/user/audit/error_log.jsonl
+Summary written to /home/user/audit/processing_summary.txt
+root@247d8bb0b1e1:/home/user#

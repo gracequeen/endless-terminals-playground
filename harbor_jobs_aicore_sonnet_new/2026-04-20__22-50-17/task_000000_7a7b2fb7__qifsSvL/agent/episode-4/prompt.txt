@@ -1,0 +1,271 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@b261c3e0d585:~/migration$ cat > analyze_packages.py << 'SCRIPT_EOF'
+ except Exception:
+        pass
+
+    # Fallback to apt-cache show
+    try:
+        result = subprocess.run(
+            ['apt-cache', 'show', package],
+            capture_output=True, text=True, timeout=5
+        )
+        for line in result.stdout.split('\n'):
+            if line.startswith('Version:'):
+                info['version'] = line.split(':', 1)[1].strip()
+            elif line.startswith('Installed-Size:'):
+                info['size_kb'] = int(line.split(':', 1)[1].strip())
+    except Exception:
+        pass
+
+    return info
+
+def has_security_update(package):
+    """Check if a package has a security update available."""
+    try:
+        result = subprocess.run(
+            ['apt-cache', 'policy', package],
+            capture_output=True, text=True, timeout=5
+        )
+        output = result.stdout
+
+        # Look for security in the output
+        if '-security' in output.lower() or 'security.ubuntu.com' in output.lower():
+            # Check if there's a candidate version different from installed
+            installed_ver = None
+            candidate_ver = None
+            for line in output.split('\n'):
+                if 'Installed:' in line:
+                    installed_ver = line.split(':', 1)[1].strip()
+                elif 'Candidate:' in line:
+                    candidate_ver = line.split(':', 1)[1].strip()
+
+            if installed_ver and candidate_ver and installed_ver != candidate_ver and installed_ver != '(none)':
+                return True
+        return False
+    except Exception:
+        return False
+
+def main():
+    # Read package lists
+    with open('installed_packages.txt', 'r') as f:
+        installed = set(line.strip() for line in f if line.strip())
+
+    with open('required_packages.txt', 'r') as f:
+        required = set(line.strip() for line in f if line.strip())
+
+    print(f"Installed packages: {len(installed)}", flush=True)
+    print(f"Required packages: {len(required)}", flush=True)
+
+    # Get all dependencies for required packages
+    print("\nAnalyzing dependencies...> #!/usr/bin/env python3
+> import subprocess
+> import json
+> import re
+> from collections import defaultdict, deque
+>
+> def get_dependencies(package, max_depth=3):
+>     """Get all dependencies up to max_depth levels deep."""
+>     all_deps = set()
+>     visited = set()
+>     queue = deque([(package, 0)])
+>
+>     while queue:
+>         pkg, depth = queue.popleft()
+>         if pkg in visited or depth > max_depth:
+>             continue
+>         visited.add(pkg)
+>
+>         try:
+>             result = subprocess.run(
+>                 ['apt-cache', 'depends', pkg],
+>                 capture_output=True, text=True, timeout=5
+>             )
+>
+>             for line in result.stdout.split('\n'):
+>                 line = line.strip()
+>                 if line.startswith('Depends:') or line.startswith('PreDepends:'):
+>                     dep = line.split(':', 1)[1].strip()
+>                     # Remove version constraints and alternatives
+>                     dep = re.sub(r'[(<>].*', '', dep).strip()
+>                     if '|' in dep:
+>                         dep = dep.split('|')[0].strip()
+>                     if dep and depth < max_depth:
+>                         all_deps.add(dep)
+>                         queue.append((dep, depth + 1))
+>         except Exception as e:
+>             print(f"Warning: Could not get dependencies for {pkg}: {e}", flush=True)
+>
+>     return all_deps
+>
+> def get_package_info(package):
+>     """Get version and size info for a package."""
+>     info = {'version': 'unknown', 'size_kb': 0}
+>
+>     # Try dpkg-query first for installed packages
+>     try:
+>         result = subprocess.run(
+>             ['dpkg-query', '-W', '-f=${Version}\\t${Installed-Size}\\n', package],
+>             capture_output=True, text=True, timeout=5
+>         )
+>         if result.returncode == 0 and result.stdout.strip():
+>             parts = result.stdout.strip().split('\t')
+>             if len(parts) == 2:
+>                 info['version'] = parts[0]
+>                 info['size_kb'] = int(parts[1])
+>                 return info
+>     except Exception:
+>         pass
+>
+>     # Fallback to apt-cache show
+>     try:
+>         result = subprocess.run(
+>             ['apt-cache', 'show', package],
+>             capture_output=True, text=True, timeout=5
+>         )
+>         for line in result.stdout.split('\n'):
+>             if line.startswith('Version:'):
+>                 info['version'] = line.split(':', 1)[1].strip()
+>             elif line.startswith('Installed-Size:'):
+>                 info['size_kb'] = int(line.split(':', 1)[1].strip())
+>     except Exception:
+>         pass
+>
+>     return info
+>
+> def has_security_update(package):
+>     """Check if a package has a security update available."""
+>     try:
+>         result = subprocess.run(
+>             ['apt-cache', 'policy', package],
+> 
+[... output limited to 10000 bytes; 68 interior bytes omitted ...]
+       output = result.stdout
+>
+>         # Look for security in the output
+>         if '-security' in output.lower() or 'security.ubuntu.com' in output.lower():
+>             # Check if there's a candidate version different from installed
+>             installed_ver = None
+>             candidate_ver = None
+>             for line in output.split('\n'):
+>                 if 'Installed:' in line:
+>                     installed_ver = line.split(':', 1)[1].strip()
+>                 elif 'Candidate:' in line:
+>                     candidate_ver = line.split(':', 1)[1].strip()
+>
+>             if installed_ver and candidate_ver and installed_ver != candidate_ver and installed_ver != '(none)':
+>                 return True
+>         return False
+>     except Exception:
+>         return False
+>
+> def main():
+>     # Read package lists
+>     with open('installed_packages.txt', 'r') as f:
+>         installed = set(line.strip() for line in f if line.strip())
+>
+>     with open('required_packages.txt', 'r') as f:
+>         required = set(line.strip() for line in f if line.strip())
+>
+>     print(f"Installed packages: {len(installed)}", flush=True)
+>     print(f"Required packages: {len(required)}", flush=True)
+>
+>     # Get all dependencies for required packages
+>     print("\nAnalyzing dependencies...", flush=True)
+>     all_dependencies = set()
+>     dependency_map = defaultdict(list)  # Maps dependency to packages that need it
+>
+>     for pkg in sorted(required):
+>         print(f"  Checking dependencies for {pkg}...", flush=True)
+>         deps = get_dependencies(pkg, max_depth=3)
+>         for dep in deps:
+>             all_dependencies.add(dep)
+>             dependency_map[dep].append(pkg)
+>
+>     print(f"\nFound {len(all_dependencies)} total dependencies", flush=True)
+>
+>     # Identify extra packages
+>     extra_packages = installed - required
+>     print(f"Extra packages (not in required): {len(extra_packages)}", flush=True)
+>
+>     # Separate removable from dependency-protected
+>     removable = []
+>     dependency_protected = []
+>
+>     for pkg in sorted(extra_packages):
+>         if pkg in all_dependencies:
+>             dependency_protected.append({
+>                 'name': pkg,
+>                 'required_by': sorted(dependency_map[pkg])
+>             })
+>         else:
+>             print(f"  Analyzing removable package: {pkg}", flush=True)
+>             info = get_package_info(pkg)
+>             has_update = has_security_update(pkg)
+>             removable.append({
+>                 'name': pkg,
+>                 'installed_version': info['version'],
+>                 'size_kb': info['size_kb'],
+>                 'has_security_update': has_update
+>             })
+>
+>     # Calculate total space savings
+>     total_space = sum(p['size_kb'] for p in removable)
+>
+>     # Generate report
+>     report = {
+>         'summary': {
+>             'total_installed': len(installed),
+>             'total_required': len(required),
+>             'removable_count': len(removable),
+>             'kept_as_dependencies': len(dependency_protected),
+>             'total_space_savings_kb': total_space
+>         },
+>         'removable_packages': sorted(removable, key=lambda x: x['name']),
+>         'dependency_protected': sorted(dependency_protected, key=lambda x: x['name'])
+>     }
+>
+>     # Write JSON report
+>     with open('removal_report.json', 'w') as f:
+>         json.dump(report, f, indent=2)
+>
+>     print(f"\n=== Summary ===", flush=True)
+>     print(f"Removable packages: {len(removable)}", flush=True)
+>     print(f"Dependency-protected packages: {len(dependency_protected)}", flush=True)
+>     print(f"Total space savings: {total_space} KB ({total_space/1024:.2f} MB)", flush=True)
+>
+>     # Generate removal script
+>     with open('remove_packages.sh', 'w') as f:
+>         f.write('#!/bin/bash\n')
+>         f.write('# Auto-generated package removal script\n')
+>         f.write('# This will remove packages that are not required and not dependencies\n\n')
+>
+>         if removable:
+>             pkg_list = ' '.join(p['name'] for p in sorted(removable, key=lambda x: x['name']))
+>             f.write(f'echo "DRY RUN: Would remove the following packages:"\n')
+>             f.write(f'echo "{pkg_list}"\n')
+>             f.write(f'echo ""\n')
+>             f.write(f'echo "To actually remove, uncomment the line below:"\n')
+>             f.write(f'# apt-get remove -y {pkg_list}\n')
+>         else:
+>             f.write('echo "No packages to remove!"\n')
+>
+>     subprocess.run(['chmod', '+x', 'remove_packages.sh'])
+>     print("\nReport written to removal_report.json", flush=True)
+>     print("Removal script written to remove_packages.sh", flush=True)
+>
+> if __name__ == '__main__':
+>     main()
+> SCRIPT_EOF
+user@b261c3e0d585:~/migration$ chmod +x analyze_packages.py
+user@b261c3e0d585:~/migration$ python3 analyze_packages.py
+Installed packages: 31
+Required packages: 9
+
+Analyzing dependencies...
+  Checking dependencies for bash...
+

@@ -1,0 +1,565 @@
+[?2004huser@eec4154ec0a2:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004huser@eec4154ec0a2:~$ clear
+[?2004l[H[J[?2004huser@eec4154ec0a2:~$ cd /home/user/migration
+[?2004l[?2004huser@eec4154ec0a2:~/migration$ ls -la
+[?2004ltotal 16
+drwxrwxrwx 1 user user 4096 Apr 20 23:18 .
+drwxrwxrwx 1 user user 4096 Apr 20 23:35 ..
+-rw-r--r-- 1 user user  246 Apr 20 23:18 installed_packages.txt
+-rw-r--r-- 1 user user   73 Apr 20 23:18 required_packages.txt
+[?2004huser@eec4154ec0a2:~/migration$ wc -l installed_packages.txt required_packages.txt
+[?2004l 31 installed_packages.txt
+  9 required_packages.txt
+ 40 total
+[?2004huser@eec4154ec0a2:~/migration$ head -20 installed_packages.txt
+[?2004lcurl
+wget
+vim
+nano
+git
+htop
+tree
+ncdu
+jq
+python3
+python3-pip
+nodejs
+npm
+nginx
+apache2
+mysql-client
+postgresql-client
+redis-tools
+netcat-openbsd
+tcpdump
+[?2004huser@eec4154ec0a2:~/migration$ head -20 required_packages.txt
+[?2004lcurl
+python3
+python3-pip
+jq
+nginx
+ca-certificates
+openssl
+bash
+coreutils
+[?2004huser@eec4154ec0a2:~/migration$ cat installed_packages.txt
+[?2004lcurl
+wget
+vim
+nano
+git
+htop
+tree
+ncdu
+jq
+python3
+python3-pip
+nodejs
+npm
+nginx
+apache2
+mysql-client
+postgresql-client
+redis-tools
+netcat-openbsd
+tcpdump
+strace
+lsof
+dnsutils
+iputils-ping
+ca-certificates
+openssl
+libssl3
+zlib1g
+libc6
+coreutils
+bash
+[?2004huser@eec4154ec0a2:~/migration$ cat required_packages.txt
+[?2004lcurl
+python3
+python3-pip
+jq
+nginx
+ca-certificates
+openssl
+bash
+coreutils
+[?2004huser@eec4154ec0a2:~/migration$ cat > analyze.py << 'EOF'
+[?2004lnt(f"Collecting dependencies for {len(required)} required packages...")
+all_deps = {}
+dep_sources = {}
+
+for pkg in required:
+    print(f"Processing {pkg}...")
+    deps = get_dependencies(pkg, 3)
+    for dep in deps:
+        all_deps[dep] = True
+        if dep not in dep_sources:
+            dep_sources[dep] = []
+        if pkg not in dep_sources[dep]:
+            dep_sources[dep].append(pkg)
+
+removable = []
+protected = []
+
+for pkg in installed:
+    if pkg in required:
+        continue
+    if pkg in all_deps:
+        protected.append(pkg)
+    else:
+        removable.append(pkg)
+
+print(f"Removable: {len(removable)}, Protected: {len(protected)}")
+
+total_space = 0
+removable_data = []
+
+for pkg in sorted(removable):
+    output = run_cmd(f"apt-cache show {pkg} 2>/dev/null")
+    version = ''
+    size = 0
+    for line in output.split('\n'):
+        if line.startswith('Version:'):
+            version = line.split(':', 1)[1].strip()
+        elif line.startswith('Installed-Size:'):
+            size = int(line.split(':')[1].strip())
+            break
+    
+    policy_output = run_cmd(f"apt-cache policy {pkg} 2>/dev/null")
+    has_security = 'security' in policy_output.lower()
+    
+    total_space += size
+    removable_data.append({
+        'name': pkg,
+        'installed_version': version,
+        'size_kb': size,
+        'has_security_update': has_security
+    })
+
+protected_data = []
+for pkg in sorted(protected):
+    protected_data.append({
+        'name': pkg,
+        'required_by': sorted(dep_sources.get(pkg, []))
+    })
+
+report = {
+    'summary': {
+        'total_installed': len(installed),
+        'total_required': len(required),
+        'removable_count': len(removable),
+        'kept_as_dependencies': len(protected),
+        'total_space_savings_kb': total_space
+    },
+    'removable_packages': removable_data,
+    'dependency_protected': protected_data
+}
+
+with open('removal_report.json', 'w') as f:
+    json.dump(report, f, indent=2)
+
+with open('remove_packages.sh', 'w') as f:
+    f.write('#!/bin/bash\n')
+    f.write('# Auto-generated package removal script\n')
+    f.write('# This will remove packages identified as unnecessary\n\n')
+    f.write('echo "This will remove the following packages:"\n')
+    for pkg in sorted(removable):
+        f.write(f'echo "  - {pkg}"\n')
+    f.write('echo ""\n')
+    f.write('echo "Dry run command:"\n')
+    f.write(f'echo "apt-get remove --dry-run {" ".join(sorted(removable))}"\n')
+    f.write('echo ""\n')
+    f.write('read -p "Proceed with removal? (yes/no): " confirm\n')
+    f.write('if [ "$confirm" = "yes" ]; then\n')
+    f.write(f'  apt-get remove -y {" ".join(sorted(removable))}\n')
+    f.write('else\n')
+    f.write('  echo "Removal cancelled."\n')
+    f.write('fi\n')
+
+run_cmd('chmod +x remove_packages.sh')
+print("Analysis complete!")
+EOF
+[?2004h> import subprocess
+[?2004l[?2004h> import json
+[?2004l[?2004h> import re
+[?2004l[?2004h> 
+[?2004l[?2004h> def run_cmd(cmd):
+[?2004l[?2004h>     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+[?2004l[?2004h>     return result.stdout
+[?2004l[?2004h> 
+[?2004l[?2004h> def get_dependencies(package, max_depth=3, current_depth=0, visited=None):
+[?2004l[?2004h>     if visited is None:
+[?2004l[?2004h>         visited = set()
+[?2004l[?2004h>     if current_depth >= max_depth or package in visited:
+[?2004l[?2004h>         return set()
+[?2004l[?2004h>     visited.add(package)
+[?2004l[?2004h>     deps = set()
+[?2004l[?2004h>     output = run_cmd(f"apt-cache depends {package} 2>/dev/null")
+[?2004l[?2004h>     for line in output.split('\n'):
+[?2004l[?2004h>         if line.strip().startswith('Depends:'):
+[?2004l[?2004h>             dep = line.split(':')[1].strip().split()[0]
+[?2004l[?2004h>             deps.add(dep)
+[?2004l[?2004h>             if current_depth < max_depth - 1:
+[?2004l[?2004h>                 deps.update(get_dependencies(dep, max_depth, current_depth + 1, visited))
+[?2004l[?2004h>     return deps
+[?2004l[?2004h> 
+[?2004l[?2004h> with open('installed_packages.txt') as f:
+[?2004l[?2004h>     installed = [line.strip() for line in f if line.strip()]
+[?2004l[?2004h> 
+[?2004l[?2004h> with open('required_packages.txt') as f:
+[?2004l[?2004h>     required = [line.strip() for line in f if line.strip()]
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"Collecting dependencies for {len(required)} required packages...")
+[?2004l[?2004h> all_deps = {}
+[?2004l[?2004h> dep_sources = {}
+[?2004l[?2004h> 
+[?2004l[?2004h> for pkg in required:
+[?2004l[?2004h>     print(f"Processing {pkg}...")
+[?2004l[?2004h>     deps = get_dependencies(pkg, 3)
+[?2004l[?2004h>     for dep in deps:
+[?2004l[?2004h>         all_deps[dep] = True
+[?2004l[?2004h>         if dep not in dep_sources:
+[?2004l[?2004h>             dep_sources[dep] = []
+[?2004l[?2004h>         if pkg not in dep_sources[dep]:
+[?2004l[?2004h>             dep_sources[dep].append(pkg)
+[?2004l[?2004h> 
+[?2004l[?2004h> removable = []
+[?2004l[?2004h> protected = []
+[?2004l[?2004h> 
+[?2004l[?2004h> for pkg in installed:
+[?2004l[?2004h>     if pkg in required:
+[?2004l[?2004h>         continue
+[?2004l[?2004h>     if pkg in all_deps:
+[?2004l[?2004h>         protected.append(pkg)
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         removable.append(pkg)
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"Removable: {len(removable)}, Protected: {len(protected)}")
+[?2004l[?2004h> 
+[?2004l[?2004h> total_space = 0
+[?2004l[?2004h> removable_data = []
+[?2004l[?2004h> 
+[?2004l[?2004h> for pkg in sorted(removable):
+[?2004l[?2004h>     output = run_cmd(f"apt-cache show {pkg} 2>/dev/null")
+[?2004l[?2004h>     version = ''
+[?2004l[?2004h>     size = 0
+[?2004l[?2004h>     for line in output.split('\n'):
+[?2004l[?2004h>         if line.startswith('Version:'):
+[?2004l[?2004h>             version = line.split(':', 1)[1].strip()
+[?2004l[?2004h>         elif line.startswith('Installed-Size:'):
+[?2004l[?2004h>             size = int(line.split(':')[1].strip())
+[?2004l[?2004h>             break
+[?2004l[?2004h>     
+[?2004l[?2004h>     policy_output = run_cmd(f"apt-cache policy {pkg} 2>/dev/null")
+[?2004l[?2004h>     has_security = 'security' in policy_output.lower()
+[?2004l[?2004h>     
+[?2004l[?2004h>     total_space += size
+[?2004l[?2004h>     removable_data.append({
+[?2004l[?2004h>         'name': pkg,
+[?2004l[?2004h>         'installed_version': version,
+[?2004l[?2004h>         'size_kb': size,
+[?2004l[?2004h>         'has_security_update': has_security
+[?2004l[?2004h>     })
+[?2004l[?2004h> 
+[?2004l[?2004h> protected_data = []
+[?2004l[?2004h> for pkg in sorted(protected):
+[?2004l[?2004h>     protected_data.append({
+[?2004l[?2004h>         'name': pkg,
+[?2004l[?2004h>         'required_by': sorted(dep_sources.get(pkg, []))
+[?2004l[?2004h>     })
+[?2004l[?2004h> 
+[?2004l[?2004h> report = {
+[?2004l[?2004h>     'summary': {
+[?2004l[?2004h>         'total_installed': len(installed),
+[?2004l[?2004h>         'total_required': len(required),
+[?2004l[?2004h>         'removable_count': len(removable),
+[?2004l[?2004h>         'kept_as_dependencies': len(protected),
+[?2004l[?2004h>         'total_space_savings_kb': total_space
+[?2004l[?2004h>     },
+[?2004l[?2004h>     'removable_packages': removable_data,
+[?2004l[?2004h>     'dependency_protected': protected_data
+[?2004l[?2004h> }
+[?2004l[?2004h> 
+[?2004l[?2004h> with open('removal_report.json', 'w') as f:
+[?2004l[?2004h>     json.dump(report, f, indent=2)
+[?2004l[?2004h> 
+[?2004l[?2004h> with open('remove_packages.sh', 'w') as f:
+[?2004l[?2004h>     f.write('#!/bin/bash\n')
+[?2004l[?2004h>     f.write('# Auto-generated package removal script\n')
+[?2004l[?2004h>     f.write('# This will remove packages identified as unnecessary\n\n')
+[?2004l[?2004h>     f.write('echo "This will remove the following packages:"\n')
+[?2004l[?2004h>     for pkg in sorted(removable):
+[?2004l[?2004h>         f.write(f'echo "  - {pkg}"\n')
+[?2004l[?2004h>     f.write('echo ""\n')
+[?2004l[?2004h>     f.write('echo "Dry run command:"\n')
+[?2004l[?2004h>     f.write(f'echo "apt-get remove --dry-run {" ".join(sorted(removable))}"\n')
+[?2004l[?2004h>     f.write('echo ""\n')
+[?2004l[?2004h>     f.write('read -p "Proceed with removal? (yes/no): " confirm\n')
+[?2004l[?2004h>     f.write('if [ "$confirm" = "yes" ]; then\n')
+[?2004l[?2004h>     f.write(f'  apt-get remove -y {" ".join(sorted(removable))}\n')
+[?2004l[?2004h>     f.write('else\n')
+[?2004l[?2004h>     f.write('  echo "Removal cancelled."\n')
+[?2004l[?2004h>     f.write('fi\n')
+[?2004l[?2004h> 
+[?2004l[?2004h> run_cmd('chmod +x remove_packages.sh')
+[?2004l[?2004h> print("Analysis complete!")
+[?2004l[?2004h> EOF
+[?2004l[?2004huser@eec4154ec0a2:~/migration$ python3 analyze.py
+[?2004lCollecting dependencies for 9 required packages...
+Processing curl...
+Processing python3...
+Processing python3-pip...
+Processing jq...
+Processing nginx...
+Processing ca-certificates...
+Processing openssl...
+Processing bash...
+Processing coreutils...
+Removable: 19, Protected: 3
+Analysis complete!
+[?2004huser@eec4154ec0a2:~/migration$ ls -la
+[?2004ltotal 32
+drwxrwxrwx 1 user user 4096 Apr 20 23:38 .
+drwxrwxrwx 1 user user 4096 Apr 20 23:35 ..
+-rw-r--r-- 1 user user 3810 Apr 20 23:36 analyze.py
+-rw-r--r-- 1 user user  246 Apr 20 23:18 installed_packages.txt
+-rw-r--r-- 1 user user 3436 Apr 20 23:38 removal_report.json
+-rwxr-xr-x 1 user user 1031 Apr 20 23:38 remove_packages.sh
+-rw-r--r-- 1 user user   73 Apr 20 23:18 required_packages.txt
+[?2004huser@eec4154ec0a2:~/migration$ cat removal_report.json
+[?2004l{
+  "summary": {
+    "total_installed": 31,
+    "total_required": 9,
+    "removable_count": 19,
+    "kept_as_dependencies": 3,
+    "total_space_savings_kb": 37114
+  },
+  "removable_packages": [
+    {
+      "name": "apache2",
+      "installed_version": "2.4.52-1ubuntu4.19",
+      "size_kb": 536,
+      "has_security_update": true
+    },
+    {
+      "name": "dnsutils",
+      "installed_version": "1:9.18.39-0ubuntu0.22.04.3",
+      "size_kb": 61,
+      "has_security_update": true
+    },
+    {
+      "name": "git",
+      "installed_version": "1:2.34.1-1ubuntu1.17",
+      "size_kb": 18484,
+      "has_security_update": true
+    },
+    {
+      "name": "htop",
+      "installed_version": "3.0.5-7build2",
+      "size_kb": 334,
+      "has_security_update": false
+    },
+    {
+      "name": "iputils-ping",
+      "installed_version": "3:20211215-1ubuntu0.1",
+      "size_kb": 113,
+      "has_security_update": true
+    },
+    {
+      "name": "lsof",
+      "installed_version": "4.93.2+dfsg-1.1build2",
+      "size_kb": 447,
+      "has_security_update": false
+    },
+    {
+      "name": "mysql-client",
+      "installed_version": "8.0.45-0ubuntu0.22.04.1",
+      "size_kb": 35,
+      "has_security_update": true
+    },
+    {
+      "name": "nano",
+      "installed_version": "6.2-1ubuntu0.1",
+      "size_kb": 860,
+      "has_security_update": true
+    },
+    {
+      "name": "ncdu",
+      "installed_version": "1.15.1-1",
+      "size_kb": 104,
+      "has_security_update": false
+    },
+    {
+      "name": "netcat-openbsd",
+      "installed_version": "1.218-4ubuntu1",
+      "size_kb": 106,
+      "has_security_update": false
+    },
+    {
+      "name": "nodejs",
+      "installed_version": "12.22.9~dfsg-1ubuntu3.6",
+      "size_kb": 907,
+      "has_security_update": true
+    },
+    {
+      "name": "npm",
+      "installed_version": "8.5.1~ds-1",
+      "size_kb": 2647,
+      "has_security_update": false
+    },
+    {
+      "name": "postgresql-client",
+      "installed_version": "14+238",
+      "size_kb": 70,
+      "has_security_update": false
+    },
+    {
+      "name": "redis-tools",
+      "installed_version": "5:6.0.16-1ubuntu1.1",
+      "size_kb": 4063,
+      "has_security_update": true
+    },
+    {
+      "name": "strace",
+      "installed_version": "5.16-0ubuntu3",
+      "size_kb": 2000,
+      "has_security_update": false
+    },
+    {
+      "name": "tcpdump",
+      "installed_version": "4.99.1-3ubuntu0.2",
+      "size_kb": 1374,
+      "has_security_update": false
+    },
+    {
+      "name": "tree",
+      "installed_version": "2.0.2-1",
+      "size_kb": 113,
+      "has_security_update": false
+    },
+    {
+      "name": "vim",
+      "installed_version": "2:8.2.3995-1ubuntu2.27",
+      "size_kb": 3932,
+      "has_security_update": true
+    },
+    {
+      "name": "wget",
+      "installed_version": "1.21.2-2ubuntu1.1",
+      "size_kb": 928,
+      "has_security_update": true
+    }
+  ],
+  "dependency_protected": [
+    {
+      "name": "libc6",
+      "required_by": [
+        "bash",
+        "ca-certificates",
+        "curl",
+        "jq",
+        "nginx",
+        "openssl",
+        "python3",
+        "python3-pip"
+      ]
+    },
+    {
+      "name": "libssl3",
+      "required_by": [
+        "ca-certificates",
+        "curl",
+        "nginx",
+        "openssl",
+        "python3-pip"
+      ]
+    },
+    {
+      "name": "zlib1g",
+      "required_by": [
+        "curl",
+        "nginx",
+        "python3"
+      ]
+    }
+  ]
+}[?2004huser@eec4154ec0a2:~/migration$ cat remove_packages.sh
+[?2004l#!/bin/bash
+# Auto-generated package removal script
+# This will remove packages identified as unnecessary
+
+echo "This will remove the following packages:"
+echo "  - apache2"
+echo "  - dnsutils"
+echo "  - git"
+echo "  - htop"
+echo "  - iputils-ping"
+echo "  - lsof"
+echo "  - mysql-client"
+echo "  - nano"
+echo "  - ncdu"
+echo "  - netcat-openbsd"
+echo "  - nodejs"
+echo "  - npm"
+echo "  - postgresql-client"
+echo "  - redis-tools"
+echo "  - strace"
+echo "  - tcpdump"
+echo "  - tree"
+echo "  - vim"
+echo "  - wget"
+echo ""
+echo "Dry run command:"
+echo "apt-get remove --dry-run apache2 dnsutils git htop iputils-ping lsof mysql-client nano ncdu netcat-openbsd nodejs npm postgresql-client redis-tools strace tcpdump tree vim wget"
+echo ""
+read -p "Proceed with removal? (yes/no): " confirm
+if [ "$confirm" = "yes" ]; then
+  apt-get remove -y apache2 dnsutils git htop iputils-ping lsof mysql-client nano ncdu netcat-openbsd nodejs npm postgresql-client redis-tools strace tcpdump tree vim wget
+else
+  echo "Removal cancelled."
+fi
+[?2004huser@eec4154ec0a2:~/migration$ ls -l remove_packages.sh
+[?2004l-rwxr-xr-x 1 user user 1031 Apr 20 23:38 remove_packages.sh
+[?2004huser@eec4154ec0a2:~/migration$ python3 -m json.tool removal_report.json > /dev/null && echo 'JSON is valid'
+[?2004lJSON is valid
+[?2004huser@eec4154ec0a2:~/migration$ echo "Summary of results:"
+[?2004lSummary of results:
+[?2004huser@eec4154ec0a2:~/migration$ echo "- Total installed packages: $(cat installed_packages.txt | wc -l)"
+[?2004l- Total installed packages: 31
+[?2004huser@eec4154ec0a2:~/migration$ echo "- Total required packages: $(cat required_packages.txt | wc -l)"
+[?2004l- Total required packages: 9
+[?2004huser@eec4154ec0a2:~/migration$ echo "- Removable packages: $(grep -c '"name":' removal_report.json | head -1)"
+[?2004l- Removable packages: 22
+[?2004huser@eec4154ec0a2:~/migration$ echo "- Space savings: $(grep 'total_space_savings_kb' removal_report.json | grep -o '[0-9]*') KB"
+[?2004l- Space savings: 37114 KB
+[?2004huser@eec4154ec0a2:~/migration$ echo "- Files created: removal_report.json and remove_packages.sh"
+[?2004l- Files created: removal_report.json and remove_packages.sh
+[?2004huser@eec4154ec0a2:~/migration$ echo "=== Migration Audit Complete ==="
+[?2004l=== Migration Audit Complete ===
+[?2004huser@eec4154ec0a2:~/migration$ echo ""
+[?2004l
+[?2004huser@eec4154ec0a2:~/migration$ echo "Dependency-protected packages (not removable):"
+[?2004lDependency-protected packages (not removable):
+[?2004huser@eec4154ec0a2:~/migration$ python3 -c "import json; data=json.load(open('removal_report.json')); [print(f'  - {p[\"name\"]} (required by {len(p[\"required_by\"])} packages)') for p in data['dependency_protected']]"
+[?2004l  - libc6 (required by 8 packages)
+  - libssl3 (required by 5 packages)
+  - zlib1g (required by 3 packages)
+[?2004huser@eec4154ec0a2:~/migration$ echo ""
+[?2004l
+[?2004huser@eec4154ec0a2:~/migration$ echo "Packages with security updates available:"
+[?2004lPackages with security updates available:
+[?2004huser@eec4154ec0a2:~/migration$ python3 -c "import json; data=json.load(open('removal_report.json')); sec=[p['name'] for p in data['removable_packages'] if p['has_security_update']]; print(f'  {len(sec)} out of {len(data[\"removable_packages\"])} removable packages')"
+[?2004l  10 out of 19 removable packages
+[?2004huser@eec4154ec0a2:~/migration$ echo ""
+[?2004l
+[?2004huser@eec4154ec0a2:~/migration$ echo "Output files:"
+[?2004lOutput files:
+[?2004huser@eec4154ec0a2:~/migration$ echo "  - /home/user/migration/removal_report.json (migration report)"
+[?2004l  - /home/user/migration/removal_report.json (migration report)
+[?2004huser@eec4154ec0a2:~/migration$ echo "  - /home/user/migration/remove_packages.sh (uninstall script)"
+[?2004l  - /home/user/migration/remove_packages.sh (uninstall script)
+[?2004huser@eec4154ec0a2:~/migration$ 

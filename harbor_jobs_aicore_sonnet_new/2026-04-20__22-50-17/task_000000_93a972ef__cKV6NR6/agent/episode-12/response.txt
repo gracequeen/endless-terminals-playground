@@ -1,0 +1,10 @@
+{
+  "analysis": "Perfect! The alerts.yaml file is now correctly updated with all three changes: 1) HighLatency for duration changed to 3m, 2) ServiceDown has escalation_level: critical added, 3) DiskSpaceLow alert added. Now I need to work on the uptime.toml file.",
+  "plan": "Use Python to modify the uptime.toml file to: 1) Change check_interval from 60 to 30, 2) Add timeout = 10 in global section, 3) Change api-gateway expected_status to 200 and add critical = true, 4) Add the new payment-service endpoint with headers.",
+  "commands": [
+    {
+      "keystrokes": "python3 << 'PYEOF'\nimport re\n\nwith open('/etc/monitoring/uptime.toml', 'r') as f:\n    content = f.read()\n\n# Change check_interval from 60 to 30\ncontent = re.sub(r'check_interval = 60', 'check_interval = 30', content)\n\n# Add timeout = 10 after check_interval\ncontent = re.sub(r'(check_interval = 30\\n)', r'\\1timeout = 10\\n', content)\n\n# Change api-gateway expected_status to 200 and add critical = true\ncontent = re.sub(\n    r'(\\[\\[endpoints\\]\\]\\nname = \"api-gateway\"\\nurl = \"https://api\\.example\\.com/health\"\\n)expected_status = 204',\n    r'\\1expected_status = 200\\ncritical = true',\n    content\n)\n\n# Add payment-service endpoint at the end\npayment_endpoint = '''\\n[[endpoints]]\nname = \"payment-service\"\nurl = \"https://payments.internal.example.com/health\"\nexpected_status = 200\ncritical = true\n\n[endpoints.headers]\nAuthorization = \"Bearer ${PAYMENTS_TOKEN}\"\n'''\n\ncontent = content.rstrip() + payment_endpoint\n\nwith open('/etc/monitoring/uptime.toml', 'w') as f:\n    f.write(content)\n\nprint(\"TOML changes completed\")\nPYEOF\n",
+      "duration": 0.5
+    }
+  ]
+}

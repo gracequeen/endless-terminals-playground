@@ -33,13 +33,17 @@ class AICoreTerminus2(Terminus2):
         temperature: float = 0.7,
         **kwargs,
     ):
-        # Terminus2.__init__ requires a model_name that LiteLLM can resolve
-        # for get_supported_openai_params(). Use a known Anthropic model name
-        # so the parent init doesn't crash, then swap the LLM.
-        litellm_model = "anthropic/claude-opus-4-5-20251101"
-
-        # Pop AICore-specific kwargs before passing to parent
         aicore_model = model_name or "claude_opus"
+
+        _LITELLM_NAMES = {
+            "claude_opus": "anthropic/claude-opus-4-5-20251101",
+            "claude_4_5": "anthropic/claude-4.5-sonnet-20250514",
+        }
+        litellm_model = _LITELLM_NAMES.get(aicore_model)
+        if litellm_model is None:
+            raise ValueError(
+                f"Unknown model {aicore_model!r}. Available: {list(_LITELLM_NAMES.keys())}"
+            )
 
         super().__init__(
             logs_dir=logs_dir,

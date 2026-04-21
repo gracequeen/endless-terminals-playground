@@ -1,0 +1,364 @@
+[?2004hroot@dd529fdb864c:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@dd529fdb864c:/home/user# clear
+[?2004l[H[J[?2004hroot@dd529fdb864c:/home/user# cd /home/user/audit
+[?2004l[?2004hroot@dd529fdb864c:/home/user/audit# ls -la
+[?2004ltotal 12
+drwxrwxrwx 1 root root 4096 Apr 20 23:09 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 Apr 20 23:09 [34;42m..[0m
+-rw-r--r-- 1 root root 3450 Apr 20 23:09 raw_transactions.jsonl
+[?2004hroot@dd529fdb864c:/home/user/audit# head -20 raw_transactions.jsonl
+[?2004l{"transaction_id": "TXN-00000001", "timestamp": "2024-03-15T09:00:00Z", "account_id": "ACC-001", "amount": 150.00, "currency": "USD", "status": "completed"}
+{"transaction_id": "TXN-00000002", "timestamp": "2024-03-15T09:05:30Z", "account_id": "ACC-002", "amount": -75.50, "currency": "EUR", "status": "completed"}
+{"transaction_id": "TXN-00000003", "timestamp": "2024-03-15T08:30:00Z", "account_id": "ACC-001", "amount": 200.00, "currency": "GBP", "status": "pending"}
+this is not valid json at all
+{"transaction_id": "TXN-00000005", "timestamp": "2024-03-15T10:00:00Z", "account_id": "", "amount": 50.00, "currency": "USD", "status": "completed"}
+{"transaction_id": "TXN-00000006", "timestamp": "2024-03-15T10:15:00Z", "account_id": "ACC-003", "amount": 300.00, "currency": "usd", "status": "completed"}
+{"transaction_id": "INVALID-ID", "timestamp": "2024-03-15T10:30:00Z", "account_id": "ACC-004", "amount": 125.75, "currency": "CAD", "status": "completed"}
+{"transaction_id": "TXN-00000008", "timestamp": "2024-03-15T10:45:00Z", "account_id": "ACC-005", "amount": "not_a_number", "currency": "USD", "status": "completed"}
+{"transaction_id": "TXN-00000009", "timestamp": "2024-03-15T11:00:00Z", "account_id": "ACC-006", "amount": 500.00, "currency": "JPY", "status": "completed"}
+{"transaction_id": "TXN-00000010", "timestamp": "invalid-timestamp", "account_id": "ACC-007", "amount": 250.00, "currency": "USD", "status": "completed"}
+{"transaction_id": "TXN-00000011", "timestamp": "2024-03-15T11:30:00Z", "account_id": "ACC-008", "amount": -1000.00, "currency": "USD", "status": "reversed"}
+{"transaction_id": "TXN-00000012", "timestamp": "2024-03-15T11:45:00Z", "account_id": "ACC-009", "amount": 75.25, "currency": "USD", "status": "unknown_status"}
+{malformed json with missing quotes: value}
+{"transaction_id": "TXN-00000014", "timestamp": "2024-03-15T12:00:00Z", "account_id": "ACC-010", "amount": 999.99, "currency": "CHF", "status": "failed"}
+{"timestamp": "2024-03-15T12:15:00Z", "account_id": "ACC-011", "amount": 50.00, "currency": "USD", "status": "completed"}
+{"transaction_id": "TXN-00000016", "timestamp": "2024-03-15T12:30:00Z", "account_id": "ACC-012", "amount": 175.00, "currency": "USD", "status": "pending"}
+{"transaction_id": "TXN-00000017", "timestamp": "2024-03-15T12:45:00Z", "account_id": "ACC-013", "amount": 0.01, "currency": "USD", "status": "completed"}
+{"transaction_id": "TXN-00000018", "account_id": "ACC-014", "amount": 100.00, "currency": "USD", "status": "completed"}
+{"transaction_id": "TXN-00000019", "timestamp": "2024-03-15T13:15:00Z", "account_id": "ACC-015", "amount": -25.00, "currency": "AUD", "status": "completed"}
+{"transaction_id": "TXN-00000020", "timestamp": "2024-03-15T13:30:00Z", "account_id": "ACC-016", "amount": 450.00, "currency": "TOOLONG", "status": "completed"}
+[?2004hroot@dd529fdb864c:/home/user/audit# cat > process_audit.py << 'EOF'
+[?2004l[?2004h> import json
+[?2004l[?2004h> import hashlib
+[?2004lunts[error_type] += 1
+        else:
+            # Compute [?2004h> import re
+[?2004l[?2004h> from datetime import datetime
+[?2004l[?2004h> from collections import defaultdict
+[?2004l[?2004h> 
+[?2004l[?2004h> # Validation patterns
+[?2004l[?2004h> TXN_ID_PATTERN = re.compile(r'^TXN-[0-9]{8}$')
+[?2004l[?2004h> ISO8601_PATTERN = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')
+[?2004l[?2004h> CURRENCY_PATTERN = re.compile(r'^[A-Z]{3}$')
+[?2004l[?2004h> VALID_STATUSES = {'completed', 'pending', 'failed', 'reversed'}
+[?2004l[?2004h> 
+[?2004l[?2004h> def validate_transaction(record, line_num):
+[?2004l[?2004h>     """Validate a transaction record and return (is_valid, error_info)"""
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Check required fields exist
+[?2004l[?2004h>     required_fields = ['transaction_id', 'timestamp', 'account_id', 'amount', 'currency', 'status']
+[?2004l[?2004h>     for field in required_fields:
+[?2004l[?2004h>         if field not in record:
+[?2004l[?2004h>             return False, ('missing_field', f'missing field: {field}')
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Validate transaction_id format
+[?2004l[?2004h>     if not isinstance(record['transaction_id'], str) or not TXN_ID_PATTERN.match(record['transaction_id']):
+[?2004l[?2004h>         return False, ('invalid_format', f'invalid transaction_id format: {record.get("transaction_id", "")}')
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Validate timestamp format
+[?2004l[?2004h>     if not isinstance(record['timestamp'], str) or not ISO8601_PATTERN.match(record['timestamp']):
+[?2004l[?2004h>         return False, ('invalid_format', f'invalid timestamp format: {record.get("timestamp", "")}')
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Validate account_id (non-empty string)
+[?2004l[?2004h>     if not isinstance(record['account_id'], str) or record['account_id'] == '':
+[?2004l[?2004h>         return False, ('invalid_value', 'account_id is empty or not a string')
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Validate amount (must be a number)
+[?2004l[?2004h>     if not isinstance(record['amount'], (int, float)):
+[?2004l[?2004h>         return False, ('invalid_format', f'amount is not a number: {record.get("amount", "")}')
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Validate currency (exactly 3 uppercase letters)
+[?2004l[?2004h>     if not isinstance(record['currency'], str) or not CURRENCY_PATTERN.match(record['currency']):
+[?2004l[?2004h>         return False, ('invalid_format', f'invalid currency format: {record.get("currency", "")}')
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Validate status
+[?2004l[?2004h>     if not isinstance(record['status'], str) or record['status'] not in VALID_STATUSES:
+[?2004l[?2004h>         return False, ('invalid_value', f'invalid status: {record.get("status", "")}')
+[?2004l[?2004h>     
+[?2004l[?2004h>     return True, None
+[?2004l[?2004h> 
+[?2004l[?2004h> def compute_integrity_hash(record):
+[?2004l[?2004h>     """Compute SHA-256 hash of canonical transaction form"""
+[?2004l[?2004h>     amount_formatted = f"{record['amount']:.2f}"
+[?2004l[?2004h>     canonical = f"{record['transaction_id']}|{record['timestamp']}|{record['account_id']}|{amount_formatted}|{record['currency']}|{record['status']}"
+[?2004l[?2004h>     return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+[?2004l[?2004h> 
+[?2004l[?2004h> def process_audit_logs():
+[?2004l[?2004h>     input_file = '/home/user/audit/raw_transactions.jsonl'
+[?2004l[?2004h>     output_file = '/home/user/audit/clean_audit.jsonl'
+[?2004l[?2004h>     error_file = '/home/user/audit/error_log.jsonl'
+[?2004l[?2004h>     summary_file = '/home/user/audit/processing_summary.txt'
+[?2004l[?2004h>     
+[?2004l[?2004h>     valid_transactions = []
+[?2004l[?2004h>     errors = []
+[?2004l[?2004h>     error_counts = defaultdict(int)
+[?2004l[?2004h>     processing_time = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+[?2004l[?2004h>     
+[?2004l[?2004h>     with open(input_file, 'r') as f:
+[?2004l[?2004h>         lines = f.readlines()
+[?2004l[?2004h>     
+[?2004l[?2004h>     total_lines = len(lines)
+[?2004l[?2004h>     
+[?2004l[?2004h>     for line_num, line in enumerate(lines, 1):
+[?2004l[?2004h>         raw_content = line.strip()
+[?2004l[?2004h>         
+[?2004l[?2004h>         # Try to parse JSON
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             record = json.loads(raw_content)
+[?2004l[?2004h>         except json.JSONDecodeError as e:
+[?2004l[?2004h>             error_entry = {
+[?2004l[?2004h>                 'line_number': line_num,
+[?2004l[?2004h>                 'error_type': 'malformed_json',
+[?2004l[?2004h>                 'error_detail': f'JSON decode error: {str(e)}',
+[?2004l[?2004h>                 'raw_content': raw_content[:200]
+[?2004l[?2004h>             }
+[?2004l[?2004h>             errors.append(error_entry)
+[?2004l[?2004h>             error_counts['malformed_json'] += 1
+[?2004l[?2004h>             continue
+[?2004l[?2004h>         
+[?2004l[?2004h>         # Validate the record
+[?2004l[?2004h>         is_valid, error_info = validate_transaction(record, line_num)
+[?2004l[?2004h>         
+[?2004l[?2004h>         if not is_valid:
+[?2004l[?2004h>             error_type, error_detail = error_info
+[?2004l[?2004h>             error_entry = {
+[?2004l[?2004h>                 'line_number': line_num,
+[?2004l[?2004h>                 'error_type': error_type,
+[?2004l[?2004h>                 'error_detail': error_detail,
+[?2004l[?2004h>                 'raw_content': raw_content[:200]
+[?2004l[?2004h>             }
+[?2004l[?2004h>             errors.append(error_entry)
+[?2004l[?2004h>             error_counts[error_type] += 1
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             # Compute integrity hash
+[?2004l[?2004h>             integrity_hash = compute_integrity_hash(record)
+[?2004l[?2004h>             
+[?2004l[?2004h>             # Create output record
+[?2004l[?2004h>             output_record = {
+[?2004l[?2004h>                 'transaction_id': record['transaction_id'],
+[?2004l[?2004h>                 'timestamp': record['timestamp'],
+[?2004l[?2004h>                 'account_id': record['account_id'],
+[?2004l[?2004h>                 'amount': record['amount'],
+[?2004l[?2004h>                 'currency': record['currency'],
+[?2004l[?2004h>                 'status': record['status'],
+[?2004l[?2004h>                 'integrity_hash': integrity_hash,
+[?2004l[?2004h>                 'processed_at': processing_time
+[?2004l[?2004h>             }
+[?2004l[?2004h>             valid_transactions.append(output_record)
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Sort valid transactions by timestamp
+[?2004l[?2004h>     valid_transactions.sort(key=lambda x: x['timestamp'])
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Write clean audit file
+[?2004l[?2004h>     with open(output_file, 'w') as f:
+[?2004l[?2004h>         for record in valid_transactions:
+[?2004l[?2004h>             f.write(json.dumps(record) + '\n')
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Write error log
+[?2004l[?2004h>     with open(error_file, 'w') as f:
+[?2004l[?2004h>         for error in errors:
+[?2004l[?2004h>             f.write(json.dumps(error) + '\n')
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Generate summary report
+[?2004l[?2004h>     valid_count = len(valid_transactions)
+[?2004l[?2004h>     failed_count = len(errors)
+[?2004l[?2004h>     success_rate = (valid_count / total_lines * 100) if total_lines > 0 else 0
+[?2004l[?2004h>     
+[?2004l[?2004h>     summary = f"""AUDIT PROCESSING SUMMARY
+[?2004l[?2004h> ========================
+[?2004l[?2004h> Input file: /home/user/audit/raw_transactions.jsonl
+[?2004l[?2004h> Total lines processed: {total_lines}
+[?2004l[?2004h> Valid transactions: {valid_count}
+[?2004l[?2004h> Failed records: {failed_count}
+[?2004l[?2004h> Success rate: {success_rate:.2f}%
+[?2004l[?2004h> 
+[?2004l[?2004h> Errors by type:
+[?2004l[?2004h>   malformed_json: {error_counts['malformed_json']}
+[?2004l[?2004h>   missing_field: {error_counts['missing_field']}
+[?2004l[?2004h>   invalid_format: {error_counts['invalid_format']}
+[?2004l[?2004h>   invalid_value: {error_counts['invalid_value']}
+[?2004l[?2004h> 
+[?2004l[?2004h> Processing completed at: {processing_time}
+[?2004l[?2004h> """
+[?2004l[?2004h>     
+[?2004l[?2004h>     with open(summary_file, 'w') as f:
+[?2004l[?2004h>         f.write(summary)
+[?2004l[?2004h>     
+[?2004l[?2004h>     print(f"Processing complete!")
+[?2004l[?2004h>     print(f"Valid transactions: {valid_count}")
+[?2004l[?2004h>     print(f"Failed records: {failed_count}")
+[?2004l[?2004h>     print(f"Output files created:")
+[?2004l[?2004h>     print(f"  - {output_file}")
+[?2004l[?2004h>     print(f"  - {error_file}")
+[?2004l[?2004h>     print(f"  - {summary_file}")
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == '__main__':
+[?2004l[?2004h>     process_audit_logs()
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@dd529fdb864c:/home/user/audit# python3 process_audit.py
+[?2004lProcessing complete!
+Valid transactions: 13
+Failed records: 12
+Output files created:
+  - /home/user/audit/clean_audit.jsonl
+  - /home/user/audit/error_log.jsonl
+  - /home/user/audit/processing_summary.txt
+[?2004hroot@dd529fdb864c:/home/user/audit# ls -la
+[?2004ltotal 36
+drwxrwxrwx 1 root root 4096 Apr 20 23:29 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 Apr 20 23:09 [34;42m..[0m
+-rw-r--r-- 1 root root 3658 Apr 20 23:29 clean_audit.jsonl
+-rw-r--r-- 1 root root 3194 Apr 20 23:29 error_log.jsonl
+-rw-r--r-- 1 root root 6244 Apr 20 23:29 process_audit.py
+-rw-r--r-- 1 root root  333 Apr 20 23:29 processing_summary.txt
+-rw-r--r-- 1 root root 3450 Apr 20 23:09 raw_transactions.jsonl
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "=== CLEAN AUDIT FILE (first 5 records) ==="
+[?2004l=== CLEAN AUDIT FILE (first 5 records) ===
+[?2004hroot@dd529fdb864c:/home/user/audit# head -5 clean_audit.jsonl | python3 -m json.tool
+[?2004lExtra data: line 2 column 1 (char 283)
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "\n=== ERROR LOG FILE (first 5 errors) ==="
+[?2004l\n=== ERROR LOG FILE (first 5 errors) ===
+[?2004hroot@dd529fdb864c:/home/user/audit# head -5 error_log.jsonl | python3 -m json.tool
+[?2004lExtra data: line 2 column 1 (char 179)
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "\n=== PROCESSING SUMMARY ==="
+[?2004l\n=== PROCESSING SUMMARY ===
+[?2004hroot@dd529fdb864c:/home/user/audit# cat processing_summary.txt
+[?2004lAUDIT PROCESSING SUMMARY
+========================
+Input file: /home/user/audit/raw_transactions.jsonl
+Total lines processed: 25
+Valid transactions: 13
+Failed records: 12
+Success rate: 52.00%
+
+Errors by type:
+  malformed_json: 3
+  missing_field: 2
+  invalid_format: 5
+  invalid_value: 2
+
+Processing completed at: 2026-04-20T23:29:54Z
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "=== First 3 clean audit records (one per line) ==="
+[?2004l=== First 3 clean audit records (one per line) ===
+[?2004hroot@dd529fdb864c:/home/user/audit# head -3 clean_audit.jsonl
+[?2004l{"transaction_id": "TXN-00000025", "timestamp": "2024-03-15T07:00:00Z", "account_id": "ACC-020", "amount": 1500.0, "currency": "USD", "status": "completed", "integrity_hash": "17ce88f1d5377fcc9acb43e7baa628086d36d611a26c61657ea0c83f0f680796", "processed_at": "2026-04-20T23:29:54Z"}
+{"transaction_id": "TXN-00000003", "timestamp": "2024-03-15T08:30:00Z", "account_id": "ACC-001", "amount": 200.0, "currency": "GBP", "status": "pending", "integrity_hash": "26eb8261714887e46fca9af6598d41a648b93c984d030e1f534d0c971650e1cc", "processed_at": "2026-04-20T23:29:54Z"}
+{"transaction_id": "TXN-00000001", "timestamp": "2024-03-15T09:00:00Z", "account_id": "ACC-001", "amount": 150.0, "currency": "USD", "status": "completed", "integrity_hash": "9a87d2cb2efbc19b398c0722d8fbbe10476fe7763eb8ebee1195931c5d73f4a6", "processed_at": "2026-04-20T23:29:54Z"}
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "\n=== Last 3 clean audit records ==="
+[?2004l\n=== Last 3 clean audit records ===
+[?2004hroot@dd529fdb864c:/home/user/audit# tail -3 clean_audit.jsonl
+[?2004l{"transaction_id": "TXN-00000021", "timestamp": "2024-03-15T13:45:00Z", "account_id": "ACC-017", "amount": 600.0, "currency": "NZD", "status": "completed", "integrity_hash": "adccb696f5db60180932f01e6a669e5880b4e6b7f443425362799d2fe42ba63e", "processed_at": "2026-04-20T23:29:54Z"}
+{"transaction_id": "TXN-00000023", "timestamp": "2024-03-15T14:15:00Z", "account_id": "ACC-018", "amount": 85.5, "currency": "USD", "status": "completed", "integrity_hash": "7b75fd22bc58009981d2c5fe8cdaa182f79d7baa0e0aa12a3e8a2dd293148567", "processed_at": "2026-04-20T23:29:54Z"}
+{"transaction_id": "TXN-00000024", "timestamp": "2024-03-15T14:30:00Z", "account_id": "ACC-019", "amount": 320.0, "currency": "EUR", "status": "pending", "integrity_hash": "af6fea418dc74a25ec8f15df43c208c3fcf829325a764e135ecf2f26f188e1d8", "processed_at": "2026-04-20T23:29:54Z"}
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "\n=== First 3 error records ==="
+[?2004l\n=== First 3 error records ===
+[?2004hroot@dd529fdb864c:/home/user/audit# head -3 error_log.jsonl
+[?2004l{"line_number": 4, "error_type": "malformed_json", "error_detail": "JSON decode error: Expecting value: line 1 column 1 (char 0)", "raw_content": "this is not valid json at all"}
+{"line_number": 5, "error_type": "invalid_value", "error_detail": "account_id is empty or not a string", "raw_content": "{\"transaction_id\": \"TXN-00000005\", \"timestamp\": \"2024-03-15T10:00:00Z\", \"account_id\": \"\", \"amount\": 50.00, \"currency\": \"USD\", \"status\": \"completed\"}"}
+{"line_number": 6, "error_type": "invalid_format", "error_detail": "invalid currency format: usd", "raw_content": "{\"transaction_id\": \"TXN-00000006\", \"timestamp\": \"2024-03-15T10:15:00Z\", \"account_id\": \"ACC-003\", \"amount\": 300.00, \"currency\": \"usd\", \"status\": \"completed\"}"}
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "\n=== Verify record count ==="
+[?2004l\n=== Verify record count ===
+[?2004hroot@dd529fdb864c:/home/user/audit# wc -l clean_audit.jsonl error_log.jsonl
+[?2004l  13 clean_audit.jsonl
+  12 error_log.jsonl
+  25 total
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "\n=== Verify integrity hash for first record ==="
+[?2004l\n=== Verify integrity hash for first record ===
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "Record: TXN-00000025|2024-03-15T07:00:00Z|ACC-020|1500.00|USD|completed"
+[?2004lRecord: TXN-00000025|2024-03-15T07:00:00Z|ACC-020|1500.00|USD|completed
+[?2004hroot@dd529fdb864c:/home/user/audit# echo -n "TXN-00000025|2024-03-15T07:00:00Z|ACC-020|1500.00|USD|completed" | sha256sum
+[?2004l17ce88f1d5377fcc9acb43e7baa628086d36d611a26c61657ea0c83f0f680796  -
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "Expected: 17ce88f1d5377fcc9acb43e7baa628086d36d611a26c61657ea0c83f0f680796"
+[?2004lExpected: 17ce88f1d5377fcc9acb43e7baa628086d36d611a26c61657ea0c83f0f680796
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "\n=== All error types from error log ==="
+[?2004l\n=== All error types from error log ===
+[?2004hroot@dd529fdb864c:/home/user/audit# cat error_log.jsonl | grep -o '"error_type": "[^"]*"' | sort | uniq -c
+[?2004l      5 "error_type": "invalid_format"
+      2 "error_type": "invalid_value"
+      3 "error_type": "malformed_json"
+      2 "error_type": "missing_field"
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "\n=== Verify timestamps are sorted ==="
+[?2004l\n=== Verify timestamps are sorted ===
+[?2004hroot@dd529fdb864c:/home/user/audit# cat clean_audit.jsonl | grep -o '"timestamp": "[^"]*"' | head -5
+[?2004l"timestamp": "2024-03-15T07:00:00Z"
+"timestamp": "2024-03-15T08:30:00Z"
+"timestamp": "2024-03-15T09:00:00Z"
+"timestamp": "2024-03-15T09:05:30Z"
+"timestamp": "2024-03-15T11:00:00Z"
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "=== Sample valid transaction (formatted) ==="
+[?2004l=== Sample valid transaction (formatted) ===
+[?2004hroot@dd529fdb864c:/home/user/audit# head -1 clean_audit.jsonl | python3 -c "import sys, json; print(json.dumps(json.loads(sys.stdin.read()), indent=2))"
+[?2004l{
+  "transaction_id": "TXN-00000025",
+  "timestamp": "2024-03-15T07:00:00Z",
+  "account_id": "ACC-020",
+  "amount": 1500.0,
+  "currency": "USD",
+  "status": "completed",
+  "integrity_hash": "17ce88f1d5377fcc9acb43e7baa628086d36d611a26c61657ea0c83f0f680796",
+  "processed_at": "2026-04-20T23:29:54Z"
+}
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "\n=== Sample error record (formatted) ==="
+[?2004l\n=== Sample error record (formatted) ===
+[?2004hroot@dd529fdb864c:/home/user/audit# head -1 error_log.jsonl | python3 -c "import sys, json; print(json.dumps(json.loads(sys.stdin.read()), indent=2))"
+[?2004l{
+  "line_number": 4,
+  "error_type": "malformed_json",
+  "error_detail": "JSON decode error: Expecting value: line 1 column 1 (char 0)",
+  "raw_content": "this is not valid json at all"
+}
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "\n=== Verify all output files exist ==="
+[?2004l\n=== Verify all output files exist ===
+[?2004hroot@dd529fdb864c:/home/user/audit# ls -lh clean_audit.jsonl error_log.jsonl processing_summary.txt
+[?2004l-rw-r--r-- 1 root root 3.6K Apr 20 23:29 clean_audit.jsonl
+-rw-r--r-- 1 root root 3.2K Apr 20 23:29 error_log.jsonl
+-rw-r--r-- 1 root root  333 Apr 20 23:29 processing_summary.txt
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "\n=== Final verification complete ==="
+[?2004l\n=== Final verification complete ===
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "All requirements met:"
+[?2004lAll requirements met:
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "✓ Valid transactions in clean_audit.jsonl (13 records, sorted by timestamp)"
+[?2004l✓ Valid transactions in clean_audit.jsonl (13 records, sorted by timestamp)
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "✓ Errors logged in error_log.jsonl (12 records with proper categorization)"
+[?2004l✓ Errors logged in error_log.jsonl (12 records with proper categorization)
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "✓ Summary report in processing_summary.txt (correct format and counts)"
+[?2004l✓ Summary report in processing_summary.txt (correct format and counts)
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "✓ Integrity hashes correctly computed using SHA-256"
+[?2004l✓ Integrity hashes correctly computed using SHA-256
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "✓ All validation rules properly enforced"
+[?2004l✓ All validation rules properly enforced
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "\n========================================"
+[?2004l\n========================================
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "AUDIT PROCESSING COMPLETE"
+[?2004lAUDIT PROCESSING COMPLETE
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "========================================"
+[?2004l========================================
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "\nOutput files generated:"
+[?2004l\nOutput files generated:
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "  1. /home/user/audit/clean_audit.jsonl (13 valid transactions)"
+[?2004l  1. /home/user/audit/clean_audit.jsonl (13 valid transactions)
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "  2. /home/user/audit/error_log.jsonl (12 error records)"
+[?2004l  2. /home/user/audit/error_log.jsonl (12 error records)
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "  3. /home/user/audit/processing_summary.txt (summary report)"
+[?2004l  3. /home/user/audit/processing_summary.txt (summary report)
+[?2004hroot@dd529fdb864c:/home/user/audit# echo "\nSummary:"
+[?2004l\nSummary:
+[?2004hroot@dd529fdb864c:/home/user/audit# cat processing_summary.txt
+[?2004lAUDIT PROCESSING SUMMARY
+========================
+Input file: /home/user/audit/raw_transactions.jsonl
+Total lines processed: 25
+Valid transactions: 13
+Failed records: 12
+Success rate: 52.00%
+
+Errors by type:
+  malformed_json: 3
+  missing_field: 2
+  invalid_format: 5
+  invalid_value: 2
+
+Processing completed at: 2026-04-20T23:29:54Z
+[?2004hroot@dd529fdb864c:/home/user/audit# 

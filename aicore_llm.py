@@ -23,15 +23,6 @@ _MODEL_MAP: dict[str, ClaudeModels] = {}
 for m in ClaudeModels:
     _MODEL_MAP[m.alias] = m
     _MODEL_MAP[m.model_name] = m
-# Also map some common litellm-style names
-_MODEL_MAP.update({
-    "claude-opus-4-5-20251101": ClaudeModels.CLAUDE_OPUS,
-    "anthropic/claude-opus-4-5-20251101": ClaudeModels.CLAUDE_OPUS,
-    "claude-4-sonnet": ClaudeModels.CLAUDE_4,
-    "anthropic/claude-4-sonnet": ClaudeModels.CLAUDE_4,
-    "claude-sonnet-4-20250514": ClaudeModels.CLAUDE_4,
-    "anthropic/claude-sonnet-4-20250514": ClaudeModels.CLAUDE_4,
-})
 
 
 def _resolve_model(model_name: str) -> ClaudeModels:
@@ -43,9 +34,9 @@ def _resolve_model(model_name: str) -> ClaudeModels:
     for key, val in _MODEL_MAP.items():
         if key.lower() == lower:
             return val
-    # Default to Opus
-    logger.warning("Unknown model %r, defaulting to claude_opus", model_name)
-    return ClaudeModels.CLAUDE_OPUS
+    raise ValueError(
+        f"Unknown model {model_name!r}. Available models: {list(_MODEL_MAP.keys())}"
+    )
 
 
 class AICoreAnthropicLLM(BaseLLM):
