@@ -1,0 +1,300 @@
+[?2004hroot@85ba19c88e12:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@85ba19c88e12:/home/user# clear
+[?2004l[H[J[?2004hroot@85ba19c88e12:/home/user# ls -la /etc/monitoring/
+[?2004ltotal 16
+drwxrwxrwx 1 root root 4096 Apr 20 23:07 [0m[34;42m.[0m
+drwxr-xr-x 1 root root 4096 Apr 20 23:18 [01;34m..[0m
+-rw-rw-rw- 1 root root  773 Apr 20 23:07 alerts.yaml
+-rw-rw-rw- 1 root root  425 Apr 20 23:07 uptime.toml
+[?2004hroot@85ba19c88e12:/home/user# cat /etc/monitoring/alerts.yaml
+[?2004l# Prometheus alerting rules
+groups:
+  - name: service_alerts
+    rules:
+      - alert: HighLatency
+        expr: http_request_duration_seconds > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency detected on {{ $labels.instance }}"
+
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+
+      - alert: HighMemoryUsage
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory usage critical on {{ $labels.instance }}"
+[?2004hroot@85ba19c88e12:/home/user# cat /etc/monitoring/uptime.toml
+[?2004l# Uptime checker daemon configuration
+
+[global]
+check_interval = 60
+retry_count = 3
+log_level = "info"
+
+[[endpoints]]
+name = "api-gateway"
+url = "https://api.example.com/health"
+expected_status = 204
+method = "GET"
+
+[[endpoints]]
+name = "auth-service"
+url = "https://auth.internal.example.com/ping"
+expected_status = 200
+critical = false
+
+[[endpoints]]
+name = "frontend"
+url = "https://www.example.com"
+expected_status = 200
+[?2004hroot@85ba19c88e12:/home/user# cp /etc/monitoring/alerts.yaml /etc/monitoring/alerts.yaml.bak
+[?2004l[?2004hroot@85ba19c88e12:/home/user# cp /etc/monitoring/uptime.toml /etc/monitoring/uptime.toml.bak
+[?2004l[?2004hroot@85ba19c88e12:/home/user# sed -i '/alert: HighLatency/,/for:/ s/for: 5m/for: 3m/' /etc/monitoring/alerts.yaml
+[?2004l[?2004hroot@85ba19c88e12:/home/user# cat /etc/monitoring/alerts.yaml | grep -A 2 HighLatency
+[?2004l      - alert: [01;31m[KHighLatency[m[K
+        expr: http_request_duration_seconds > 0.5
+        for: 3m
+[?2004hroot@85ba19c88e12:/home/user# sed -i '/alert: ServiceDown/,/annotations:/ s/team: platform/team: platform\n          escalation_level: critical/' /etc/monitoring/alerts.yaml
+[?2004l[?2004hroot@85ba19c88e12:/home/user# cat /etc/monitoring/alerts.yaml | grep -A 8 ServiceDown
+[?2004l      - alert: [01;31m[KServiceDown[m[K
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+          escalation_level: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+[?2004hroot@85ba19c88e12:/home/user# cat >> /etc/monitoring/alerts.yaml << 'EOF'
+[?2004l[?2004h> 
+[?2004l[?2004h>       - alert: DiskSpaceLow
+[?2004l[?2004h>         expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.1
+[?2004l[?2004h>         for: 10m
+[?2004l[?2004h>         labels:
+[?2004l[?2004h>           severity: warning
+[?2004l[?2004h>           team: infrastructure
+[?2004l[?2004h>         annotations:
+[?2004l[?2004h>           summary: "Disk space below 10% on {{ $labels.instance }}"
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@85ba19c88e12:/home/user# cat /etc/monitoring/alerts.yaml
+[?2004l# Prometheus alerting rules
+groups:
+  - name: service_alerts
+    rules:
+      - alert: HighLatency
+        expr: http_request_duration_seconds > 0.5
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency detected on {{ $labels.instance }}"
+
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+          escalation_level: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+
+      - alert: HighMemoryUsage
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory usage critical on {{ $labels.instance }}"
+
+      - alert: DiskSpaceLow
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: "Disk space below 10% on {{ $labels.instance }}"
+[?2004hroot@85ba19c88e12:/home/user# sed -i 's/check_interval = 60/check_interval = 30/' /etc/monitoring/uptime.toml
+[?2004l[?2004hroot@85ba19c88e12:/home/user# sed -i '/check_interval = 30/a timeout = 10' /etc/monitoring/uptime.toml
+[?2004l[?2004hroot@85ba19c88e12:/home/user# cat /etc/monitoring/uptime.toml
+[?2004l# Uptime checker daemon configuration
+
+[global]
+check_interval = 30
+timeout = 10
+retry_count = 3
+log_level = "info"
+
+[[endpoints]]
+name = "api-gateway"
+url = "https://api.example.com/health"
+expected_status = 204
+method = "GET"
+
+[[endpoints]]
+name = "auth-service"
+url = "https://auth.internal.example.com/ping"
+expected_status = 200
+critical = false
+
+[[endpoints]]
+name = "frontend"
+url = "https://www.example.com"
+expected_status = 200
+[?2004hroot@85ba19c88e12:/home/user# sed -i '/name = "api-gateway"/,/method = "GET"/ s/expected_status = 204/expected_status = 200/' /etc/monitoring/uptime.toml
+[?2004l[?2004hroot@85ba19c88e12:/home/user# sed -i '/name = "api-gateway"/,/method = "GET"/ s/method = "GET"/method = "GET"\ncritical = true/' /etc/monitoring/uptime.toml
+[?2004l[?2004hroot@85ba19c88e12:/home/user# cat /etc/monitoring/uptime.toml
+[?2004l# Uptime checker daemon configuration
+
+[global]
+check_interval = 30
+timeout = 10
+retry_count = 3
+log_level = "info"
+
+[[endpoints]]
+name = "api-gateway"
+url = "https://api.example.com/health"
+expected_status = 200
+method = "GET"
+critical = true
+
+[[endpoints]]
+name = "auth-service"
+url = "https://auth.internal.example.com/ping"
+expected_status = 200
+critical = false
+
+[[endpoints]]
+name = "frontend"
+url = "https://www.example.com"
+expected_status = 200
+[?2004hroot@85ba19c88e12:/home/user# cat >> /etc/monitoring/uptime.toml << 'EOF'
+[?2004l[?2004h> 
+[?2004l[?2004h> [[endpoints]]
+[?2004l[?2004h> name = "payment-service"
+[?2004l[?2004h> url = "https://payments.internal.example.com/health"
+[?2004l[?2004h> expected_status = 200
+[?2004l[?2004h> critical = true
+[?2004l[?2004h> 
+[?2004l[?2004h> [endpoints.headers]
+[?2004l[?2004h> Authorization = "Bearer ${PAYMENTS_TOKEN}"
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@85ba19c88e12:/home/user# cat /etc/monitoring/uptime.toml
+[?2004l# Uptime checker daemon configuration
+
+[global]
+check_interval = 30
+timeout = 10
+retry_count = 3
+log_level = "info"
+
+[[endpoints]]
+name = "api-gateway"
+url = "https://api.example.com/health"
+expected_status = 200
+method = "GET"
+critical = true
+
+[[endpoints]]
+name = "auth-service"
+url = "https://auth.internal.example.com/ping"
+expected_status = 200
+critical = false
+
+[[endpoints]]
+name = "frontend"
+url = "https://www.example.com"
+expected_status = 200
+
+[[endpoints]]
+name = "payment-service"
+url = "https://payments.internal.example.com/health"
+expected_status = 200
+critical = true
+
+[endpoints.headers]
+Authorization = "Bearer ${PAYMENTS_TOKEN}"
+[?2004hroot@85ba19c88e12:/home/user# cat > /home/user/config_changes.log << 'EOF'
+[?2004l[?2004h> YAML_CHANGES:
+[?2004l[?2004h> - alerts.yaml: HighLatency for duration updated
+[?2004l[?2004h> - alerts.yaml: ServiceDown escalation_level added
+[?2004l[?2004h> - alerts.yaml: DiskSpaceLow alert added
+[?2004l[?2004h> TOML_CHANGES:
+[?2004l[?2004h> - uptime.toml: global.check_interval updated to 30
+[?2004l[?2004h> - uptime.toml: global.timeout added
+[?2004l[?2004h> - uptime.toml: api-gateway endpoint modified
+[?2004l[?2004h> - uptime.toml: payment-service endpoint added
+[?2004l[?2004h> VALIDATION: COMPLETE
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@85ba19c88e12:/home/user# cat /home/user/config_changes.log
+[?2004lYAML_CHANGES:
+- alerts.yaml: HighLatency for duration updated
+- alerts.yaml: ServiceDown escalation_level added
+- alerts.yaml: DiskSpaceLow alert added
+TOML_CHANGES:
+- uptime.toml: global.check_interval updated to 30
+- uptime.toml: global.timeout added
+- uptime.toml: api-gateway endpoint modified
+- uptime.toml: payment-service endpoint added
+VALIDATION: COMPLETE
+[?2004hroot@85ba19c88e12:/home/user# echo '=== FINAL VERIFICATION ==='
+[?2004l=== FINAL VERIFICATION ===
+[?2004hroot@85ba19c88e12:/home/user# echo 'Checking alerts.yaml changes:'
+[?2004lChecking alerts.yaml changes:
+[?2004hroot@85ba19c88e12:/home/user# grep -A 1 'alert: HighLatency' /etc/monitoring/alerts.yaml | grep 'for:'
+[?2004l[?2004hroot@85ba19c88e12:/home/user# grep -A 5 'alert: ServiceDown' /etc/monitoring/alerts.yaml | grep 'escalation_level'
+[?2004l[?2004hroot@85ba19c88e12:/home/user# grep 'alert: DiskSpaceLow' /etc/monitoring/alerts.yaml
+[?2004l      - [01;31m[Kalert: DiskSpaceLow[m[K
+[?2004hroot@85ba19c88e12:/home/user# echo 'Checking uptime.toml changes:'
+[?2004lChecking uptime.toml changes:
+[?2004hroot@85ba19c88e12:/home/user# grep 'check_interval' /etc/monitoring/uptime.toml
+[?2004l[01;31m[Kcheck_interval[m[K = 30
+[?2004hroot@85ba19c88e12:/home/user# grep 'timeout' /etc/monitoring/uptime.toml
+[?2004l[01;31m[Ktimeout[m[K = 10
+[?2004hroot@85ba19c88e12:/home/user# grep -A 4 'name = "api-gateway"' /etc/monitoring/uptime.toml | grep -E '(expected_status|critical)'
+[?2004l[01;31m[Kexpected_status[m[K = 200
+[01;31m[Kcritical[m[K = true
+[?2004hroot@85ba19c88e12:/home/user# grep 'payment-service' /etc/monitoring/uptime.toml
+[?2004lname = "[01;31m[Kpayment-service[m[K"
+[?2004hroot@85ba19c88e12:/home/user# echo 'All changes verified successfully!'
+[?2004lAll changes verified successfully!
+[?2004hroot@85ba19c88e12:/home/user# grep -A 3 'alert: HighLatency' /etc/monitoring/alerts.yaml
+[?2004l      - [01;31m[Kalert: HighLatency[m[K
+        expr: http_request_duration_seconds > 0.5
+        for: 3m
+        labels:
+[?2004hroot@85ba19c88e12:/home/user# grep -A 7 'alert: ServiceDown' /etc/monitoring/alerts.yaml
+[?2004l      - [01;31m[Kalert: ServiceDown[m[K
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+          escalation_level: critical
+        annotations:
+[?2004hroot@85ba19c88e12:/home/user# grep -A 8 'alert: DiskSpaceLow' /etc/monitoring/alerts.yaml
+[?2004l      - [01;31m[Kalert: DiskSpaceLow[m[K
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: "Disk space below 10% on {{ $labels.instance }}"
+[?2004hroot@85ba19c88e12:/home/user# 

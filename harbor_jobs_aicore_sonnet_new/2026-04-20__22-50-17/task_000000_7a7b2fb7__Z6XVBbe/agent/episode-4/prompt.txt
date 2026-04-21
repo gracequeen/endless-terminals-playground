@@ -1,0 +1,231 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@eec4154ec0a2:~/migration$ cat > analyze.py << 'EOF'
+nt(f"Collecting dependencies for {len(required)} required packages...")
+all_deps = {}
+dep_sources = {}
+
+for pkg in required:
+    print(f"Processing {pkg}...")
+    deps = get_dependencies(pkg, 3)
+    for dep in deps:
+        all_deps[dep] = True
+        if dep not in dep_sources:
+            dep_sources[dep] = []
+        if pkg not in dep_sources[dep]:
+            dep_sources[dep].append(pkg)
+
+removable = []
+protected = []
+
+for pkg in installed:
+    if pkg in required:
+        continue
+    if pkg in all_deps:
+        protected.append(pkg)
+    else:
+        removable.append(pkg)
+
+print(f"Removable: {len(removable)}, Protected: {len(protected)}")
+
+total_space = 0
+removable_data = []
+
+for pkg in sorted(removable):
+    output = run_cmd(f"apt-cache show {pkg} 2>/dev/null")
+    version = ''
+    size = 0
+    for line in output.split('\n'):
+        if line.startswith('Version:'):
+            version = line.split(':', 1)[1].strip()
+        elif line.startswith('Installed-Size:'):
+            size = int(line.split(':')[1].strip())
+            break
+
+    policy_output = run_cmd(f"apt-cache policy {pkg} 2>/dev/null")
+    has_security = 'security' in policy_output.lower()
+
+    total_space += size
+    removable_data.append({
+        'name': pkg,
+        'installed_version': version,
+        'size_kb': size,
+        'has_security_update': has_security
+    })
+
+protected_data = []
+for pkg in sorted(protected):
+    protected_data.append({
+        'name': pkg,
+        'required_by': sorted(dep_sources.get(pkg, []))
+    })
+
+report = {
+    'summary': {
+        'total_installed': len(installed),
+        'total_required': len(required),
+        'removable_count': len(removable),
+        'kept_as_dependencies': len(protected),
+        'total_space_savings_kb': total_space
+    },
+    'removable_packages': removable_data,
+    'dependency_protected': protected_data
+}
+
+with open('removal_report.json', 'w') as f:
+    json.dump(report, f, indent=2)
+
+with open('remove_packages.sh', 'w') as f:
+    f.write('#!/bin/bash\n')
+    f.write('# Auto-generated package removal script\n')
+    f.write('# This will remove packages identified as unnecessary\n\n')
+    f.write('echo "This will remove the following packages:"\n')
+    for pkg in sorted(removable):
+        f.write(f'echo "  - {pkg}"\n')
+    f.write('echo ""\n')
+    f.write('echo "Dry run command:"\n')
+    f.write(f'echo "apt-get remove --dry-run {" ".join(sorted(removable))}"\n')
+    f.write('echo ""\n')
+    f.write('read -p "Proceed with removal? (yes/no): " confirm\n')
+    f.write('if [ "$confirm" = "yes" ]; then\n')
+    f.write(f'  apt-get remove -y {" ".join(sorted(removable))}\n')
+    f.write('else\n')
+    f.write('  echo "Removal cancelled."\n')
+    f.write('fi\n')
+
+run_cmd('chmod +x remove_packages.sh')
+print("Analysis complete!")
+EOF
+> import subprocess
+> import json
+> import re
+>
+> def run_cmd(cmd):
+>     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+>     return result.stdout
+>
+> def get_dependencies(package, max_depth=3, current_depth=0, visited=None):
+>     if visited is None:
+>         visited = set()
+>     if current_depth >= max_depth or package in visited:
+>         return set()
+>     visited.add(package)
+>     deps = set()
+>     output = run_cmd(f"apt-cache depends {package} 2>/dev/null")
+>     for line in output.split('\n'):
+>         if line.strip().startswith('Depends:'):
+>             dep = line.split(':')[1].strip().split()[0]
+>             deps.add(dep)
+>             if current_depth < max_depth - 1:
+>                 deps.update(get_dependencies(dep, max_depth, current_depth + 1, visited))
+>     return deps
+>
+> with open('installed_packages.txt') as f:
+>     installed = [line.strip() for line in f if line.strip()]
+>
+> with open('required_packages.txt') as f:
+>     required = [line.strip() for line in f if line.strip()]
+>
+> print(f"Collecting dependencies for {len(required)} required packages...")
+> all_deps = {}
+> dep_sources = {}
+>
+> for pkg in required:
+>     print(f"Processing {pkg}...")
+>     deps = get_dependencies(pkg, 3)
+>     for dep in deps:
+>         all_deps[dep] = True
+>         if dep not in dep_sources:
+>             dep_sources[dep] = []
+>         if pkg not in dep_sources[dep]:
+>             dep_sources[dep].append(pkg)
+>
+> removable = []
+> protected = []
+>
+> for pkg in installed:
+>     if pkg in required:
+>         continue
+>     if pkg in all_deps:
+>         protected.append(pkg)
+>     else:
+>         removable.append(pkg)
+>
+> print(f"Removable: {len(removable)}, Protected: {len(protected)}")
+>
+> total_space = 0
+> removable_data = []
+>
+> for pkg in sorted(removable):
+>     output = run_cmd(f"apt-cache show {pkg} 2>/dev/null")
+>     version = ''
+>     size = 0
+>     for line in output.split('\n'):
+>         if line.startswith('Version:'):
+>             version = line.split(':', 1)[1].strip()
+>         elif line.startswith('Installed-Size:'):
+>             size = int(line.split(':')[1].strip())
+>             break
+>
+>     policy_output = run_cmd(f"apt-cache policy {pkg} 2>/dev/null")
+>     has_security = 'security' in policy_output.lower()
+>
+>     total_space += size
+>     removable_data.append({
+>         'name': pkg,
+>         'installed_version': version,
+>         'size_kb': size,
+>         'has_security_update': has_security
+>     })
+>
+> protected_data = []
+> for pkg in sorted(protected):
+>     protected_data.append({
+>         'name': pkg,
+>         'required_by': sorted(dep_sources.get(pkg, []))
+>     })
+>
+> report = {
+>     'summary': {
+>         'total_installed': len(installed),
+>         'total_required': len(required),
+>         'removable_count': len(removable),
+>         'kept_as_dependencies': len(protected),
+>         'total_space_savings_kb': total_space
+>     },
+>     'removable_packages': removable_data,
+>     'dependency_protected': protected_data
+> }
+>
+> with open('removal_report.json', 'w') as f:
+>     json.dump(report, f, indent=2)
+>
+> with open('remove_packages.sh', 'w') as f:
+>     f.write('#!/bin/bash\n')
+>     f.write('# Auto-generated package removal script\n')
+>     f.write('# This will remove packages identified as unnecessary\n\n')
+>     f.write('echo "This will remove the following packages:"\n')
+>     for pkg in sorted(removable):
+>         f.write(f'echo "  - {pkg}"\n')
+>     f.write('echo ""\n')
+>     f.write('echo "Dry run command:"\n')
+>     f.write(f'echo "apt-get remove --dry-run {" ".join(sorted(removable))}"\n')
+>     f.write('echo ""\n')
+>     f.write('read -p "Proceed with removal? (yes/no): " confirm\n')
+>     f.write('if [ "$confirm" = "yes" ]; then\n')
+>     f.write(f'  apt-get remove -y {" ".join(sorted(removable))}\n')
+>     f.write('else\n')
+>     f.write('  echo "Removal cancelled."\n')
+>     f.write('fi\n')
+>
+> run_cmd('chmod +x remove_packages.sh')
+> print("Analysis complete!")
+> EOF
+user@eec4154ec0a2:~/migration$ python3 analyze.py
+Collecting dependencies for 9 required packages...
+Processing curl...
+

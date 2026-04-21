@@ -1,0 +1,182 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+root@e1a1f1842c81:/home/user/credential-rotation# cat > generate_report.py << 'EOF'
+> #!/usr/bin/env python3
+> import re
+> from datetime import datetime
+> from collections import defaultdict
+>
+> # Parse log files
+> log_files = {
+>     'AWS IAM': 'aws-rotation.log',
+>     'Database': 'db-rotation.log',
+>     'API Keys': 'api-keys.log'
+> }
+>
+> data = defaultdict(list)
+> failed_rotations = []
+>
+> for category, filename in log_files.items():
+>     with open(filename, 'r') as f:
+>         for line in f:
+>             match = re.match(r'\[(.*?)\] (.*?) \| (.*?) \| (.*?) \| (.*?) \| (.*?)$', line.strip())
+>             if match:
+>                 timestamp, service, old_key, new_key, status, rotated_by = match.groups()
+>                 data[category].append({
+>                     'service': service,
+>                     'old_key': old_key,
+>                     'new_key': new_key,
+>                     'status': status,
+>                     'rotated_by': rotated_by
+>                 })
+>                 if status == 'FAILED':
+>                     failed_rotations.append({
+>                         'service': service,
+>                         'category': category,
+>                         'status': status
+>                     })
+>
+> # Sort entries alphabetically by service name
+> for category in data:
+>     data[category].sort(key=lambda x: x['service'].lower())
+>
+> # Calculate statistics
+> stats = {}
+> total_count = 0
+> total_success = 0
+> total_failed = 0
+>
+> for category in ['AWS IAM', 'Database', 'API Keys']:
+>     count = len(data[category])
+>     success = sum(1 for item in data[category] if item['status'] == 'SUCCESS')
+>     failed = sum(1 for item in data[category] if item['status'] == 'FAILED')
+>     stats[category] = {'count': count, 'success': success, 'failed': failed}
+>     total_count += count
+>     total_success += success
+>     total_failed += failed
+>
+> # Generate markdown report
+> generated_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+>
+> with open('ROTATION_REPORT.md', 'w') as f:
+>     f.write('# Credential Rotation Report\n\n')
+>     f.write(f'**Generated:** {generated_time}\n')
+>     f.write(f'**Total Credentials Rotated:** {total_count}\n\n')
+>
+>     f.write('## Summary by Category\n\n')
+>     f.write('| Category | Count | Success | Failed |\n')
+>     f.write('|----------|-------|---------|--------|\n')
+>     for category in ['AWS IAM', 'Database', 'API Keys']:
+>         s = stats[category]
+>         f.write(f'| {category} | {s["count"]} | {s["success"]} | {s["failed"]} |\n')
+>     f.write('\n')
+>
+>     f.write('## Detailed Rotation Log\n\n')
+>
+>     # AWS IAM Credentials
+>     f.write('### AWS IAM Credentials\n\n')
+>     f.write('| Service | Old Key ID | New Key ID | Status | Rotated By |\n')
+>     f.write('|---------|------------|------------|--------|------------|\n')
+>     for item in data['AWS IAM']:
+>         f.write(f'| {item["service"]} | {item["old_key"]} | {item["new_key"]} | {item["status"]} | {item["rotated_by"]} |\n')
+>     f.write('\n')
+>
+>     # Database Credentials
+>     f.write('### Database Credentials\n\n')
+>     f.write('| Service | Old Key ID | New Key ID | Status | Rotated By |\n')
+>     f.write('|---------|------------|------------|--------|------------|\n')
+>     for item in data['Database']:
+>         f.write(f'| {item["service"]} | {item["old_key"]} | {item["new_key"]} | {item["status"]} | {item["rotated_by"]} |\n')
+>     f.write('\n')
+>
+>     # API Keys
+>     f.write('### API Keys\n\n')
+>     f.write('| Service | Old Key ID | New Key ID | Status | Rotated By |\n')
+>     f.write('|---------|------------|------------|--------|------------|\n')
+>     for item in data['API Keys']:
+>         f.write(f'| {item["service"]} | {item["old_key"]} | {item["new_key"]} | {item["status"]} | {item["rotated_by"]} |\n')
+>     f.write('\n')
+>
+>     # Failed Rotations
+>     f.write('## Failed Rotations\n\n')
+>     if failed_rotations:
+>         f.write('> **Action Required:** The following credentials failed rotation and need manual intervention.\n\n')
+>         for failure in failed_rotations:
+>             f.write(f'- {failure["service"]} ({failure["category"]}): Rotation failed\n')
+>     else:
+>         f.write('> No failed rotations. All credentials rotated successfully.\n')
+>     f.write('\n')
+>
+>     # Sign-off
+>     f.write('## Sign-off\n\n')
+>     f.write('- [ ] All successful rotations verified\n')
+>     f.write('- [ ] Failed rotations escalated\n')
+>     f.write('- [ ] Old credentials scheduled for deletion\n')
+>
+> print('Report generated successfully!')
+> EOF
+root@e1a1f1842c81:/home/user/credential-rotation# python3 generate_report.py
+Report generated successfully!
+root@e1a1f1842c81:/home/user/credential-rotation# cat ROTATION_REPORT.md
+# Credential Rotation Report
+
+**Generated:** 2026-04-20 23:33:51
+**Total Credentials Rotated:** 14
+
+## Summary by Category
+
+| Category | Count | Success | Failed |
+|----------|-------|---------|--------|
+| AWS IAM | 5 | 4 | 1 |
+| Database | 4 | 3 | 1 |
+| API Keys | 5 | 4 | 1 |
+
+## Detailed Rotation Log
+
+### AWS IAM Credentials
+
+| Service | Old Key ID | New Key ID | Status | Rotated By |
+|---------|------------|------------|--------|------------|
+| analytics-pipeline | AKIA3EXAMPLE3OLD | AKIA3EXAMPLE3NEW | FAILED | jsmith |
+| backup-service | AKIA3EXAMPLE5OLD | AKIA3EXAMPLE5NEW | SUCCESS | mwilliams |
+| notification-worker | AKIA3EXAMPLE4OLD | AKIA3EXAMPLE4NEW | SUCCESS | mwilliams |
+| payment-service | AKIA3EXAMPLE1OLD | AKIA3EXAMPLE1NEW | SUCCESS | jsmith |
+| user-auth-api | AKIA3EXAMPLE2OLD | AKIA3EXAMPLE2NEW | SUCCESS | jsmith |
+
+### Database Credentials
+
+| Service | Old Key ID | New Key ID | Status | Rotated By |
+|---------|------------|------------|--------|------------|
+| mongodb-sessions | db_old_hash_004 | db_new_hash_004 | SUCCESS | mwilliams |
+| mysql-reporting | db_old_hash_002 | db_new_hash_002 | SUCCESS | jsmith |
+| postgres-primary | db_old_hash_001 | db_new_hash_001 | SUCCESS | jsmith |
+| redis-cache | db_old_hash_003 | db_new_hash_003 | FAILED | mwilliams |
+
+### API Keys
+
+| Service | Old Key ID | New Key ID | Status | Rotated By |
+|---------|------------|------------|--------|------------|
+| datadog-monitoring | dd_old_api_key | dd_new_api_key | FAILED | mwilliams |
+| github-actions | ghp_oldtoken123 | ghp_newtoken456 | SUCCESS | jsmith |
+| sendgrid-email | SG.old_key_abc | SG.new_key_xyz | SUCCESS | jsmith |
+| stripe-payments | sk_old_stripe123 | sk_new_stripe456 | SUCCESS | jsmith |
+| twilio-sms | twilio_old_sid | twilio_new_sid | SUCCESS | mwilliams |
+
+## Failed Rotations
+
+> **Action Required:** The following credentials failed rotation and need manual intervention.
+
+- analytics-pipeline (AWS IAM): Rotation failed
+- redis-cache (Database): Rotation failed
+- datadog-monitoring (API Keys): Rotation failed
+
+## Sign-off
+
+- [ ] All successful rotations verified
+- [ ] Failed rotations escalated
+- [ ] Old credentials scheduled for deletion
+root@e1a1f1842c81:/home/user/credential-rotation#

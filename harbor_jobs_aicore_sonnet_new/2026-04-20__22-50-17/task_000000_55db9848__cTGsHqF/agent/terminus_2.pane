@@ -1,0 +1,242 @@
+[?2004hroot@d2d05f14338c:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@d2d05f14338c:/home/user# clear
+[?2004l[H[J[?2004hroot@d2d05f14338c:/home/user# head -20 /home/user/disk_inventory.txt
+[?2004l15728640	/var/data/logs/app.log
+5242880	/var/data/logs/debug.log
+52428800	/var/data/backups/full_backup.tar.gz
+10485760	/var/data/backups/incremental.tar.gz
+2097152	/var/data/backups/config.bak
+1048576	/var/data/cache/thumbnails/img001.jpg
+524288	/var/data/cache/thumbnails/img002.jpg
+262144	/var/data/cache/thumbnails/img003.jpg
+20971520	/var/data/cache/session_data.db
+3145728	/var/data/uploads/document.pdf
+7340032	/var/data/uploads/spreadsheet.xlsx
+15728640	/var/data/uploads/presentation.pptx
+1048576	/var/data/uploads/readme
+524288	/var/data/uploads/notes.txt
+104857600	/var/data/archives/2023_archive.tar.gz
+31457280	/var/data/archives/2022_archive.tar.gz
+8388608	/var/data/archives/old_logs
+4096	/var/data/logs
+4096	/var/data/backups
+4096	/var/data/cache/thumbnails
+[?2004hroot@d2d05f14338c:/home/user# wc -l /home/user/disk_inventory.txt
+[?2004l24 /home/user/disk_inventory.txt
+[?2004hroot@d2d05f14338c:/home/user# mkdir -p /home/user/reports
+[?2004l[?2004hroot@d2d05f14338c:/home/user# cat /home/user/disk_inventory.txt
+[?2004l15728640	/var/data/logs/app.log
+5242880	/var/data/logs/debug.log
+52428800	/var/data/backups/full_backup.tar.gz
+10485760	/var/data/backups/incremental.tar.gz
+2097152	/var/data/backups/config.bak
+1048576	/var/data/cache/thumbnails/img001.jpg
+524288	/var/data/cache/thumbnails/img002.jpg
+262144	/var/data/cache/thumbnails/img003.jpg
+20971520	/var/data/cache/session_data.db
+3145728	/var/data/uploads/document.pdf
+7340032	/var/data/uploads/spreadsheet.xlsx
+15728640	/var/data/uploads/presentation.pptx
+1048576	/var/data/uploads/readme
+524288	/var/data/uploads/notes.txt
+104857600	/var/data/archives/2023_archive.tar.gz
+31457280	/var/data/archives/2022_archive.tar.gz
+8388608	/var/data/archives/old_logs
+4096	/var/data/logs
+4096	/var/data/backups
+4096	/var/data/cache/thumbnails
+4096	/var/data/cache
+4096	/var/data/uploads
+4096	/var/data/archives
+4096	/var/data
+[?2004hroot@d2d05f14338c:/home/user# cat > /tmp/process_inventory.py << 'EOF'
+[?2004lreports/extension_summary.csv', 'w') as f:
+    f.write("extension,total_bytes\n")
+    for ext, total in sorted_extensions:
+        f.write(f"{ext},{total}\n")
+
+# Report 3: Directory rollup
+# Find immediate subdirectories of /var/data
+subdir_totals = defaultdict(int)
+total_size = 0
+
+for size, path in entries:
+    if path == '/var/data':
+        continue
+    
+    if path.startswith('/var/data/'):
+        # Get immediate subdirectory name
+        rel_path = path[10:]  # Remove '/var/data/'
+        subdir = rel_path.split('/')[0]
+        subdir_totals[subdir] += size
+        total_size += size
+
+# Sort by total bytes descending
+sorted_subdirs = sorted(subdir_totals.items(), key=lambda x: -x[1])
+
+with open('/home/user/reports/directory_rollup.txt', 'w') as f:
+    for dirname, total_bytes in sorted_subdirs:
+        percentage = (total_bytes / total_size * 100) if total_size > 0 else 0
+        f.write(f"{dirname} {total_bytes} {percentage:.1f}%\n")
+
+EOF
+[?2004h> import os
+[?2004l[?2004h> import math
+[?2004l[?2004h> from collections import defaultdict
+[?2004l[?2004h> 
+[?2004l[?2004h> # Read the inventory file
+[?2004l[?2004h> with open('/home/user/disk_inventory.txt', 'r') as f:
+[?2004l[?2004h>     lines = f.readlines()
+[?2004l[?2004h> 
+[?2004l[?2004h> # Parse entries
+[?2004l[?2004h> entries = []
+[?2004l[?2004h> for line in lines:
+[?2004l[?2004h>     parts = line.strip().split('\t')
+[?2004l[?2004h>     if len(parts) == 2:
+[?2004l[?2004h>         size = int(parts[0])
+[?2004l[?2004h>         path = parts[1]
+[?2004l[?2004h>         entries.append((size, path))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Report 1: Large files (>= 10MB)
+[?2004l[?2004h> large_files = []
+[?2004l[?2004h> for size, path in entries:
+[?2004l[?2004h>     # Skip directories (they typically have small sizes like 4096)
+[?2004l[?2004h>     # A file is not a directory if it has an extension or if it's >= 10MB
+[?2004l[?2004h>     if size >= 10485760:
+[?2004l[?2004h>         # Check if it's actually a file (not a directory entry)
+[?2004l[?2004h>         # Directories in du output are marked, but we need to filter them
+[?2004l[?2004h>         # In this case, entries with 4096 bytes are directories
+[?2004l[?2004h>         is_dir = False
+[?2004l[?2004h>         for _, dir_path in entries:
+[?2004l[?2004h>             if path != dir_path and path.startswith(dir_path + '/'):
+[?2004l[?2004h>                 # This path has children, but that doesn't mean it's a dir
+[?2004l[?2004h>                 pass
+[?2004l[?2004h>         
+[?2004l[?2004h>         # Simple heuristic: if size is exactly 4096, it's likely a directory
+[?2004l[?2004h>         if size != 4096:
+[?2004l[?2004h>             mb_size = size // 1048576  # Floor division to get MB
+[?2004l[?2004h>             large_files.append((mb_size, size, path))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Sort by MB size descending, then by path ascending
+[?2004l[?2004h> large_files.sort(key=lambda x: (-x[0], x[2]))
+[?2004l[?2004h> 
+[?2004l[?2004h> with open('/home/user/reports/large_files.txt', 'w') as f:
+[?2004l[?2004h>     for mb_size, _, path in large_files:
+[?2004l[?2004h>         f.write(f"{mb_size}MB {path}\n")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Report 2: Extension summary
+[?2004l[?2004h> extension_totals = defaultdict(int)
+[?2004l[?2004h> for size, path in entries:
+[?2004l[?2004h>     # Skip directory entries (size 4096)
+[?2004l[?2004h>     if size == 4096:
+[?2004l[?2004h>         continue
+[?2004l[?2004h>     
+[?2004l[?2004h>     filename = os.path.basename(path)
+[?2004l[?2004h>     if '.' in filename:
+[?2004l[?2004h>         ext = filename.rsplit('.', 1)[1].lower()
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         ext = 'NO_EXTENSION'
+[?2004l[?2004h>     
+[?2004l[?2004h>     extension_totals[ext] += size
+[?2004l[?2004h> 
+[?2004l[?2004h> # Sort by total bytes descending
+[?2004l[?2004h> sorted_extensions = sorted(extension_totals.items(), key=lambda x: -x[1])
+[?2004l[?2004h> 
+[?2004l[?2004h> with open('/home/user/reports/extension_summary.csv', 'w') as f:
+[?2004l[?2004h>     f.write("extension,total_bytes\n")
+[?2004l[?2004h>     for ext, total in sorted_extensions:
+[?2004l[?2004h>         f.write(f"{ext},{total}\n")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Report 3: Directory rollup
+[?2004l[?2004h> # Find immediate subdirectories of /var/data
+[?2004l[?2004h> subdir_totals = defaultdict(int)
+[?2004l[?2004h> total_size = 0
+[?2004l[?2004h> 
+[?2004l[?2004h> for size, path in entries:
+[?2004l[?2004h>     if path == '/var/data':
+[?2004l[?2004h>         continue
+[?2004l[?2004h>     
+[?2004l[?2004h>     if path.startswith('/var/data/'):
+[?2004l[?2004h>         # Get immediate subdirectory name
+[?2004l[?2004h>         rel_path = path[10:]  # Remove '/var/data/'
+[?2004l[?2004h>         subdir = rel_path.split('/')[0]
+[?2004l[?2004h>         subdir_totals[subdir] += size
+[?2004l[?2004h>         total_size += size
+[?2004l[?2004h> 
+[?2004l[?2004h> # Sort by total bytes descending
+[?2004l[?2004h> sorted_subdirs = sorted(subdir_totals.items(), key=lambda x: -x[1])
+[?2004l[?2004h> 
+[?2004l[?2004h> with open('/home/user/reports/directory_rollup.txt', 'w') as f:
+[?2004l[?2004h>     for dirname, total_bytes in sorted_subdirs:
+[?2004l[?2004h>         percentage = (total_bytes / total_size * 100) if total_size > 0 else 0
+[?2004l[?2004h>         f.write(f"{dirname} {total_bytes} {percentage:.1f}%\n")
+[?2004l[?2004h> 
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@d2d05f14338c:/home/user# python3 /tmp/process_inventory.py
+[?2004l[?2004hroot@d2d05f14338c:/home/user# cat /home/user/reports/large_files.txt
+[?2004l100MB /var/data/archives/2023_archive.tar.gz
+50MB /var/data/backups/full_backup.tar.gz
+30MB /var/data/archives/2022_archive.tar.gz
+20MB /var/data/cache/session_data.db
+15MB /var/data/logs/app.log
+15MB /var/data/uploads/presentation.pptx
+10MB /var/data/backups/incremental.tar.gz
+[?2004hroot@d2d05f14338c:/home/user# cat /home/user/reports/extension_summary.csv
+[?2004lextension,total_bytes
+gz,199229440
+log,20971520
+db,20971520
+pptx,15728640
+NO_EXTENSION,9437184
+xlsx,7340032
+pdf,3145728
+bak,2097152
+jpg,1835008
+txt,524288
+[?2004hroot@d2d05f14338c:/home/user# cat /home/user/reports/directory_rollup.txt
+[?2004larchives 144707584 51.4%
+backups 65015808 23.1%
+uploads 27791360 9.9%
+cache 22814720 8.1%
+logs 20975616 7.5%
+[?2004hroot@d2d05f14338c:/home/user# echo "Verifying Report 1: Files >= 10MB (10485760 bytes)"
+[?2004lVerifying Report 1: Files >= 10MB (10485760 bytes)
+[?2004hroot@d2d05f14338c:/home/user# awk '$1 >= 10485760 && $1 != 4096 {print $1, $2}' /home/user/disk_inventory.txt | sort -k1,1nr -k2,2
+[?2004l104857600 /var/data/archives/2023_archive.tar.gz
+52428800 /var/data/backups/full_backup.tar.gz
+31457280 /var/data/archives/2022_archive.tar.gz
+20971520 /var/data/cache/session_data.db
+15728640 /var/data/logs/app.log
+15728640 /var/data/uploads/presentation.pptx
+10485760 /var/data/backups/incremental.tar.gz
+[?2004hroot@d2d05f14338c:/home/user# echo "\nVerifying Report 3: Directory totals"
+[?2004l\nVerifying Report 3: Directory totals
+[?2004hroot@d2d05f14338c:/home/user# awk '$2 ~ /^\/var\/data\/[^/]+/ {match($2, /\/var\/data\/([^/]+)/, arr); dirs[arr[1]]+=$1; total+=$1} END {for (d in dirs) printf "%s %d %.1f%%\n", d, dirs[d], (dirs[d]/total*100)}' /home/user/disk_inventory.txt | sort -k2,2nr
+[?2004larchives 144707584 51.4%
+backups 65015808 23.1%
+uploads 27791360 9.9%
+cache 22814720 8.1%
+logs 20975616 7.5%
+[?2004hroot@d2d05f14338c:/home/user# echo "Verifying Report 2: Extension totals"
+[?2004lVerifying Report 2: Extension totals
+[?2004hroot@d2d05f14338c:/home/user# awk '$1 != 4096 {n=split($2,a,"/"); fname=a[n]; if(match(fname,/\.([^.]+)$/,ext)) e=tolower(ext[1]); else e="NO_EXTENSION"; exts[e]+=$1} END {for(e in exts) print e, exts[e]}' /home/user/disk_inventory.txt | sort -k2,2nr
+[?2004lgz 199229440
+db 20971520
+log 20971520
+pptx 15728640
+NO_EXTENSION 9437184
+xlsx 7340032
+pdf 3145728
+bak 2097152
+jpg 1835008
+txt 524288
+[?2004hroot@d2d05f14338c:/home/user# echo "\n=== All reports generated successfully ==="
+[?2004l\n=== All reports generated successfully ===
+[?2004hroot@d2d05f14338c:/home/user# ls -lh /home/user/reports/
+[?2004ltotal 12K
+-rw-r--r-- 1 root root 109 Apr 20 23:32 directory_rollup.txt
+-rw-r--r-- 1 root root 155 Apr 20 23:32 extension_summary.csv
+-rw-r--r-- 1 root root 279 Apr 20 23:32 large_files.txt
+[?2004hroot@d2d05f14338c:/home/user# 

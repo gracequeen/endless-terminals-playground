@@ -1,0 +1,205 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@be8150741a5d:~/migration$ cat > analyze_packages.py << 'SCRIPT_EOF'
+> #!/usr/bin/env python3
+> import subprocess
+> import json
+> import re
+> from collections import defaultdict
+>
+> def run_command(cmd):
+>     try:
+>         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+>         return result.stdout
+>     except Exception as e:
+>         return ""
+>
+> def get_dependencies(package, depth=0, max_depth=3, visited=None):
+>     """Get dependencies recursively up to max_depth levels"""
+>     if visited is None:
+>         visited = set()
+>
+>     if depth > max_depth or package in visited:
+>         return set()
+>
+>     visited.add(package)
+>     deps = set()
+>
+>     output = run_command(f"apt-cache depends {package} 2>/dev/null")
+>     for line in output.split('\n'):
+>         line = line.strip()
+>         if line.startswith('Depends:') or line.startswith('PreDepends:'):
+>             dep = line.split(':', 1)[1].strip()
+>             # Remove version constraints and alternatives
+>             dep = re.sub(r'[<>=].*', '', dep).strip()
+>             dep = dep.split('|')[0].strip()
+>             if dep and dep not in visited:
+>                 deps.add(dep)
+>                 if depth < max_depth:
+>                     deps.update(get_dependencies(dep, depth + 1, max_depth, visited))
+>
+>     return deps
+>
+> def get_package_size(package):
+>     """Get package installed size in KB"""
+>     output = run_command(f"dpkg-query -W -f='${{Installed-Size}}' {package} 2>/dev/null")
+>     if output and output.strip().isdigit():
+>         return int(output.strip())
+>
+>     # Try apt-cache show as fallback
+>     output = run_command(f"apt-cache show {package} 2>/dev/null")
+>     for line in output.split('\n'):
+>         if line.startswith('Installed-Size:'):
+>             size = line.split(':', 1)[1].strip()
+>             if size.isdigit():
+>                 return int(size)
+>
+>     return 0
+>
+> def get_package_version(package):
+>     """Get installed package version"""
+>     output = run_command(f"dpkg-query -W -f='${{Version}}' {package} 2>/dev/null")
+ript>     if output and output.strip():
+>         return output.strip()
+>     return "unknown"
+>
+> def has_security_update(package):
+>     """Check if package has security update available"""
+>     output = run_command(f"apt-cache policy {package} 2>/dev/null")
+>     lines = output.split('\n')
+>
+>     installed_version = None
+>     candidate_version = None
+>     has_security = False
+>
+>     for i, line in enumerate(lines):
+>         if 'Installed:' in line:
+>             installed_version = line.split(':', 1)[1].strip()
+>         elif 'Candidate:' in line:
+>             candidate_version = line.split(':', 1)[1].strip()
+>         elif 'security' in line.lower() and '/updates' in line.lower():
+>             has_security = True
+>
+>     # If candidate is different from installed and there's a security repo, likely has update
+>     if installed_version and candidate_version and installed_version != candidate_version and installed_version != '(none)':
+>         if has_security:
+>             return True
+>
+>     return False
+>
+> def main():
+>     # Read package lists
+>     with open('installed_packages.txt', 'r') as f:
+>         installed = set(line.strip() for line in f if line.strip())
+>
+>     with open('required_packages.txt', 'r') as f:
+>         required = set(line.strip() for line in f if line.strip())
+>
+>     print(f"Analyzing {len(installed)} installed packages and {len(required)} required packages...")
+>
+>     # Find all dependencies of required packages (up to 3 levels)
+>     print("Checking dependencies (this may take a while)...")
+>     all_required_deps = set()
+>     dep_map = defaultdict(list)  # Maps dependency to packages that need it
+>
+>     for pkg in required:
+>         print(f"  Checking dependencies for {pkg}...")
+>         deps = get_dependencies(pkg, depth=0, max_depth=3)
+>         for dep in deps:
+>             all_required_deps.add(dep)
+>             dep_map[dep].append(pkg)
+>
+>     # Identify packages not in required list
+>     extra_packages = installed - required
+>
+>     # Separate into removable and dependency-protected
+>     removable = []
+>     dependency_protected = []
+>
+>     print("\nAnalyzing removable packages...")
+>     for pkg in sorted(extra_packages):
+>         if pkg in all_required_deps:
+>             # This package is a dependency of a required package
+>             dependency_protected.append({
+>                 "name": pkg,
+>                 "required_by": sorted(dep_map[pkg])
+>             })
+>         else:
+>             # This package can be removed
+>             print(f"  Checking {pkg}...")
+>             size = get_package_size(pkg)
+>             version = get_package_version(pkg)
+>             sec_update = has_security_update(pkg)
+>
+>             removable.append({
+>                 "name": pkg,
+>                 "installed_version": version,
+>                 "size_kb": size,
+>                 "has_security_update": sec_update
+>             })
+>
+>     # Sort arrays alphabetically
+>     removable.sort(key=lambda x: x['name'])
+>     dependency_protected.sort(key=lambda x: x['name'])
+>
+>     # Calculate total space savings
+>     total_space = sum(pkg['size_kb'] for pkg in removable)
+>
+>     # Create report
+>     report = {
+>         "summary": {
+>             "total_installed": len(installed),
+>             "total_required": len(required),
+>             "removable_count": len(removable),
+>             "kept_as_dependencies": len(dependency_protected),
+>             "total_space_savings_kb": total_space
+>         },
+>         "removable_packages": removable,
+>         "dependency_protected": dependency_protected
+>     }
+>
+>     # Write JSON report
+>     with open('removal_report.json', 'w') as f:
+>         json.dump(report, f, indent=2)
+>
+>     print(f"\nReport written to removal_report.json")
+>     print(f"  Removable packages: {len(removable)}")
+>     print(f"  Dependency-protected: {len(dependency_protected)}")
+>     print(f"  Total space savings: {total_space} KB ({total_space/1024:.2f} MB)")
+>
+>     # Create removal script
+>     with open('remove_packages.sh', 'w') as f:
+>         f.write('#!/bin/bash\n\n')
+>         f.write('# Auto-generated package removal script\n')
+>         f.write(f'# This script will remove {len(removable)} packages and save approximately {total_space/1024:.2f} MB\n\n')
+>
+>         if removable:
+>             pkg_list = ' '.join(pkg['name'] for pkg in removable)
+>             f.write('# Dry-run: Show what would be removed\n')
+>             f.write(f'echo "The following packages would be removed: {pkg_list}"\n')
+>             f.write('echo ""\n')
+>             f.write('echo "To proceed with removal, uncomment the line below:"\n')
+>             f.write('echo ""\n\n')
+>             f.write('# Uncomment the next line to actually remove the packages\n')
+>             f.write(f'# apt-get remove -y {pkg_list}\n')
+>         else:
+>             f.write('echo "No packages to remove."\n')
+>
+>     run_command('chmod +x remove_packages.sh')
+>     print("Removal script written to remove_packages.sh")
+>
+> if __name__ == '__main__':
+>     main()
+> SCRIPT_EOF
+user@be8150741a5d:~/migration$ chmod +x analyze_packages.py
+user@be8150741a5d:~/migration$ python3 analyze_packages.py
+Analyzing 31 installed packages and 9 required packages...
+Checking dependencies (this may take a while)...
+  Checking dependencies for curl...
+  Checking dependencies for python3-pip...
+  Checking dependencies for nginx...
+
