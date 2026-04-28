@@ -1,366 +1,0 @@
-[?2004huser@4d4407b6ef3c:~$ asciinema rec --stdin /logs/agent/recording.cast
-[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
-[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
-[?2004huser@4d4407b6ef3c:~$ clear
-[?2004l[H[J[?2004huser@4d4407b6ef3c:~$ cd /home/user/migration
-[?2004l[?2004huser@4d4407b6ef3c:~/migration$ ls -la
-[?2004ltotal 16
-drwxrwxrwx 1 user user 4096 Apr 20 22:54 .
-drwxrwxrwx 1 user user 4096 Apr 20 22:54 ..
--rw-r--r-- 1 user user  246 Apr 20 22:54 installed_packages.txt
--rw-r--r-- 1 user user   73 Apr 20 22:54 required_packages.txt
-[?2004huser@4d4407b6ef3c:~/migration$ echo "=== Installed Packages ==="
-[?2004l=== Installed Packages ===
-[?2004huser@4d4407b6ef3c:~/migration$ wc -l installed_packages.txt
-[?2004l31 installed_packages.txt
-[?2004huser@4d4407b6ef3c:~/migration$ head -20 installed_packages.txt
-[?2004lcurl
-wget
-vim
-nano
-git
-htop
-tree
-ncdu
-jq
-python3
-python3-pip
-nodejs
-npm
-nginx
-apache2
-mysql-client
-postgresql-client
-redis-tools
-netcat-openbsd
-tcpdump
-[?2004huser@4d4407b6ef3c:~/migration$ echo "=== Required Packages ==="
-[?2004l=== Required Packages ===
-[?2004huser@4d4407b6ef3c:~/migration$ wc -l required_packages.txt
-[?2004l9 required_packages.txt
-[?2004huser@4d4407b6ef3c:~/migration$ head -20 required_packages.txt
-[?2004lcurl
-python3
-python3-pip
-jq
-nginx
-ca-certificates
-openssl
-bash
-coreutils
-[?2004huser@4d4407b6ef3c:~/migration$ cat installed_packages.txt
-[?2004lcurl
-wget
-vim
-nano
-git
-htop
-tree
-ncdu
-jq
-python3
-python3-pip
-nodejs
-npm
-nginx
-apache2
-mysql-client
-postgresql-client
-redis-tools
-netcat-openbsd
-tcpdump
-strace
-lsof
-dnsutils
-iputils-ping
-ca-certificates
-openssl
-libssl3
-zlib1g
-libc6
-coreutils
-bash
-[?2004huser@4d4407b6ef3c:~/migration$ echo "---"
-[?2004l---
-[?2004huser@4d4407b6ef3c:~/migration$ cat required_packages.txt
-[?2004lcurl
-python3
-python3-pip
-jq
-nginx
-ca-certificates
-openssl
-bash
-coreutils
-[?2004huser@4d4407b6ef3c:~/migration$ cat > analyze_packages.py << 'SCRIPT_EOF'
-[?2004lencies for {pkg}: {e}")
-    
-    return deps
-
-print("\nBuilding dependency trees...")
-for req_pkg in required:
-    print(f"  Analyzing {req_pkg}...")
-    deps = get_dependencies(req_pkg)
-    all_dependencies.update(deps)
-
-print(f"\nTotal dependencies found: {len(all_dependencies)}")
-
-# Classify packages
-removable = extra_packages - all_dependencies
-dependency_protected = extra_packages & all_dependencies
-
-print(f"Removable: {len(removable)}")
-print(f"Dependency-protected: {len(dependency_protected)}")
-
-# Get package info for removable packages
-removable_info = []
-total_size_kb = 0
-
-for pkg in sorted(removable):
-    try:
-        # Get installed version and size
-        result = subprocess.run(
-            ['dpkg-query', '-W', '-f=${Version}\\t${Installed-Size}\\n', pkg],
-            capture_output=True, text=True, timeout=5
-        )
-        
-        if result.returncode == 0 and result.stdout.strip():
-            version, size_kb = result.stdout.strip().split('\t')
-            size_kb = int(size_kb)
-        else:
-            # Fallback to apt-cache
-            result = subprocess.run(
-                ['apt-cache', 'show', pkg],
-                capture_output=True, text=True, timeout=5
-            )
-            version = "unknown"
-            size_kb = 0
-            for line in result.stdout.split('\n'):
-                if line.startswith('Version:'):
-                    version = line.split(':', 1)[1].strip()
-                elif line.startswith('Installed-Size:'):
-                    size_kb = int(line.split(':', 1)[1].strip())
-        
-        # Check for security updates
-        has_security_update = False
-        try:
-            policy_result = subprocess.run(
-                ['apt-cache', 'policy', pkg],
-                capture_output=True, text=True, timeout=5
-            )
-            # Look for security pocket in policy output
-            if '-security' in policy_result.stdout:
-                has_security_update = True
-        except:
-            pass
-        
-        removable_info.append({
-            'name': pkg,
-            'installed_vers[?2004h> #!/usr/bin/env python3
-[?2004l[?2004h> import subprocess
-[?2004l[?2004h> import json
-[?2004l[?2004h> import re
-[?2004l[?2004h> from collections import defaultdict, deque
-[?2004l[?2004h> 
-[?2004l[?2004h> # Read package lists
-[?2004l[?2004h> with open('installed_packages.txt') as f:
-[?2004l[?2004h>     installed = set(line.strip() for line in f if line.strip())
-[?2004l[?2004h> 
-[?2004l[?2004h> with open('required_packages.txt') as f:
-[?2004l[?2004h>     required = set(line.strip() for line in f if line.strip())
-[?2004l[?2004h> 
-[?2004l[?2004h> print(f"Installed: {len(installed)}, Required: {len(required)}")
-[?2004l[?2004h> 
-[?2004l[?2004h> # Find packages that are installed but not required
-[?2004l[?2004h> extra_packages = installed - required
-[?2004l[?2004h> print(f"Extra packages (before dependency check): {len(extra_packages)}")
-[?2004l[?2004h> 
-[?2004l[?2004h> # Build dependency tree for required packages (up to 3 levels)
-[?2004l[?2004h> dependency_map = defaultdict(set)  # pkg -> packages that depend on it
-[?2004l[?2004h> all_dependencies = set()
-[?2004l[?2004h> 
-[?2004l[?2004h> def get_dependencies(package, max_depth=3):
-[?2004l[?2004h>     """Get dependencies up to max_depth levels deep"""
-[?2004l[?2004h>     deps = set()
-[?2004l[?2004h>     queue = deque([(package, 0)])
-[?2004l[?2004h>     visited = set()
-[?2004l[?2004h>     
-[?2004l[?2004h>     while queue:
-[?2004l[?2004h>         pkg, depth = queue.popleft()
-[?2004l[?2004h>         if pkg in visited or depth > max_depth:
-[?2004l[?2004h>             continue
-[?2004l[?2004h>         visited.add(pkg)
-[?2004l[?2004h>         
-[?2004l[?2004h>         try:
-[?2004l[?2004h>             # Use apt-cache depends to get direct dependencies
-[?2004l[?2004h>             result = subprocess.run(
-[?2004l[?2004h>                 ['apt-cache', 'depends', pkg],
-[?2004l[?2004h>                 capture_output=True, text=True, timeout=5
-[?2004l[?2004h>             )
-[?2004l[?2004h>             
-[?2004l[?2004h>             for line in result.stdout.split('\n'):
-[?2004l[?2004h>                 line = line.strip()
-[?2004l[?2004h>                 # Parse dependency lines (Depends:, PreDepends:)
-[?2004l[?2004h>                 if line.startswith('Depends:') or line.startswith('PreDepends:'):
-[?2004l[?2004h>                     dep = line.split(':', 1)[1].strip()
-[?2004l[?2004h>                     # Remove version constraints and alternatives
-[?2004l[?2004h>                     dep = re.split(r'[<>=|]', dep)[0].strip()
-[?2004l[?2004h>                     if dep and depth < max_depth:
-[?2004l[?2004h>                         deps.add(dep)
-[?2004l[?2004h>                         dependency_map[dep].add(package)
-[?2004l[?2004h>                         queue.append((dep, depth + 1))
-[?2004l[?2004h>         except Exception as e:
-[?2004l[?2004h>             print(f"Warning: Could not get dependencies for {pkg}: {e}")
-[?2004l[?2004h>     
-[?2004l[?2004h>     return deps
-[?2004l[?2004h> 
-[?2004l[?2004h> print("\nBuilding dependency trees...")
-[?2004l[?2004h> for req_pkg in required:
-[?2004l[?2004h>     print(f"  Analyzing {req_pkg}...")
-[?2004l[?2004h>     deps = get_dependencies(req_pkg)
-[?2004l[?2004h>     all_dependencies.update(deps)
-[?2004l[?2004h> 
-[?2004l[?2004h> print(f"\nTotal dependencies found: {len(all_dependencies)}")
-[?2004l[?2004h> 
-[?2004l[?2004h> # Classify packages
-[?2004l[?2004h> removable = extra_packages - all_dependencies
-[?2004l[?2004h> dependency_protected = extra_packages & all_dependencies
-[?2004l[?2004h> 
-[?2004l[?2004h> print(f"Removable: {len(removable)}")
-[?2004l[?2004h> print(f"Dependency-protected: {len(dependency_protected)}")
-[?2004l[?2004h> 
-[?2004l[?2004h> # Get package info for removable packages
-[?2004l[?2004h> removable_info = []
-[?2004l[?2004h> total_size_kb = 0
-[?2004l[?2004h> 
-[?2004l[?2004h> for pkg in sorted(removable):
-[?2004l[?2004h>     try:
-[?2004l[?2004h>         # Get installed version and size
-[?2004l[?2004h>         result = subprocess.run(
-[?2004l[?2004h>             ['dpkg-query', '-W', '-f=${Version}\\t${Installed-Size}\\n', pkg],
-[?2004l[?2004h>             capture_output=True, text=True, timeout=5
-[?2004l[?2004h>         )
-[?2004l[?2004h>         
-[?2004l[?2004h>         if result.returncode == 0 and result.stdout.strip():
-[?2004l[?2004h>             version, size_kb = result.stdout.strip().split('\t')
-[?2004l[?2004h>             size_kb = int(size_kb)
-[?2004l[?2004h>         else:
-[?2004l[?2004h>             # Fallback to apt-cache
-[?2004l[?2004h>             result = subprocess.run(
-[?2004l[?2004h>                 ['apt-cache', 'show', pkg],
-[?2004l[?2004h>                 capture_output=True, text=True, timeout=5
-[?2004l[?2004h>             )
-[?2004l[?2004h>             version = "unknown"
-[?2004l[?2004h>             size_kb = 0
-[?2004l[?2004h>             for line in result.stdout.split('\n'):
-[?2004l[?2004h>                 if line.startswith('Version:'):
-[?2004l[?2004h>                     version = line.split(':', 1)[1].strip()
-[?2004l[?2004h>                 elif line.startswith('Installed-Size:'):
-[?2004l[?2004h>                     size_kb = int(line.split(':', 1)[1].strip())
-[?2004l[?2004h>         
-[?2004l[?2004h>         # Check for security updates
-[?2004l[?2004h>         has_security_update = False
-[?2004l[?2004h>         try:
-[?2004l[?2004h>             policy_result = subprocess.run(
-[?2004l[?2004h>                 ['apt-cache', 'policy', pkg],
-[?2004l[?2004h>                 capture_output=True, text=True, timeout=5
-[?2004l[?2004h>             )
-[?2004l[?2004h>             # Look for security pocket in policy output
-[?2004l[?2004h>             if '-security' in policy_result.stdout:
-[?2004l[?2004h>                 has_security_update = True
-[?2004l[?2004h>         except:
-[?2004l[?2004h>             pass
-[?2004l[?2004h>         
-[?2004l[?2004h>         removable_info.append({
-[?2004l[?2004h>             'name': pkg,
-[?2004l[?2004h>             'installed_version': version,
-[?2004l[?2004h>             'size_kb': size_kb,
-[?2004l[?2004h>             'has_security_update': has_security_update
-[?2004l[?2004h>         })
-[?2004l[?2004h>         total_size_kb += size_kb
-[?2004l[?2004h>         
-[?2004l[?2004h>     except Exception as e:
-[?2004l[?2004h>         print(f"Warning: Could not get info for {pkg}: {e}")
-[?2004l[?2004h> 
-[?2004l[?2004h> # Build dependency_protected list
-[?2004l[?2004h> dep_protected_info = []
-[?2004l[?2004h> for pkg in sorted(dependency_protected):
-[?2004l[?2004h>     required_by = sorted(list(dependency_map.get(pkg, [])))
-[?2004l[?2004h>     dep_protected_info.append({
-[?2004l[?2004h>         'name': pkg,
-[?2004l[?2004h>         'required_by': required_by
-[?2004l[?2004h>     })
-[?2004l[?2004h> 
-[?2004l[?2004h> # Create report
-[?2004l[?2004h> report = {
-[?2004l[?2004h>     'summary': {
-[?2004l[?2004h>         'total_installed': len(installed),
-[?2004l[?2004h>         'total_required': len(required),
-[?2004l[?2004h>         'removable_count': len(removable),
-[?2004l[?2004h>         'kept_as_dependencies': len(dependency_protected),
-[?2004l[?2004h>         'total_space_savings_kb': total_size_kb
-[?2004l[?2004h>     },
-[?2004l[?2004h>     'removable_packages': removable_info,
-[?2004l[?2004h>     'dependency_protected': dep_protected_info
-[?2004l[?2004h> }
-[?2004l[?2004h> 
-[?2004l[?2004h> # Write JSON report
-[?2004l[?2004h> with open('/home/user/migration/removal_report.json', 'w') as f:
-[?2004l[?2004h>     json.dump(report, f, indent=2)
-[?2004l[?2004h> 
-[?2004l[?2004h> print(f"\nReport written to removal_report.json")
-[?2004l[?2004h> print(f"Total space savings: {total_size_kb} KB ({total_size_kb/1024:.2f} MB)")
-[?2004l[?2004h> 
-[?2004l[?2004h> # Create removal script
-[?2004l[?2004h> with open('/home/user/migration/remove_packages.sh', 'w') as f:
-[?2004l[?2004h>     f.write('#!/bin/bash\n')
-[?2004l[?2004h>     f.write('# Auto-generated package removal script\n\n')
-[?2004l[?2004h>     f.write('echo "This will remove the following packages:"\n')
-[?2004l[?2004h>     for pkg in sorted(removable):
-[?2004l[?2004h>         f.write(f'echo "  - {pkg}"\n')
-[?2004l[?2004h>     f.write('echo ""\n')
-[?2004l[?2004h>     f.write('echo "Total space to be freed: '
-[?2004l[?2004h>             f'{total_size_kb} KB ({total_size_kb/1024:.2f} MB)"\n')
-[?2004l[?2004h>     f.write('echo ""\n')
-[?2004l[?2004h>     f.write('echo "Dry run command:"\n')
-[?2004l[?2004h>     
-[?2004l[?2004h>     if removable:
-[?2004l[?2004h>         pkg_list = ' '.join(sorted(removable))
-[?2004l[?2004h>         f.write(f'echo "sudo apt-get remove --dry-run {pkg_list}"\n')
-[?2004l[?2004h>         f.write('echo ""\n')
-[?2004l[?2004h>         f.write('read -p "Proceed with actual removal? (yes/no):" response\n')
-[?2004l[?2004h>         f.write('if [ "$response" = "yes" ]; then\n')
-[?2004l[?2004h>         f.write(f'    sudo apt-get remove -y {pkg_list}\n')
-[?2004l[?2004h>         f.write('else\n')
-[?2004l[?2004h>         f.write('    echo "Removal cancelled."\n')
-[?2004l[?2004h>         f.write('fi\n')
-[?2004l[?2004h>     else:
-[?2004l[?2004h>         f.write('echo "No packages to remove."\n')
-[?2004l[?2004h> 
-[?2004l[?2004h> subprocess.run(['chmod', '+x', '/home/user/migration/remove_packages.sh'])
-[?2004l[?2004h> print("Removal script written to remove_packages.sh")
-[?2004l[?2004h> SCRIPT_EOF
-[?2004l[?2004huser@4d4407b6ef3c:~/migration$ chmod +x analyze_packages.py
-[?2004l[?2004huser@4d4407b6ef3c:~/migration$ python3 analyze_packages.py
-[?2004lInstalled: 31, Required: 9
-Extra packages (before dependency check): 22
-
-Building dependency trees...
-  Analyzing ca-certificates...
-  Analyzing python3-pip...
-  Analyzing bash...
-  Analyzing curl...
-  Analyzing jq...
-  Analyzing openssl...
-  Analyzing nginx...
-  Analyzing python3...
-  Analyzing coreutils...
-
-Total dependencies found: 104
-Removable: 19
-Dependency-protected: 3
-
-Report written to removal_report.json
-Total space savings: 37080 KB (36.21 MB)
-Removal script written to remove_packages.sh
-[?2004huser@4d4407b6ef3c:~/migration$ 

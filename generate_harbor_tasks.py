@@ -50,7 +50,7 @@ ttg.SYSTEM_MSG = ttg.SYSTEM_MSG.replace(
     "We will be using Docker to run the agent. So make sure that the task is valid when the container is built.",
 )
 
-from generator.task_template_gen import generate_templates_batch
+from generator.task_template_gen import generate_templates_batch, pick_balanced_categories, pick_difficulties
 from generator.initial_state_test_gen import (
     generate_test_templates_batch as generate_initial_tests_batch,
 )
@@ -73,6 +73,8 @@ class HarborPipelineConfig:
     author_name: str = "Endless Terminals"
     author_email: str = ""
     verbose: bool = False
+    difficulty: str = "medium"
+    difficulty_distribution: Optional[Dict[str, float]] = None
 
 
 TEST_SH_TEMPLATE = """#!/bin/bash
@@ -146,13 +148,14 @@ def _save_harbor_task(
     final_test_code: str,
     dockerfile_text: str,
     cfg: HarborPipelineConfig,
+    difficulty: str = "medium",
 ) -> Path:
     """Write all files for a single Harbor-format task."""
     # instruction.md
     _safe_write(task_dir / "instruction.md", description + "\n")
 
     # task.toml
-    _safe_write(task_dir / "task.toml", _generate_task_toml(cfg))
+    _safe_write(task_dir / "task.toml", _generate_task_toml(cfg, difficulty=difficulty))
 
     # environment/
     env_dir = task_dir / "environment"
@@ -183,6 +186,10 @@ def _generate_harbor_batch(
 ) -> List[Optional[Path]]:
     """Run the full 5-stage pipeline for one batch."""
 
+    # Pre-compute balanced categories and difficulties for this batch
+    categories = pick_balanced_categories(batch_count)
+    difficulties = pick_difficulties(batch_count, cfg.difficulty, cfg.difficulty_distribution)
+
     # Stage 1: Task templates
     print(f"[1/5] Generating {batch_count} task templates ...")
     task_templates = generate_templates_batch(
@@ -191,6 +198,8 @@ def _generate_harbor_batch(
         temperature=cfg.task_temperature,
         max_tokens=cfg.max_tokens,
         max_concurrency=cfg.max_concurrency,
+        categories=categories,
+        difficulties=difficulties,
     )
     if not task_templates:
         print("  No task templates generated")
@@ -198,6 +207,7 @@ def _generate_harbor_batch(
 
     descriptions = [t.get("description", "").strip() for t in task_templates]
     truths = [t.get("truth", "").strip() for t in task_templates]
+    diffs = [t.get("difficulty", "medium") for t in task_templates]
 
     valid = [i for i, (d, tr) in enumerate(zip(descriptions, truths)) if d and tr]
     if not valid:
@@ -205,12 +215,13 @@ def _generate_harbor_batch(
         return []
     descriptions = [descriptions[i] for i in valid]
     truths = [truths[i] for i in valid]
+    diffs = [diffs[i] for i in valid]
     print(f"  Valid templates: {len(descriptions)}")
 
     # Stage 2: Initial state tests
     print(f"[2/5] Generating {len(descriptions)} initial-state tests ...")
     init_tests = generate_initial_tests_batch(
-        list(zip(descriptions, truths)),
+        list(zip(descriptions, truths, diffs)),
         model=cfg.model,
         temperature=cfg.test_temperature,
         max_tokens=cfg.max_tokens,
@@ -219,13 +230,14 @@ def _generate_harbor_batch(
     valid = [i for i, t in enumerate(init_tests) if t]
     descriptions = [descriptions[i] for i in valid]
     truths = [truths[i] for i in valid]
+    diffs = [diffs[i] for i in valid]
     init_tests = [init_tests[i] for i in valid]
     print(f"  Valid initial tests: {len(init_tests)}")
 
     # Stage 3: Final state tests
     print(f"[3/5] Generating {len(descriptions)} final-state tests ...")
     final_tests = generate_final_tests_batch(
-        list(zip(descriptions, truths, init_tests)),
+        list(zip(descriptions, truths, init_tests, diffs)),
         model=cfg.model,
         temperature=cfg.test_temperature,
         max_tokens=cfg.max_tokens,
@@ -234,6 +246,7 @@ def _generate_harbor_batch(
     valid = [i for i, t in enumerate(final_tests) if t]
     descriptions = [descriptions[i] for i in valid]
     truths = [truths[i] for i in valid]
+    diffs = [diffs[i] for i in valid]
     init_tests = [init_tests[i] for i in valid]
     final_tests = [final_tests[i] for i in valid]
     print(f"  Valid final tests: {len(final_tests)}")
@@ -241,7 +254,7 @@ def _generate_harbor_batch(
     # Stage 4: Dockerfiles + build/test
     print(f"[4/5] Generating {len(descriptions)} Dockerfiles ...")
     dockerfiles = generate_dockerfiles_batch(
-        list(zip(descriptions, truths, init_tests)),
+        list(zip(descriptions, truths, init_tests, diffs)),
         model=cfg.model,
         temperature=cfg.test_temperature,
         max_tokens=cfg.max_tokens,
@@ -251,6 +264,7 @@ def _generate_harbor_batch(
     valid = [i for i, d in enumerate(dockerfiles) if d]
     descriptions = [descriptions[i] for i in valid]
     truths = [truths[i] for i in valid]
+    diffs = [diffs[i] for i in valid]
     init_tests = [init_tests[i] for i in valid]
     final_tests = [final_tests[i] for i in valid]
     dockerfiles = [dockerfiles[i] for i in valid]
@@ -273,6 +287,7 @@ def _generate_harbor_batch(
             final_tests[i],
             dockerfiles[i],
             cfg,
+            difficulty=diffs[i],
         )
         saved.append(task_dir)
 
@@ -317,11 +332,24 @@ def parse_args() -> HarborPipelineConfig:
     ap.add_argument("--max-concurrency", type=int, default=4)
     ap.add_argument("--batch-size", type=int, default=10)
     ap.add_argument("--skip-build", action="store_true", help="Skip Docker build/test")
+    ap.add_argument("--difficulty", type=str, default="medium",
+                    choices=["easy", "medium", "hard", "mixed"],
+                    help="Task difficulty level. 'mixed' uses --difficulty-distribution.")
+    ap.add_argument("--difficulty-distribution", type=str, default=None,
+                    help="Distribution for mixed difficulty, e.g. 'easy:0.2,medium:0.5,hard:0.3'")
     ap.add_argument("--author-name", type=str, default="Endless Terminals")
     ap.add_argument("--author-email", type=str, default="")
     ap.add_argument("--verbose", action="store_true")
 
     args = ap.parse_args()
+
+    diff_dist = None
+    if args.difficulty_distribution:
+        diff_dist = {}
+        for part in args.difficulty_distribution.split(","):
+            k, v = part.strip().split(":")
+            diff_dist[k.strip()] = float(v.strip())
+
     return HarborPipelineConfig(
         num_tasks=args.num_tasks,
         out_dir=args.out_dir,
@@ -335,6 +363,8 @@ def parse_args() -> HarborPipelineConfig:
         author_name=args.author_name,
         author_email=args.author_email,
         verbose=args.verbose,
+        difficulty=args.difficulty,
+        difficulty_distribution=diff_dist,
     )
 
 

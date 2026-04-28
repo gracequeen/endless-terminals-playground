@@ -29,6 +29,12 @@ Key rules:
 - Don't add any of the output files or directories that the agent will create.
 - Don't create / touch empty files for the agent.
 - The home path is /home/user.
+- For tasks that require running services/daemons (e.g. web servers, databases, redis), set up an entrypoint script or use CMD to start them. Services started in RUN steps won't persist — use a wrapper script that starts services then exec's into a shell.
+- NO Docker-in-Docker, Kubernetes, kind, minikube, or container orchestration tools — they cannot work inside this container.
+- NO systemd or init systems. Start services directly as processes (e.g. `postgres -D /data &` not `systemctl start postgresql`).
+- NO nftables/iptables rules — the container has no NET_ADMIN capability.
+- For PostgreSQL: initialize with `initdb`, then start with `pg_ctl start` or `postgres -D <datadir> &` in an entrypoint script. Do NOT use `apt install postgresql` and expect the service to auto-start.
+- For any service that must be running when the agent connects: use a CMD/ENTRYPOINT wrapper script that starts the service in the background, waits for it to be ready, then exec's into bash.
 
 Heredoc and multiline command rules (IMPORTANT):
 - Every shell command must be inside a `RUN` instruction. Do NOT leave lines like `PermitRootLogin yes` or similar outside of a `RUN`; otherwise Docker will treat them as invalid instructions.
@@ -40,12 +46,14 @@ Heredoc and multiline command rules (IMPORTANT):
   - If needed, you may place any follow-up commands (e.g. `chmod ...`) in a separate `RUN` instruction after the heredoc.
 - Do NOT wrap a heredoc block inside a single-quoted string like `sh -c 'cat <<EOF ... EOF'`.
 
-Output only the Dockerfile content, no explanations or markdown code blocks."""
+CRITICAL: Your response must start with `FROM ubuntu:22.04` on the very first line. Do NOT include any explanation, commentary, thinking, or markdown fences. Output ONLY valid Dockerfile instructions — nothing else."""
 
 
 BASE_USER_TEMPLATE = """
 Using the task description template and pytest tests below, output a complete
 Dockerfile that sets up the initial environment for the task.
+
+Task difficulty: {difficulty}
 
 Question description given to the agent:
 {task_description}
@@ -59,7 +67,6 @@ Here are the tests that will be run on the container to verify the initial state
 Previous failures (may be empty):
 {failures}
 
-Respond with the Dockerfile only. You should think step by step and then write the file. The file should be valid and buildable.
 Make sure that you create the right files and directories for the task.
 Eg: for a csv task you will have to create a csv file. For a process cleanup task you will have to create processes.
 Don't include the tests in the Dockerfile or copy a test file.
@@ -67,11 +74,13 @@ Don't add any of the output files or directories that the student will create.
 Don't create / touch empty files for the agent.
 Remember to install pytest in the container.
 The home path is /home/user.
+
+IMPORTANT: Output ONLY the Dockerfile starting with `FROM ubuntu:22.04`. No explanation, no markdown fences, no thinking — just the raw Dockerfile content.
 """
 
 
 def parse_dockerfile(raw: str) -> str:
-    """Extract Dockerfile content from LLM response, stripping markdown fences."""
+    """Extract Dockerfile content from LLM response, stripping markdown fences and preamble."""
     content = raw.strip()
 
     # Remove markdown code block markers if present
@@ -81,13 +90,19 @@ def parse_dockerfile(raw: str) -> str:
             if "dockerfile" in part.lower() and i + 1 < len(parts):
                 content = parts[i + 1].strip()
                 break
-    elif content.startswith("```"):
-        lines = content.split("\n")
-        if lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        content = "\n".join(lines)
+    elif "```" in content:
+        parts = content.split("```")
+        for i, part in enumerate(parts):
+            if "FROM" in part and i > 0:
+                content = part.strip()
+                break
+        else:
+            lines = content.split("\n")
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            content = "\n".join(lines)
 
     content = textwrap.dedent(content).strip()
 
@@ -96,6 +111,12 @@ def parse_dockerfile(raw: str) -> str:
     first_line = content.split("\n", 1)[0].strip().lower()
     if first_line in ("dockerfile", "docker"):
         content = content.split("\n", 1)[1].strip()
+
+    # Strip any preamble text before the first FROM instruction.
+    # LLMs sometimes output thinking/explanation before the actual Dockerfile.
+    from_match = re.search(r"^FROM\s", content, re.MULTILINE)
+    if from_match and from_match.start() > 0:
+        content = content[from_match.start():]
 
     return content
 
@@ -198,7 +219,7 @@ def _cleanup_image(image_tag: str) -> None:
 
 
 def generate_dockerfiles_batch(
-    items: List[Tuple[str, str, str]],
+    items: List[Tuple[str, ...]],
     *,
     model: str = "claude_opus",
     temperature: float = 0.6,
@@ -208,16 +229,20 @@ def generate_dockerfiles_batch(
 ) -> List[Optional[str]]:
     """Batched Dockerfile generation followed by optional parallel build/test.
 
-    items: list of (task_description, truth, test_py)
+    items: list of (task_description, truth, test_py) or
+           (task_description, truth, test_py, difficulty).
     Returns list aligned with input: passing Dockerfile text, or None on failure.
     """
     messages: list[list[dict[str, str]]] = []
-    for task_description, truth, test_py in items:
+    for item in items:
+        task_description, truth, test_py = item[0], item[1], item[2]
+        difficulty = item[3] if len(item) > 3 else "medium"
         prompt = BASE_USER_TEMPLATE.format(
             task_description=task_description,
             truth=truth,
             test_py=test_py,
             failures="None yet",
+            difficulty=difficulty,
         )
         messages.append([
             {"role": "system", "content": SYSTEM_MSG},
@@ -248,16 +273,29 @@ def generate_dockerfiles_batch(
         return results
 
     # Build and test in parallel
-    def worker(index: int, item: Tuple[str, str, str], resp_obj) -> Tuple[int, Optional[str]]:
+    def worker(index: int, item: Tuple[str, ...], resp_obj) -> Tuple[int, Optional[str]]:
         try:
             if resp_obj is None:
                 return index, None
             content = resp_obj.choices[0].message.content
             dockerfile_text = parse_dockerfile(content)
-            _task_description, _truth, test_py = item
-            ok, _ = build_and_test_docker(dockerfile_text, test_py)
+            _task_description, _truth, test_py = item[0], item[1], item[2]
+            import logging
+            _log = logging.getLogger(__name__)
+            _log.warning(
+                "Parsed Dockerfile for task %d (first 500 chars):\n%s", index, dockerfile_text[:500]
+            )
+            ok, err_msg = build_and_test_docker(dockerfile_text, test_py)
+            if not ok:
+                _log.warning(
+                    "Docker build/test FAILED for task %d:\n%s", index, err_msg[:2000]
+                )
             return index, (dockerfile_text if ok else None)
-        except Exception:
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Docker worker exception for task %d: %s", index, exc
+            )
             return index, None
 
     futures = []

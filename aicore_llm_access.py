@@ -1,10 +1,13 @@
 """Module to setup access to Claude models on AICore. Important: Make sure that the aicore config has been saved before accessing these models."""
 import enum
+import threading
 
 import requests
 from gen_ai_hub.proxy.native.amazon.clients import Session
 import os
 from dotenv import load_dotenv
+
+REQUEST_TIMEOUT_SEC = 180
 
 load_dotenv() 
 
@@ -88,9 +91,30 @@ def get_anthropic_completion(
         )
         if system_messages:
             converse_kwargs["system"] = system_messages
-        response = bedrock.converse(**converse_kwargs)
+
+        result_container = [None]
+        error_container = [None]
+
+        def _call():
+            try:
+                result_container[0] = bedrock.converse(**converse_kwargs)
+            except Exception as e:
+                error_container[0] = e
+
+        t = threading.Thread(target=_call, daemon=True)
+        t.start()
+        t.join(timeout=REQUEST_TIMEOUT_SEC)
+
+        if t.is_alive():
+            raise RuntimeError(f"Request timed out after {REQUEST_TIMEOUT_SEC}s")
+        if error_container[0] is not None:
+            raise error_container[0]
+
+        response = result_container[0]
         return response["output"]["message"]["content"][0]["text"]
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"RequestException occurred while fetching Anthropic completion: {e}") from e
+    except RuntimeError:
+        raise
     except Exception as e:
         raise RuntimeError(f"Unexpected error occurred while fetching Anthropic completion: {e}") from e
