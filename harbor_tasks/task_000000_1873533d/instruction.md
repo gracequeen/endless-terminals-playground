@@ -1,0 +1,1 @@
+Need a quick script at /home/user/bin/env-merge.sh that takes two .env files as args and spits out a merged version to stdout — second file wins on conflicts. Got /home/user/project/.env.defaults and /home/user/project/.env.local I've been merging by hand and it's getting old.

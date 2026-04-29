@@ -1,0 +1,1 @@
+Need to pull a single file out of a backup archive — /home/user/backups/services-2024.tar.gz has our old nginx config somewhere inside, should be at etc/nginx/nginx.conf relative to the archive root. Just extract that one file to /home/user/restored/, don't need the rest of the tarball unpacked.

@@ -1,0 +1,1 @@
+Ticket #4891 — user says their static site at /home/user/www isn't accessible. They've got index.html and some assets in there, just need a basic http server on port 8080. Python's already installed, don't need anything fancy, just get it serving so they can hit localhost:8080 and see the page.
