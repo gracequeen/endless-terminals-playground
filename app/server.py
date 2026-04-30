@@ -259,6 +259,7 @@ def create_app() -> Flask:
         traj = data.load_trajectory(trial) or {}
         verifier_stdout = data.load_verifier_stdout(trial)
         reward_txt = data.load_verifier_reward(trial)
+        cast_text = data.load_recording_cast(trial)
 
         # Transform trajectory steps for template-friendly rendering
         steps_view: list[dict[str, Any]] = []
@@ -301,6 +302,7 @@ def create_app() -> Flask:
             steps=steps_view,
             verifier_stdout=verifier_stdout,
             reward_txt=reward_txt,
+            cast_text=cast_text,
             siblings=siblings,
             prev_t=prev_t,
             next_t=next_t,
@@ -314,7 +316,14 @@ def create_app() -> Flask:
         if not trial:
             abort(404)
         cast = data.load_recording_cast(trial)
-        return (cast, 200, {"Content-Type": "text/plain; charset=utf-8"})
+        return (
+            cast,
+            200,
+            {
+                "Content-Type": "application/x-asciicast; charset=utf-8",
+                "Cache-Control": "no-store",
+            },
+        )
 
     @app.get("/api/dashboard.json")
     def api_dashboard():

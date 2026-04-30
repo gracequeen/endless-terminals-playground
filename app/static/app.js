@@ -14,22 +14,46 @@
     target.querySelectorAll('pre code').forEach((b) => window.hljs && window.hljs.highlightElement(b));
   });
 
-  // Asciinema players: each .asciinema-cast element with data-cast-url
-  document.querySelectorAll('.asciinema-cast').forEach(async (el) => {
-    const url = el.dataset.castUrl;
-    if (!url || !window.AsciinemaPlayer) return;
+  // Asciinema cast player — uses an inline <script id="cast-data"> blob so we
+  // don't depend on a fetch round-trip and can render even when the server is
+  // not reachable. Falls back to a downloadable link if the player library
+  // didn't load.
+  const castContainer = document.getElementById('cast-container');
+  const castScript = document.getElementById('cast-data');
+  if (castContainer && castScript) {
+    let castText = '';
     try {
-      window.AsciinemaPlayer.create(url, el, {
-        autoPlay: false,
-        idleTimeLimit: 2,
-        speed: 2,
-        theme: 'monokai',
-        fit: 'width',
-      });
-    } catch (err) {
-      el.textContent = 'Failed to load recording: ' + err;
+      castText = (JSON.parse(castScript.textContent || '""') || '').trim();
+    } catch (_) {
+      castText = (castScript.textContent || '').trim();
     }
-  });
+    if (!castText) {
+      castContainer.innerHTML = '<div class="p-6 text-sm text-ink-500">No recording for this trial.</div>';
+    } else if (!window.AsciinemaPlayer) {
+      castContainer.innerHTML = '<div class="p-6 text-sm text-amber-300">asciinema-player failed to load — check your network.</div>';
+    } else {
+      try {
+        window.AsciinemaPlayer.create(
+          { data: castText },
+          castContainer,
+          {
+            autoPlay: false,
+            idleTimeLimit: 2,
+            speed: 2,
+            theme: 'monokai',
+            fit: 'width',
+            terminalFontSize: '12px',
+          }
+        );
+      } catch (err) {
+        console.error('asciinema-player error:', err);
+        castContainer.innerHTML =
+          '<div class="p-6 text-sm text-amber-300">Failed to render recording: ' +
+          (err && err.message ? err.message : String(err)) +
+          '</div>';
+      }
+    }
+  }
 
   // Toggle expand/collapse code blocks with .collapsible
   document.querySelectorAll('.collapsible').forEach((el) => {
