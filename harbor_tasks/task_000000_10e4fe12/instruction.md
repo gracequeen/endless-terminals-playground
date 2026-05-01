@@ -1,0 +1,3 @@
+Writing a backup script and it needs to copy files from /home/user/projects into /home/user/backups while preserving ownership info in a manifest. Problem is some of the project dirs have weird permission combos — there's stuff I can read but not list the parent, stuff I can list but not read, etc. Previous dev set it up this way for "security" reasons and I can't change the perms.
+
+Need a script at /home/user/backup.sh that copies everything I actually have access to read into /home/user/backups (mirroring the directory structure), and writes a manifest.txt listing each file copied with its original owner:group. Files I can't read should just be skipped, no errors. The backup dir is empty right now.

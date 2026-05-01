@@ -1,0 +1,3 @@
+Deployed a headless scraper to /home/user/scraper that's supposed to pull product prices from a local test server every hour and dump them to /home/user/scraper/prices.json. Works fine on my dev box but on this stripped-down IoT image it just hangs — chromium process spawns, sits there eating memory, never returns. Tried adding `--no-sandbox` already since we're running as non-root in a container-ish env, didn't help.
+
+The test server is up on localhost:8080 serving a simple product listing page. Script is scrape.py using pyppeteer. Need it to actually complete and write valid price data to prices.json. Pretty sure it's some chromium flag or env thing specific to this minimal image but I've been staring at it for an hour and I'm out of ideas.
