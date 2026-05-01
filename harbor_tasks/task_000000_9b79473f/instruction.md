@@ -1,0 +1,3 @@
+Trying to set up a dev environment for the archive validator tool at /home/user/archive-validator — it's supposed to let me test backup integrity checks locally before running them against prod. Ran `make build` and it just dies with some linking error about undefined references. The weird thing is the CI logs from last week show the same Makefile working fine on the build server, so I'm guessing it's something about my local setup? There's a deps.sh script that's supposed to bootstrap everything but I already ran it and it said it completed successfully.
+
+Need `make build` to produce a working binary at bin/validator that I can actually run.

@@ -1,0 +1,3 @@
+User export script at /home/user/admin/export_users.sh has been dumping garbled data since last week's migration — looks like it's merging fields together wrong or something. We moved from the old flat passwd-style format to this new multi-file thing and the export is supposed to produce clean CSV but half the entries have emails in the shell column and group memberships showing up as UIDs. There's like 800 users across the department files and I need the combined export working by tomorrow.
+
+The weird thing is if I eyeball any individual source file it looks fine? So maybe it's something in how they're being joined or ordered. Old sysadmin wrote this before he left, no docs obv.

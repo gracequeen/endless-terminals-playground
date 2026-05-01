@@ -1,0 +1,3 @@
+Trying to run our daily ingestion at /home/user/etl and it's choking before it even gets to the pipeline logic. `./run.sh` just errors out — something about modules not found, but I swear the venv has everything. Created it last week, did the usual `pip install -r requirements.txt`, it all looked fine at the time.
+
+The weird part is if I just do `python ingest.py` directly from the etl directory it also fails, but with a different error? Haven't had time to dig in, but we need this running for the 6pm batch. The script should pull from data/raw/, transform, and dump to data/processed/output.parquet — that's the deliverable ops is waiting on.

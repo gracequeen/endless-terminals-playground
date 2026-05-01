@@ -1,0 +1,3 @@
+Incremental backups on /home/user/backup/incremental.sh have been silently producing corrupt archives for weeks — they look fine, create a .tar.gz, no errors on stdout, but when you actually try to extract you get truncated files or outright "unexpected EOF" halfway through. Full backups from the same script work perfectly. The weird part is the incremental *used* to work, and I haven't touched the script since March.
+
+The backup source is /home/user/data (mix of small configs and some larger binaries), state tracking via /home/user/backup/state/, archives land in /home/user/backup/archives/. Need incrementals actually extractable — the full backup path is fine, don't mess with it.
