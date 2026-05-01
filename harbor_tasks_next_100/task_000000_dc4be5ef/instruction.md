@@ -1,0 +1,1 @@
+Need to bump the version in /home/user/pg-backup-tool/package.json from 2.3.1 to 2.4.0 — we're cutting a minor release for the new incremental backup feature. Also add an entry to CHANGELOG.md at the top of the Unreleased section, something like "Added incremental backup support for large databases".

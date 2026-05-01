@@ -1,0 +1,1 @@
+Build script dumps metadata into /home/user/builds/artifacts.db after each run — table called `build_artifacts` with columns `id`, `build_id`, `path`, `size_bytes`, `created_at`. Need to free up disk, so I want a list of the 20 largest artifacts. Just dump build_id and size_bytes to /home/user/builds/large_artifacts.txt, one per line, tab-separated, biggest first.

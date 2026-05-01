@@ -1,0 +1,1 @@
+Need a user cron job that runs `/home/user/scripts/metrics_push.sh` every 15 minutes. Script's already there and works when I run it manually, just need it scheduled. Don't have root so it's gotta be a user crontab.

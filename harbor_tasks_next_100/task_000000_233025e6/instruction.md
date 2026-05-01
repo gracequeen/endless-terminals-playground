@@ -1,0 +1,1 @@
+Build scripts expect the NDK at /home/user/android/ndk-current but I installed r26b to /home/user/android/ndk-r26b. Just need a symlink so ndk-current points there — nothing's at that path rn so it should be clean.

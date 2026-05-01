@@ -1,0 +1,1 @@
+Need to rotate the API keys in /home/user/services/config.yaml — there's like 12 of them scattered through the file, all following the pattern `api_key: "sk_live_..."`. New keys are in /home/user/rotation/new_keys.csv, two columns: old_key,new_key. Just need each old one swapped for its new one, everything else in the yaml untouched.

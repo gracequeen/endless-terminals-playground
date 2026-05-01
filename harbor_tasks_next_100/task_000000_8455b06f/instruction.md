@@ -1,0 +1,1 @@
+Got a sqlite db at /home/user/data/inventory.db with a products table — need to add a column called `discontinued` (integer, default 0). Just alter the table, don't need to populate it with anything yet.

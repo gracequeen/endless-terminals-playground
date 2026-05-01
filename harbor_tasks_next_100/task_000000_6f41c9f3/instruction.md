@@ -1,0 +1,3 @@
+Trying to run an old archive validation script at /home/user/backup/validate.py against some tapes we pulled out of cold storage — thing hasn't been touched since 2019. Python's choking on it before it even gets to the actual validation logic. First error was about some print syntax, I fixed that, now it's dying somewhere else with an attribute error I think? Maybe something about encoding, didn't save the exact traceback.
+
+The script reads manifest files from /home/user/backup/manifests/ and checks them against checksums in /home/user/backup/checksums.db (just a sqlite file). Need it running again so I can verify these tapes before we migrate to the new cold storage system. Don't want to rewrite the whole thing, just get it functional on our current python.

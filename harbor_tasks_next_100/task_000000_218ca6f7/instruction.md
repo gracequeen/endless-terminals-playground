@@ -1,0 +1,1 @@
+Need a quick markdown doc at /home/user/docs/endpoints.md listing the three endpoints in /home/user/api/routes.json — just the method, path, and description for each, formatted as a table. Nothing fancy.

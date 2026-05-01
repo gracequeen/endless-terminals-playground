@@ -1,0 +1,1 @@
+Need to pin mlflow to exactly 2.9.2 in /home/user/tracking/requirements.txt — it's currently got mlflow>=2.0 which keeps pulling 2.11 and breaking our artifact logger. Just change that one line, don't touch the rest of the file.

@@ -1,0 +1,1 @@
+Need a user crontab entry that runs `/home/user/etl/daily_ingest.sh` every day at 3:15 AM. Script's already there and works when I run it manually, just need the scheduling piece wired up. Oh and make sure the cron output goes to `/home/user/etl/logs/cron.log` instead of mail.

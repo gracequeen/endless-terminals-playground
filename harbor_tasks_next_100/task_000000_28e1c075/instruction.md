@@ -1,0 +1,3 @@
+Provisioning script at /home/user/infra/setup_backup.sh is supposed to tar up /home/user/appdata nightly and gpg-encrypt it to /home/user/backups — been running it manually during testing and the encrypted archives come out fine, I can decrypt them no problem. But when I added it to cron (crontab entry's already there, runs as my user), the job runs but produces corrupt archives. Like gpg just hangs or bails partway through? The .tar.gz.gpg files in /home/user/backups are there but way smaller than they should be and gpg --decrypt chokes on them.
+
+Probably something environmental but I've been staring at it for an hour. Need the cron job to actually produce valid encrypted backups I can restore from.

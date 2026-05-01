@@ -1,0 +1,1 @@
+Need to set up a basic Express server at /home/user/api — just a single endpoint GET /health that returns `{"status":"ok"}` with content-type application/json. Port 3000. Nothing fancy, just need it runnable with `node server.js`.

@@ -1,0 +1,1 @@
+Need to bump the solver timeout in /home/user/pipeline/optim.cfg from 30 to 120 — builds are getting killed mid-solve on the bigger APKs. Config is ini-style, should be under [solver] as timeout_sec or something like that.

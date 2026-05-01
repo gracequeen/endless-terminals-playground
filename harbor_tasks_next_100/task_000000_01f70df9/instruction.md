@@ -1,0 +1,1 @@
+Need to set the system timezone to America/Denver on this box — some preprocessing scripts are writing timestamps and they're coming out UTC. Already confirmed TZ isn't set in my env, just need the system default changed. The scripts read /etc/localtime so that's what matters.

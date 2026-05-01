@@ -1,0 +1,1 @@
+Need to let port 8080 through — we're deploying a new service tomorrow and iptables is blocking it. Rules are in /etc/iptables/rules.v4, just add an ACCEPT for tcp 8080 incoming on the INPUT chain. Don't touch the other rules.

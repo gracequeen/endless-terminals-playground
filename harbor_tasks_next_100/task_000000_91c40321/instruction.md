@@ -1,0 +1,1 @@
+Got a patch at /home/user/project/changes.patch that needs to go onto /home/user/project/src/config.py but patch keeps complaining about the path — something about "can't find file to patch". The patch itself is fine, I generated it with `diff -u` from one directory up. Just need it applied.

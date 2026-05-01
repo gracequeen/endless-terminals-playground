@@ -1,0 +1,1 @@
+Got a small LP solver config at /home/user/optim/solver.conf that's supposed to set the iteration cap to 5000 but someone fat-fingered it — there's a stray quote mark breaking the parser. Just need that syntax error gone so the solver reads it clean.

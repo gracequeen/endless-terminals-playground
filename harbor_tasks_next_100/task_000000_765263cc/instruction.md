@@ -1,0 +1,3 @@
+Tests in /home/user/qa/integration keep failing with `ModuleNotFoundError: No module named 'requests'` even though I *just* ran `pip install -r requirements.txt` and pip says everything's satisfied. The weird thing is if I run `python -c "import requests"` manually it works fine, but `pytest tests/` blows up. I've checked the venv is activated (shows `(qa-env)` in my prompt), checked `which python` points to the venv, checked `which pytest` points to the venv too. All looks correct. Still fails.
+
+There's also some secondary venv at /home/user/qa/.tox/py311 from an old tox run that I'm not using anymore, might be related? idk. Just need the test suite passing — there's only one test file and it should be green if it can actually import the deps.

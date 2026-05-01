@@ -1,0 +1,1 @@
+Got a tarball at /home/user/backups/site-2024-03-15.tar.gz that I need to pull just the database dump from — should be something like db.sql or maybe dump.sql in there somewhere. Don't need the rest of the archive extracted, just that one file dropped into /home/user/restore/.

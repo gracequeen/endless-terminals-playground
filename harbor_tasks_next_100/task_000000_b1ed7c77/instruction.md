@@ -1,0 +1,1 @@
+Need a Makefile at /home/user/profiling/Makefile that builds the benchmark binary. Source is bench.c, output should be bench, and I need -O2 -pg flags for gprof profiling. Also add a clean target that removes the binary. Pretty standard stuff.

@@ -1,0 +1,3 @@
+Deploy script at /home/user/releases/deploy.sh keeps dying with "config not found" when I try to roll out build 47 — running `./deploy.sh 47` from the releases dir. Thing is, /home/user/releases/builds/47/app.conf definitely exists, I just checked. The script worked fine for build 46 last week, nothing's changed in the script itself afaict.
+
+Symlinks are involved somewhere in how it resolves the config path, pretty sure there's a `current` link that gets updated. Might be something with how the paths chain together? Anyway I need build 47 actually deploying — script should complete and the app config should be active at whatever path the runtime expects.

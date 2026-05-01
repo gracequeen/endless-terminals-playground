@@ -1,0 +1,3 @@
+Been testing our upload endpoint and customers are sending us weird archive formats — one just hit the API and it's sitting at /home/user/incoming/delivery_0422.bin. The endpoint's supposed to extract whatever's inside to /home/user/extracted/ and log the mime type to /home/user/logs/intake.log, but nothing's appearing in extracted/ and the log just says "unknown format - skipped".
+
+Our handler script is at /home/user/api/extract_handler.sh and it's been working fine for zips and tarballs. Pretty sure this is a valid archive, customer swears they can open it on their end. Need whatever's inside extracted properly and the log updated with the correct format detection.

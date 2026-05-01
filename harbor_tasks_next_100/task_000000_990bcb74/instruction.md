@@ -1,0 +1,1 @@
+Need to rotate the API key in /home/user/webapp/.env — the old one got leaked so security revoked it. New key is `sk_live_9f8x2mK4pL7nQ3wR`. Variable name is `STRIPE_SECRET_KEY`. Don't touch the other vars in there.

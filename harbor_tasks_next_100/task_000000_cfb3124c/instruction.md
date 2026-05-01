@@ -1,0 +1,1 @@
+Need a quick disk usage breakdown for /var/data — just the immediate subdirectories, sorted biggest first, human-readable sizes. Dump it to /home/user/report.txt. Don't need it to recurse into sub-sub-directories, just the top level totals.

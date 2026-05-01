@@ -1,0 +1,1 @@
+Migrating our config registry to the new naming scheme — all the service endpoints in /home/user/services/endpoints.conf need the prefix changed from `legacy-` to `svc-`. There's like 40 of them scattered through the file. Just need an in-place edit, rest of the file stays the same.

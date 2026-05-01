@@ -1,0 +1,1 @@
+Need a quick health endpoint running on port 8080 for a canary check — just needs to return `{"status":"ok"}` on GET /health. Threw together a flask app at /home/user/healthcheck/app.py but haven't started it yet. Can you spin it up in the background so I can hit it with curl?

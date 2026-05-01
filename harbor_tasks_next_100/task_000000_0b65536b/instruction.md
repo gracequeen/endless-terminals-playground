@@ -1,0 +1,1 @@
+Got a vuln scanner config at /home/user/scanner/scan.yaml that's supposed to check our edge nodes but it's pointing at the wrong subnet — has 10.0.1.0/24 and needs to be 10.0.2.0/24. Just swap it out, the rest of the config is fine.

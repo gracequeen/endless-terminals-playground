@@ -1,0 +1,1 @@
+Got a legacy sensor aggregator at /home/user/sensors/collect.py that needs to run on some old ARM boxes still stuck on Python 2.7. Previous dev wrote it in py3 and I need it working under 2.7 — just the print statements afaik, everything else should be fine. `python2 collect.py` barfs on syntax right now.

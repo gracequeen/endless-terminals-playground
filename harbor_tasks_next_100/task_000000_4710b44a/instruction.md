@@ -1,0 +1,1 @@
+Need to find what's eating space in /home/user/translations — got like 15 subdirectories for different locales and the whole thing ballooned to 2GB somehow. Just need a quick breakdown showing how much each locale folder is using, sorted biggest first. Dump that to /home/user/locale_sizes.txt so I can share it with the team.

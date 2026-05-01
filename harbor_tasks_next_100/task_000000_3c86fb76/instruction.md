@@ -1,0 +1,1 @@
+Need to pull all the instance IDs from /home/user/inventory.json — it's an array of objects, each has an "instance_id" field. Just need them one per line dumped to /home/user/instance_ids.txt. jq is installed.

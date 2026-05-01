@@ -1,0 +1,1 @@
+Need to bump the version in /home/user/pg-backup-tool/package.json from 2.3.1 to 2.4.0 and add a changelog entry for it. There's a CHANGELOG.md in the same dir — just stick a new section at the top with today's date and a one-liner about adding support for incremental backups.

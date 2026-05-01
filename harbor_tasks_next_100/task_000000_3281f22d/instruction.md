@@ -1,0 +1,1 @@
+All our audit timestamps have to be in UTC for the compliance reports but my shell is defaulting to America/New_York — just need TZ set to UTC in my bashrc at /home/user/.bashrc so new shells pick it up. Should already have some stuff in there, don't clobber it.

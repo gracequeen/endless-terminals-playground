@@ -1,0 +1,1 @@
+User filed a ticket saying they installed requests but `import requests` still fails in their project venv. Checked and they're right — they ran pip install in their system python instead of activating the venv first. Venv is at /home/user/webapp/venv, just need requests actually installed there.

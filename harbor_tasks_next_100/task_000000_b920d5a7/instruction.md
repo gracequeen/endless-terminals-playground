@@ -1,0 +1,1 @@
+Need to pull just the transaction IDs and amounts from /home/user/audit/march_payments.json into a csv for the compliance report. Format's simple — two columns, txn_id and amount, header row, that's it. Dump it to /home/user/audit/march_extract.csv.

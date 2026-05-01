@@ -1,0 +1,1 @@
+Need a symlink at /home/user/shortcuts/config pointing to /home/user/app/settings.json — the shortcuts dir exists but is empty right now. Make sure it's a relative link, not absolute, so it survives if we move the whole tree somewhere else.

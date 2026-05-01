@@ -1,0 +1,1 @@
+Need the total size of all .png files ever committed to /home/user/assets-repo — not just what's on disk now, but everything in git history. Repo's gotten bloated and I want to know how much of that is pngs. Just print the byte count.
