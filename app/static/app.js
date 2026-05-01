@@ -1,6 +1,73 @@
 // Common utilities loaded on every page.
 
 (function () {
+  // Theme switcher
+  const THEME_KEY = 'endless-terminals-theme';
+  const themes = ['dark', 'light', 'dim', 'midnight'];
+
+  function getTheme() {
+    return localStorage.getItem(THEME_KEY) || 'dark';
+  }
+
+  function setTheme(theme) {
+    if (!themes.includes(theme)) theme = 'dark';
+    document.body.setAttribute('data-theme', theme);
+    localStorage.setItem(THEME_KEY, theme);
+    updateThemeButton();
+
+    // Toggle syntax highlighting theme
+    const hljsDark = document.getElementById('hljs-dark');
+    const hljsLight = document.getElementById('hljs-light');
+    if (theme === 'light') {
+      if (hljsDark) hljsDark.disabled = true;
+      if (hljsLight) hljsLight.disabled = false;
+    } else {
+      if (hljsDark) hljsDark.disabled = false;
+      if (hljsLight) hljsLight.disabled = true;
+    }
+  }
+
+  function updateThemeButton() {
+    const current = getTheme();
+    const btn = document.getElementById('theme-btn-text');
+    if (btn) {
+      const names = { dark: 'Dark', light: 'Light', dim: 'Dim', midnight: 'Midnight' };
+      btn.textContent = names[current] || 'Dark';
+    }
+
+    // Update active state in menu
+    document.querySelectorAll('.theme-option').forEach(opt => {
+      opt.classList.toggle('active', opt.dataset.theme === current);
+    });
+  }
+
+  // Initialize theme on page load
+  setTheme(getTheme());
+
+  // Theme button toggle
+  const themeBtn = document.getElementById('theme-btn');
+  const themeMenu = document.getElementById('theme-menu');
+
+  if (themeBtn && themeMenu) {
+    themeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      themeMenu.classList.toggle('hidden');
+    });
+
+    // Close menu when clicking outside
+    document.addEventListener('click', () => {
+      themeMenu.classList.add('hidden');
+    });
+
+    // Theme option clicks
+    document.querySelectorAll('.theme-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setTheme(opt.dataset.theme);
+        themeMenu.classList.add('hidden');
+      });
+    });
+  }
   if (window.hljs) {
     window.hljs.highlightAll();
   }
