@@ -598,7 +598,7 @@ def generate_templates_batch(
     *,
     model: str = "qwen/Qwen2.5-3B-Instruct",
     temperature: float = 1.0,
-    max_tokens: int = 2048,
+    max_tokens: int = 8192,
     max_concurrency: int = 128,
     categories: Optional[list[str]] = None,
     difficulties: Optional[list[str]] = None,
