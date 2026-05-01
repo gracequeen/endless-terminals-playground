@@ -1,0 +1,1 @@
+csv at /home/user/data/orders.csv has about 50k rows and I need to sort it by the total_amount column descending, keep the header row at the top. output to /home/user/data/orders_sorted.csv. just need it done quick, cli is fine.

@@ -1,0 +1,1 @@
+Got a JSON at /home/user/experiments/run_047.json with our latest hyperparams — need to convert it to CSV for the tracking spreadsheet. Single flat object, no nesting, just keys and values. Drop it at /home/user/experiments/run_047.csv, header row with the keys, one data row with the values.

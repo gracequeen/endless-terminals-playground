@@ -1,0 +1,1 @@
+Got a big JSON dump from the API at /home/user/inventory/switches.json — need to pull out just the hostnames of devices where "status" is "offline". Throw them in /home/user/inventory/offline_hosts.txt, one per line. jq is installed.

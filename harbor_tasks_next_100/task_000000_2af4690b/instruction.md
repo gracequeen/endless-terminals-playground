@@ -1,0 +1,1 @@
+Trying to restore a backup of /home/user/webapp but git says submodules are missing. The .gitmodules file is there and looks fine, I just need someone to actually pull down the submodule contents. There's only one submodule (some logging lib), should be quick.

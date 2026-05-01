@@ -1,0 +1,1 @@
+Need to verify a restore worked — got a backup at /home/user/backups/customers.json and the live copy at /home/user/data/customers.csv. They should have the same customer IDs. Just dump the IDs from both into /home/user/verify/json_ids.txt and /home/user/verify/csv_ids.txt, one per line, sorted. I'll diff them myself.

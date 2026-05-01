@@ -1,0 +1,5 @@
+Our policy-as-code pipeline at /home/user/policygate keeps rejecting vendor patches even when they're clean. The check runs `./validate.sh` which applies each .patch file in incoming/ to a pristine copy of the baseline, then diffs the result against the allowlist of permitted changes. Vendor sent over three patches yesterday — two should pass (they only touch files in the approved paths) and one should fail (touches /etc/shadow, obviously bad). But validate.sh is rejecting all three with "unauthorized modification detected" even though I've triple-checked the allowlist and the patch contents look fine.
+
+Weirdest part: if I manually apply the patches with `patch -p1` they look correct, but the validator still flags them. Starting to think maybe the diff logic is broken or there's something about how the patches themselves are structured that's throwing it off. The allowlist format is documented in policy.md but I wrote that six months ago so grain of salt.
+
+Need all three patches to pass/fail correctly — the two good ones green, the shadow one red.

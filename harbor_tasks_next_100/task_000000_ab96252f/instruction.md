@@ -1,0 +1,1 @@
+Need to sync /home/user/reports/ to /home/user/backup/reports/ but only the csv files — there's a bunch of temp xlsx junk in there I don't want copied over. rsync should do it, just haven't used the include/exclude flags before. Make sure it gets the subdirectories too.

@@ -1,0 +1,5 @@
+Been debugging a log aggregation issue all morning with our microservices stack. We've got a fluentd-style log filter at /home/user/logpipe/filter.py that's supposed to route container logs to different outputs based on severity and source service. Problem is it's dropping about 40% of ERROR logs from the payment service — I can see them in the raw input at /home/user/logpipe/raw.log but they're not showing up in /home/user/logpipe/output/errors.log where they should land.
+
+The filter config is at /home/user/logpipe/routing.yaml and the regex patterns are in /home/user/logpipe/patterns.conf. I've stared at the patterns for an hour and they look fine to me — the ERROR pattern matches when I test it manually in python. Running `python filter.py` processes raw.log and writes to the output dir.
+
+Weird thing is it catches ERROR logs from auth-service and inventory-service just fine, it's specifically payment-svc that's getting dropped. Maybe something about how that service formats its logs? They all go through the same container logging driver though so idk why they'd be different.

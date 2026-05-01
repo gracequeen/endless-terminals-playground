@@ -1,0 +1,3 @@
+Got a ticket that users on the 10.0.50.x subnet can't reach the internal wiki at 192.168.1.80:8080. Other subnets seem fine. The wiki box itself is up — I can curl it from machines on 10.0.10.x no problem. We use iptables on the gateway at /home/user/firewall/rules.sh and there's also some kind of rate limiting config somewhere that the previous guy set up.
+
+Ticket says it started Monday but nobody touched the firewall since... March? Anyway need 10.0.50.0/24 able to hit 192.168.1.80:8080. Gateway firewall is what we control, wiki box itself is managed by another team so can't touch that side.

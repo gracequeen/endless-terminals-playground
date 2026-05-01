@@ -1,0 +1,1 @@
+Got a tarball at /home/user/backups/site-2024-03-15.tar.gz that I need to extract to /home/user/restore/ but only the config files — everything under etc/ in the archive. Don't need the whole thing, it's like 2GB of logs and uploads I don't care about right now.

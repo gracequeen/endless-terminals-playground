@@ -1,0 +1,1 @@
+Need to convert /home/user/exports/customers.json from that nested format into a flat CSV at /home/user/exports/customers.csv — just the id, name, and email fields from each record. The json has like 500 customers under a "data" key. jq is installed if that helps.

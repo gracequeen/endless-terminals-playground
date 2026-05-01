@@ -1,0 +1,3 @@
+Our training cluster's shared storage is filling up and I'm getting paged. There's a cleanup script at /home/user/ops/purge_old_runs.py that's supposed to delete experiment artifacts older than 30 days, but it's been running nightly via cron for weeks and clearly not doing its job — /data/experiments is still at 89% and climbing.
+
+Script exits 0, logs say it's "processing" stuff, but the disk numbers don't lie. Need to figure out why it's not actually reclaiming space and fix it. The runs directory structure is /data/experiments/{project}/{run_id}/ with a metadata.json in each that has a created_at timestamp.

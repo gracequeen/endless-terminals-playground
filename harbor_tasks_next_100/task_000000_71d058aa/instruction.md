@@ -1,0 +1,1 @@
+Got a CSV at /home/user/api_responses.csv from our test run — each row has request_id,status_code,response_time_ms,endpoint. Need to pull just the rows where status_code is 500 and dump them to /home/user/failures.csv, keeping the header. Should be like 12 rows plus the header.

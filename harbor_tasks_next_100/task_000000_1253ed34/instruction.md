@@ -1,0 +1,3 @@
+Ran our quarterly port audit on the dev box at /home/user/firewall and something's off. The rules file claims only 22, 80, and 443 should be open to the outside, but when I diffed against the actual iptables dump in /home/user/firewall/current_rules.txt, there's at least one port that shouldn't be there. Compliance needs the rules file updated to match reality OR the live rules fixed to match policy — dealer's choice, but they need to agree, and policy says only those three ports.
+
+Also need a summary written to /home/user/firewall/audit_report.txt — just which ports were out of compliance and what you did about it. Nothing fancy, just enough that I can attach it to the ticket.

@@ -1,0 +1,3 @@
+Nightly sync job for our internal Maven mirror bombed out around 3am — /home/user/artifact-sync/sync.sh runs and pulls from upstream, checksums everything, then pushes to the local repo at /var/repo/maven. Logs say it completed but when I spot-checked this morning, a bunch of jars in /var/repo/maven are zero bytes. Not all of them, just some — maybe 40%? The SHA1 sidecar files are there and look legit, so something's writing the checksum but botching the actual artifact.
+
+    Upstream cache is still at /home/user/artifact-sync/cache if you need to re-pull anything. Just need the repo in a consistent state — every jar that has a .sha1 file should actually match it.

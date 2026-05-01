@@ -1,0 +1,1 @@
+Got a big access log at /home/user/logs/access.log — tab-separated, columns are timestamp, ip, method, path, status, bytes. Need to pull just the ip and status columns (2nd and 5th) into /home/user/logs/ip_status.tsv, same order, keep the tabs.

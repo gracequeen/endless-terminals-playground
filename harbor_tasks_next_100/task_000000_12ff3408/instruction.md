@@ -1,0 +1,1 @@
+Need a quick report on disk hogs for the quarterly audit — just the top 5 largest files anywhere under /var/data, with sizes in human-readable form. Dump it to /home/user/audit/top5.txt, one file per line, largest first.

@@ -1,0 +1,3 @@
+Alertmanager at /home/user/monitoring keeps failing on startup — `./alertmanager --config.file=alertmanager.yml` just dies immediately with some yaml error about line 42. Thing is, line 42 looks fine to me, it's just a receiver name. We've got a bunch of includes and template refs in there so maybe something's getting pulled in wrong? The prometheus rules in /home/user/monitoring/rules/ also reference alert routes that should exist.
+
+Need it actually starting and staying up on port 9093, and the existing alert routes need to stay intact — we have PagerDuty and Slack integrations that ops will murder me over if they break.

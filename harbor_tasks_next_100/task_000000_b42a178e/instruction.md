@@ -1,0 +1,1 @@
+Need to rotate the Redis password in /home/user/app/docker-compose.yml — old one is `hunter2`, new one should be `Kj9$mP2x!vL4`. There's a REDIS_PASSWORD env var in the app service and a --requirepass in the redis service command. Hit both spots.

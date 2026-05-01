@@ -1,0 +1,1 @@
+Need a Makefile at /home/user/dataprep/Makefile — nothing fancy, just targets for `clean`, `process`, and `all`. clean should rm -f the *.csv files in /home/user/dataprep/output, process should run `python3 scripts/convert.py`, and all should do clean then process. Default target should be all.

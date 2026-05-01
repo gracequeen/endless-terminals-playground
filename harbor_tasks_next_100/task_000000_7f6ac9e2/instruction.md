@@ -1,0 +1,1 @@
+Need to pull out all the service names from /home/user/alerts/incidents.json where status is "critical" — just the names, one per line, alphabetically. jq should do it, dump output to /home/user/alerts/critical_services.txt.

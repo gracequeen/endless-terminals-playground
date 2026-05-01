@@ -1,0 +1,1 @@
+Got a nginx access log at /var/log/app/access.log that's like 200k lines and I need to pull out just the 5xx errors for the postmortem doc. Format is standard combined log — status code is the 9th field. Dump the 5xx lines to /home/user/5xx.log.

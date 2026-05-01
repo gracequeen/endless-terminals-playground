@@ -1,0 +1,1 @@
+Need to pin numpy to exactly 1.24.3 in /home/user/deploy/requirements.txt — we're getting 1.26 in prod and it's breaking the legacy analytics module. File already exists with a bunch of deps, just need numpy locked down.

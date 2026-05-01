@@ -1,0 +1,1 @@
+Got a massive nginx access log at /var/log/app/access.log I'm pulling examples from for the troubleshooting docs. Need to grab just the 503 errors into /home/user/docs/503_examples.txt — the lines where the status code field is 503. Should be straightforward, it's standard combined log format.

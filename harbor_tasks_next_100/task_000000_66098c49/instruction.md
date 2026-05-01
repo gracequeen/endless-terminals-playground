@@ -1,0 +1,1 @@
+Got a bunch of failed SSH attempts in /var/log/auth_attempts.log — need to pull out just the IPs that failed 5+ times. Format should be one IP per line, sorted by count descending, dumped to /home/user/repeat_offenders.txt. Just the IPs, no counts.

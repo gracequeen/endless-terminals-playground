@@ -1,0 +1,5 @@
+Trying to bring up our edge gateway stack on /home/user/edge-gateway — it's a lightweight HTTP server that proxies sensor data to a local MQTT broker. `./start.sh` launches both the broker (mosquitto) and the gateway server, but curl to localhost:8080/health just hangs forever then times out. mosquitto seems fine, I can pubsub to it directly with mosquitto_pub/sub on 1883. Gateway logs in /home/user/edge-gateway/logs/gateway.log show it bound to 8080 successfully, no errors.
+
+Weird part is if I kill mosquitto, suddenly the HTTP server responds instantly (with an error about broker connection, but at least it *responds*). Almost like the MQTT connection is somehow blocking HTTP requests? We're using an async Python stack — aiohttp for HTTP, aiomqtt for MQTT — so that shouldn't be possible, right? Unless I'm missing something about how the event loop is being run.
+
+Need the health endpoint responding while MQTT stays connected. This deploys to a fleet of 200 gateways tomorrow so I can't exactly sit here debugging each one.
