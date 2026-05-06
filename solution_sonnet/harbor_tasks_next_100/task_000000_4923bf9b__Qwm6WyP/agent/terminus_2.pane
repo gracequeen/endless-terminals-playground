@@ -1,0 +1,190 @@
+[?2004hroot@7e3627c4e10a:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@7e3627c4e10a:/home/user# clear
+[?2004l[H[J[?2004hroot@7e3627c4e10a:/home/user# cd /home/user/releaser
+[?2004l[?2004hroot@7e3627c4e10a:/home/user/releaser# ls -la
+[?2004ltotal 40
+drwxrwxrwx 1 root root 4096 May  5 04:46 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 04:46 [34;42m..[0m
+drwxrwxrwx 1 root root 4096 May  5 04:46 [34;42m.git[0m
+-rwxrwxrwx 1 root root  349 May  5 04:46 [01;32mCHANGELOG.md[0m
+-rwxrwxrwx 1 root root    7 May  5 04:46 [01;32mVERSION[0m
+-rwxrwxrwx 1 root root 1327 May  5 04:46 [01;32mbump.sh[0m
+-rwxrwxrwx 1 root root    5 May  5 04:46 [01;32mdeps.txt[0m
+-rwxrwxrwx 1 root root    9 May  5 04:46 [01;32mfeature1.txt[0m
+-rwxrwxrwx 1 root root    5 May  5 04:46 [01;32mfix1.txt[0m
+-rwxrwxrwx 1 root root   32 May  5 04:46 [01;32msetup.txt[0m
+[?2004hroot@7e3627c4e10a:/home/user/releaser# cat VERSION
+[?2004l2.4.7
+[?2004hroot@7e3627c4e10a:/home/user/releaser# head -20 CHANGELOG.md
+[?2004l# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [2.4.7] - 2024-01-10
+
+- abc0001 Initial release preparation
+- abc0002 Setup CI pipeline
+
+## [2.4.6] - 2024-01-05
+
+- def0001 Add authentication module
+- def0002 Improve error handling
+
+## [2.4.5] - 2024-01-01
+
+- ghi0001 Project initialization
+- ghi0002 Add README
+[?2004hroot@7e3627c4e10a:/home/user/releaser# cat bump.sh
+[?2004l#!/bin/bash
+set -e
+VERSION_FILE="VERSION"
+CHANGELOG="CHANGELOG.md"
+
+current=$(cat "$VERSION_FILE")
+# Parse semver
+major=$(echo "$current" | cut -d. -f1)
+minor=$(echo "$current" | cut -d. -f2)
+patch=$(echo "$current" | cut -d. -f3)
+
+case "$1" in
+    major) major=$((major + 1)); minor=0; patch=0 ;;
+    minor) minor=$((minor + 1)); patch=0 ;;
+    patch) patch=$((patch + 1)) ;;
+    *) echo "Usage: $0 {major|minor|patch}"; exit 1 ;;
+esac
+
+# Bug: if patch increment fails (non-numeric due to \r), patch becomes empty
+# Script has this "helpful" fallback added by previous maintainer:
+if [ -z "$patch" ]; then
+    minor=$((minor + 1))
+    patch=0
+fi
+
+new_version="${major}.${minor}.${patch}"
+echo "$new_version" > "$VERSION_FILE"
+
+# Generate changelog block
+date_str=$(date +%Y-%m-%d)
+commits=$(git log --oneline --since="midnight" 2>/dev/null || echo "- No commits today")
+
+# Bug 2: The heredoc indentation is wrong — there's a second git log call
+# buried in a subshell that also runs, doubling the commits
+{
+    echo "## [$new_version] - $date_str"
+    echo "$commits"
+    echo "$(git log --oneline --since="midnight" 2>/dev/null)"
+    echo ""
+} > /tmp/new_changelog_block.txt
+
+cat /tmp/new_changelog_block.txt "$CHANGELOG" > /tmp/changelog_merged.txt
+mv /tmp/changelog_merged.txt "$CHANGELOG"
+
+echo "Bumped to $new_version"
+[?2004hroot@7e3627c4e10a:/home/user/releaser# od -c VERSION
+[?2004l0000000   2   .   4   .   7  \r  \n
+0000007
+[?2004hroot@7e3627c4e10a:/home/user/releaser# hexdump -C VERSION
+[?2004lbash: hexdump: command not found
+[?2004hroot@7e3627c4e10a:/home/user/releaser# tr -d '\r' < VERSION > VERSION.tmp && mv VERSION.tmp VERSION
+[?2004l[?2004hroot@7e3627c4e10a:/home/user/releaser# cat VERSION
+[?2004l2.4.7
+[?2004hroot@7e3627c4e10a:/home/user/releaser# od -c VERSION
+[?2004l0000000   2   .   4   .   7  \n
+0000006
+[?2004hroot@7e3627c4e10a:/home/user/releaser# cp bump.sh bump.sh.backup
+[?2004l[?2004hroot@7e3627c4e10a:/home/user/releaser# cat > bump.sh << 'EOF'
+[?2004l[?2004h> #!/bin/bash
+[?2004l[?2004h> set -e
+[?2004l[?2004h> VERSION_FILE="VERSION"
+[?2004l[?2004h> CHANGELOG="CHANGELOG.md"
+[?2004l[?2004h> 
+[?2004l[?2004h> current=$(cat "$VERSION_FILE")
+[?2004l[?2004h> # Parse semver
+[?2004l[?2004h> major=$(echo "$current" | cut -d. -f1)
+[?2004l[?2004h> minor=$(echo "$current" | cut -d. -f2)
+[?2004l[?2004h> patch=$(echo "$current" | cut -d. -f3)
+[?2004l[?2004h> 
+[?2004l[?2004h> case "$1" in
+[?2004l[?2004h>     major) major=$((major + 1)); minor=0; patch=0 ;;
+[?2004l[?2004h>     minor) minor=$((minor + 1)); patch=0 ;;
+[?2004l[?2004h>     patch) patch=$((patch + 1)) ;;
+[?2004l[?2004h>     *) echo "Usage: $0 {major|minor|patch}"; exit 1 ;;
+[?2004l[?2004h> esac
+[?2004l[?2004h> 
+[?2004l[?2004h> new_version="${major}.${minor}.${patch}"
+[?2004l[?2004h> echo "$new_version" > "$VERSION_FILE"
+[?2004l[?2004h> 
+[?2004l[?2004h> # Generate changelog block
+[?2004l[?2004h> date_str=$(date +%Y-%m-%d)
+[?2004l[?2004h> commits=$(git log --oneline --since="midnight" 2>/dev/null || echo "- No commits today")
+[?2004l[?2004h> 
+[?2004l[?2004h> {
+[?2004l[?2004h>     echo "## [$new_version] - $date_str"
+[?2004l[?2004h>     echo "$commits"
+[?2004l[?2004h>     echo ""
+[?2004l[?2004h> } > /tmp/new_changelog_block.txt
+[?2004l[?2004h> 
+[?2004l[?2004h> cat /tmp/new_changelog_block.txt "$CHANGELOG" > /tmp/changelog_merged.txt
+[?2004l[?2004h> mv /tmp/changelog_merged.txt "$CHANGELOG"
+[?2004l[?2004h> 
+[?2004l[?2004h> echo "Bumped to $new_version"
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@7e3627c4e10a:/home/user/releaser# chmod +x bump.sh
+[?2004l[?2004hroot@7e3627c4e10a:/home/user/releaser# ./bump.sh patch
+[?2004lBumped to 2.4.8
+[?2004hroot@7e3627c4e10a:/home/user/releaser# cat VERSION
+[?2004l2.4.8
+[?2004hroot@7e3627c4e10a:/home/user/releaser# head -20 CHANGELOG.md
+[?2004l## [2.4.8] - 2026-05-05
+a0ffc8d Update dependencies
+f3eb12c Fix login timeout
+eb05adf Add user export feature
+29b1a04 Add release tooling
+0d0f72c Second commit
+78a20cf Initial commit
+
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [2.4.7] - 2024-01-10
+
+- abc0001 Initial release preparation
+- abc0002 Setup CI pipeline
+
+## [2.4.6] - 2024-01-05
+
+- def0001 Add authentication module
+[?2004hroot@7e3627c4e10a:/home/user/releaser# diff -u bump.sh.backup bump.sh
+[?2004l--- bump.sh.backup	2026-05-05 04:48:37.942525550 +0000
++++ bump.sh	2026-05-05 04:48:38.055610412 +0000
+@@ -16,13 +16,6 @@
+     *) echo "Usage: $0 {major|minor|patch}"; exit 1 ;;
+ esac
+ 
+-# Bug: if patch increment fails (non-numeric due to \r), patch becomes empty
+-# Script has this "helpful" fallback added by previous maintainer:
+-if [ -z "$patch" ]; then
+-    minor=$((minor + 1))
+-    patch=0
+-fi
+-
+ new_version="${major}.${minor}.${patch}"
+ echo "$new_version" > "$VERSION_FILE"
+ 
+@@ -30,12 +23,9 @@
+ date_str=$(date +%Y-%m-%d)
+ commits=$(git log --oneline --since="midnight" 2>/dev/null || echo "- No commits today")
+ 
+-# Bug 2: The heredoc indentation is wrong — there's a second git log call
+-# buried in a subshell that also runs, doubling the commits
+ {
+     echo "## [$new_version] - $date_str"
+     echo "$commits"
+-    echo "$(git log --oneline --since="midnight" 2>/dev/null)"
+     echo ""
+ } > /tmp/new_changelog_block.txt
+ 
+[?2004hroot@7e3627c4e10a:/home/user/releaser# 

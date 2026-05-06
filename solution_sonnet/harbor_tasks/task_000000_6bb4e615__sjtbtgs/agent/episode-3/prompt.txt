@@ -1,0 +1,98 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+root@a51546ed5322:/home/user/audit# cat check_integrity.py
+#!/usr/bin/env python3
+"""
+Integrity checker script for audit verification.
+Reads manifest.sha256 and verifies each file's hash.
+"""
+
+import hashlib
+import os
+import sys
+
+MANIFEST_FILE = "manifest.sha256"
+
+def compute_hash(filepath):
+    """Compute SHA256 hash of a file.
+    # handles encoding properly
+    """
+    hasher = hashlib.sha256()
+    with open(filepath, 'r') as f:
+        content = f.read()
+        hasher.update(content.encode('utf-8'))
+    return hasher.hexdigest()
+
+def load_manifest(manifest_path):
+    """Load the manifest file and return a dict of path -> expected_hash."""
+    manifest = {}
+    with open(manifest_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            # Format: <hash>  <path> (two spaces)
+            parts = line.split('  ', 1)
+            if len(parts) == 2:
+                expected_hash, filepath = parts
+                manifest[filepath] = expected_hash.lower()
+    return manifest
+
+def verify_integrity():
+    """Main verification routine."""
+    if not os.path.exists(MANIFEST_FILE):
+        print(f"ERROR: Manifest file '{MANIFEST_FILE}' not found")
+        return False
+
+    manifest = load_manifest(MANIFEST_FILE)
+
+    if not manifest:
+        print("ERROR: Manifest is empty")
+        return False
+
+    print(f"Verifying {len(manifest)} files...")
+    print("-" * 50)
+
+    failures = []
+    successes = 0
+
+    for filepath, expected_hash in sorted(manifest.items()):
+        if not os.path.exists(filepath):
+            print(f"FAIL: {filepath} - file not found")
+            failures.append(filepath)
+            continue
+
+        try:
+            actual_hash = compute_hash(filepath)
+            if actual_hash == expected_hash:
+                print(f"OK: {filepath}")
+                successes += 1
+            else:
+                print(f"FAIL: {filepath} - hash mismatch")
+                print(f"      expected: {expected_hash}")
+                print(f"      actual:   {actual_hash}")
+                failures.append(filepath)
+        except Exception as e:
+            print(f"FAIL: {filepath} - error: {e}")
+            failures.append(filepath)
+
+    print("-" * 50)
+    print(f"Results: {successes} passed, {len(failures)} failed")
+
+    if failures:
+        print("\nFailed files:")
+        for f in failures:
+            print(f"  - {f}")
+        return False
+
+    print("\nAll files verified successfully!")
+    return True
+
+if __name__ == "__main__":
+    success = verify_integrity()
+    sys.exit(0 if success else 1)
+root@a51546ed5322:/home/user/audit#

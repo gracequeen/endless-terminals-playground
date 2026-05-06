@@ -1,0 +1,87 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@06993146764c:~/infra-configs$ cat > .git/hooks/pre-push << 'EOF'
+      fi
+        done
+    done
+done
+
+if [ $exit_code -ne 0 ]; then
+    echo ""
+    echo "Push rejected: World-readable private keys detected"
+    echo "Please fix the permissions and amend the commits"
+fi
+
+exit $exit_code
+EOF
+> #!/bin/bash
+> # Pre-push hook to block pushing commits with world-readable private keys
+> # This runs even if pre-commit was bypassed with --no-verify
+>
+> echo "Running pre-push validation..."
+>
+> remote="$1"
+> url="$2"
+>
+> z40=0000000000000000000000000000000000000000
+>
+> exit_code=0
+>
+> while read local_ref local_sha remote_ref remote_sha
+> dо
+>     if [ "$local_sha" = $z40 ]; then
+>         # Handle delete
+>         continue
+>     fi
+>
+>     if [ "$remote_sha" = $z40 ]; then
+>         # New branch, examine all commits
+>         range="$local_sha"
+>     else
+>         # Update to existing branch, examine new commits
+>         range="$remote_sha..$local_sha"
+>     fi
+>
+>     # Check all commits in the range
+>     for commit in $(git rev-list "$range"); do
+>         # Get files changed in this commit
+>         for file in $(git diff-tree --no-commit-id --name-only -r "$commit"); do
+>             if [[ "$file" == *.pem ]] || [[ "$file" == *.key ]]; then
+>                 # Check file permissions in that commit
+>                 if git cat-file -e "$commit:$file" 2>/dev/null; then
+>                     # Extract file to temp location and check permissions
+>                     temp_file=$(mktemp)
+>                     git show "$commit:$file" > "$temp_file" 2>/dev/null
+>
+>                     # Check if file exists in working tree to get its permissions
+>                     if [ -f "$file" ]; then
+>                         perms=$(stat -c "%a" "$file")
+>                         other_read=$((perms % 10))
+>
+>                         if [ "$perms" -ge 644 ] && [ $((other_read & 4)) -ne 0 ]; then
+>                             echo "ERROR: Commit $commit contains $file with world-readable permissions ($perms)"
+>                             echo "ERROR: Private keys must have permissions 600 or stricter"
+>                             echo "ERROR: Fix with: chmod 600 $file"
+>                             exit_code=1
+>                         fi
+>                     fi
+>                     rm -f "$temp_file"
+>                 fi
+>             fi
+>         done
+>     done
+> done
+>
+> if [ $exit_code -ne 0 ]; then
+>     echo ""
+>     echo "Push rejected: World-readable private keys detected"
+>     echo "Please fix the permissions and amend the commits"
+> fi
+>
+> exit $exit_code
+> EOF
+user@06993146764c:~/infra-configs$

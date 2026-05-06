@@ -1,0 +1,92 @@
+[?2004huser@169be8705533:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004huser@169be8705533:~$ clear
+[?2004l[H[J[?2004huser@169be8705533:~$ cd /home/user/pentest
+[?2004l[?2004huser@169be8705533:~/pentest$ ls -la
+[?2004ltotal 12
+drwxrwxrwx 1 user user 4096 May  5 17:40 .
+drwxrwxrwx 1 user user 4096 May  5 17:41 ..
+-rw-r--r-- 1 user user  468 May  5 17:40 target_iptables.txt
+[?2004huser@169be8705533:~/pentest$ cat target_iptables.txt
+[?2004l*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -p tcp --dport 22 -j ACCEPT
+-A INPUT -p tcp --dport 80 -m string --string "Mozilla" --algo bm -j ACCEPT
+-A INPUT -p tcp --dport 443 -m string --string "Mozilla" --algo bm -j ACCEPT
+-A INPUT -p tcp --dport 80 -j DROP
+-A INPUT -p tcp --dport 443 -j DROP
+-A INPUT -p icmp --icmp-type echo-request -j ACCEPT
+COMMIT
+[?2004huser@169be8705533:~/pentest$ cat > finding.txt << 'EOF'
+[?2004l[?2004h> FINDING: HTTP/HTTPS Traffic Blocking Issue
+[?2004l[?2004h> 
+[?2004l[?2004h> AFFECTED RULES:
+[?2004l[?2004h> - Rule 7: -A INPUT -p tcp --dport 80 -m string --string "Mozilla" --algo bm -j ACCEPT
+[?2004l[?2004h> - Rule 8: -A INPUT -p tcp --dport 443 -m string --string "Mozilla" --algo bm -j ACCEPT
+[?2004l[?2004h> - Rule 9: -A INPUT -p tcp --dport 80 -j DROP
+[?2004l[?2004h> - Rule 10: -A INPUT -p tcp --dport 443 -j DROP
+[?2004l[?2004h> 
+[?2004l[?2004h> ROOT CAUSE:
+[?2004l[?2004h> The iptables ruleset implements a flawed User-Agent filtering mechanism. Rules 7-8 only accept HTTP/HTTPS traffic if the packet contains the string "Mozilla" (attempting to filter by browser type). Rules 9-10 then explicitly DROP all other HTTP/HTTPS traffic that doesn't match.
+[?2004l[?2004h> 
+[?2004l[?2004h> WHY SSH WORKS BUT HTTP DOESN'T:
+[?2004l[?2004h> - SSH (port 22): Has an unconditional ACCEPT rule with no string matching requirements
+[?2004l[?2004h> - HTTP/HTTPS (ports 80/443): Require packets to contain "Mozilla" string to be accepted
+[?2004l[?2004h> 
+[?2004l[?2004h> WHY CURL HANGS:
+[?2004l[?2004h> The curl command sends a User-Agent header like "curl/7.x.x" which does not contain the string "Mozilla". Therefore:
+[?2004l[?2004h> 1. The packet doesn't match rules 7-8 (no "Mozilla" string found)
+[?2004l[?2004h> 2. The packet hits rules 9-10 and gets DROPped (not REJECTed)
+[?2004l[?2004h> 3. Since DROP silently discards packets, curl waits indefinitely for a response that never comes
+[?2004l[?2004h> 
+[?2004l[?2004h> RECOMMENDATION:
+[?2004l[?2004h> This string-matching approach for access control is fundamentally flawed:
+[?2004l[?2004h> - It can be trivially bypassed by adding "Mozilla" to any User-Agent
+[?2004l[?2004h> - It blocks legitimate tools (curl, wget, scripts, monitoring systems, APIs)
+[?2004l[?2004h> - String matching on packet payload is CPU-intensive and unreliable
+[?2004l[?2004h> - It provides no real security benefit
+[?2004l[?2004h> 
+[?2004l[?2004h> The organization should remove rules 7-10 and implement proper access controls using:
+[?2004l[?2004h> - Source IP whitelisting (-s flag)
+[?2004l[?2004h> - Network-based restrictions (firewall zones)
+[?2004l[?2004h> - Application-layer authentication (not firewall rules)
+[?2004l[?2004h> EOF
+[?2004l[?2004huser@169be8705533:~/pentest$ cat finding.txt
+[?2004lFINDING: HTTP/HTTPS Traffic Blocking Issue
+
+AFFECTED RULES:
+- Rule 7: -A INPUT -p tcp --dport 80 -m string --string "Mozilla" --algo bm -j ACCEPT
+- Rule 8: -A INPUT -p tcp --dport 443 -m string --string "Mozilla" --algo bm -j ACCEPT
+- Rule 9: -A INPUT -p tcp --dport 80 -j DROP
+- Rule 10: -A INPUT -p tcp --dport 443 -j DROP
+
+ROOT CAUSE:
+The iptables ruleset implements a flawed User-Agent filtering mechanism. Rules 7-8 only accept HTTP/HTTPS traffic if the packet contains the string "Mozilla" (attempting to filter by browser type). Rules 9-10 then explicitly DROP all other HTTP/HTTPS traffic that doesn't match.
+
+WHY SSH WORKS BUT HTTP DOESN'T:
+- SSH (port 22): Has an unconditional ACCEPT rule with no string matching requirements
+- HTTP/HTTPS (ports 80/443): Require packets to contain "Mozilla" string to be accepted
+
+WHY CURL HANGS:
+The curl command sends a User-Agent header like "curl/7.x.x" which does not contain the string "Mozilla". Therefore:
+1. The packet doesn't match rules 7-8 (no "Mozilla" string found)
+2. The packet hits rules 9-10 and gets DROPped (not REJECTed)
+3. Since DROP silently discards packets, curl waits indefinitely for a response that never comes
+
+RECOMMENDATION:
+This string-matching approach for access control is fundamentally flawed:
+- It can be trivially bypassed by adding "Mozilla" to any User-Agent
+- It blocks legitimate tools (curl, wget, scripts, monitoring systems, APIs)
+- String matching on packet payload is CPU-intensive and unreliable
+- It provides no real security benefit
+
+The organization should remove rules 7-10 and implement proper access controls using:
+- Source IP whitelisting (-s flag)
+- Network-based restrictions (firewall zones)
+- Application-layer authentication (not firewall rules)
+[?2004huser@169be8705533:~/pentest$ 

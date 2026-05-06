@@ -1,0 +1,88 @@
+New Terminal Output:
+
+root@dbbebcf607a4:/home/user/admin# cat > FIXES_APPLIED.txt << 'EOF'
+> === EXPORT_USERS.SH FIXES APPLIED ===
+>
+> Date: $(date)
+> Fixed by: System Administrator
+>
+> PROBLEM:
+> After migration from flat passwd-style format to multi-file format, the export_users.sh
+> script was producing garbled CSV output with:
+> - Emails merged with UIDs in the email column
+> - Numeric GIDs instead of group names
+> - Fields appearing in wrong columns
+>
+> ROOT CAUSES (3 bugs identified):
+>
+> 1. BUG #1: Wrong delimiter for emails.dat
+>    - File uses TAB delimiter, script used SPACE delimiter
+>    - Result: 'cut -d" "' failed, causing "UID<TAB>email" to be treated as one field
+>    - FIX: Changed to use 'awk -F"\t"' for proper tab-delimited parsing
+>
+> 2. BUG #2: Sorting mismatch (removed unnecessary complexity)
+>    - Original code sorted users alphabetically but emails numerically by UID
+>    - Result: Line N of users didn't correspond to line N of emails
+>    - FIX: Removed complex sort/paste logic, use direct UID-based lookup with awk
+>
+> 3. BUG #3: Wrong delimiter for groups.dat
+>    - File uses COLON delimiter, awk used default (space/tab)
+>    - Result: Entire "GID:groupname:description" treated as field 1
+>    - FIX: Added '-F":"' to all awk commands processing groups.dat
+>
+> RESULTS:
+> - All 800 users exported successfully (801 lines including header)
+> - Clean CSV format with proper field separation
+> - Group names properly resolved (engineering, devops, hr, etc.)
+> - Email addresses clean without UID prefix
+> - All supplementary groups resolved to names
+>
+> FILES:
+> - export_users.sh.backup: Original broken script (saved for reference)
+> - export_users.sh: Fixed script
+> - export.csv: Clean export output (ready for use)
+> - export_broken.csv: Sample broken output (for comparison)
+> EOF
+root@dbbebcf607a4:/home/user/admin# cat FIXES_APPLIED.txt
+=== EXPORT_USERS.SH FIXES APPLIED ===
+
+Date: $(date)
+Fixed by: System Administrator
+
+PROBLEM:
+After migration from flat passwd-style format to multi-file format, the export_users.sh
+script was producing garbled CSV output with:
+- Emails merged with UIDs in the email column
+- Numeric GIDs instead of group names
+- Fields appearing in wrong columns
+
+ROOT CAUSES (3 bugs identified):
+
+1. BUG #1: Wrong delimiter for emails.dat
+   - File uses TAB delimiter, script used SPACE delimiter
+   - Result: 'cut -d" "' failed, causing "UID<TAB>email" to be treated as one field
+   - FIX: Changed to use 'awk -F"\t"' for proper tab-delimited parsing
+
+2. BUG #2: Sorting mismatch (removed unnecessary complexity)
+   - Original code sorted users alphabetically but emails numerically by UID
+   - Result: Line N of users didn't correspond to line N of emails
+   - FIX: Removed complex sort/paste logic, use direct UID-based lookup with awk
+
+3. BUG #3: Wrong delimiter for groups.dat
+   - File uses COLON delimiter, awk used default (space/tab)
+   - Result: Entire "GID:groupname:description" treated as field 1
+   - FIX: Added '-F":"' to all awk commands processing groups.dat
+
+RESULTS:
+- All 800 users exported successfully (801 lines including header)
+- Clean CSV format with proper field separation
+- Group names properly resolved (engineering, devops, hr, etc.)
+- Email addresses clean without UID prefix
+- All supplementary groups resolved to names
+
+FILES:
+- export_users.sh.backup: Original broken script (saved for reference)
+- export_users.sh: Fixed script
+- export.csv: Clean export output (ready for use)
+- export_broken.csv: Sample broken output (for comparison)
+root@dbbebcf607a4:/home/user/admin#

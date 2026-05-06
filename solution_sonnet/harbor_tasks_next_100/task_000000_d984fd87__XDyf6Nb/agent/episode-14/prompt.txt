@@ -1,0 +1,70 @@
+New Terminal Output:
+
+root@3d54b7a72150:/home/user# echo '=== Fixed Script Verification ==='
+=== Fixed Script Verification ===
+root@3d54b7a72150:/home/user# grep -n 'shutil.rmtree\|replace(tzinfo=None)' /home/user/ops/purge_old_runs.py
+42:        return dt.replace(tzinfo=None)
+65:        shutil.rmtree(run_path)
+root@3d54b7a72150:/home/user# ls -lh /home/user/ops/purge_old_runs.py*
+-rwxrwxrwx 1 root root 2.8K May  5 08:42 /home/user/ops/purge_old_runs.py
+-rwxr-xr-x 1 root root 2.5K May  5 08:40 /home/user/ops/purge_old_runs.py.backup
+root@3d54b7a72150:/home/user# echo '\n=== Final Status ==='
+\n=== Final Status ===
+root@3d54b7a72150:/home/user# df -h /data/experiments
+Filesystem      Size  Used Avail Use% Mounted on
+overlay          87G   68G   19G  79% /
+root@3d54b7a72150:/home/user# cat /home/user/ops/BUGFIX_SUMMARY.md
+# Purge Script Bug Fix Summary
+
+## Problem
+The cleanup script `/home/user/ops/purge_old_runs.py` was running nightly via cron and exiting successfully (exit 0) with logs showing it was "processing" runs,
+ but disk usage on `/data/experiments` remained at 85%+ and was not actually freeing space.
+
+## Root Causes Identified
+
+### Bug #1: Using os.remove() instead of shutil.rmtree()
+**Location:** Line 50 in `delete_run()` function
+
+**Issue:** The script used `os.remove(run_path)` which only deletes files, not directories. Since experiment runs are directories containing subdirectories (che
+ckpoints/, logs/, outputs/) and files, the deletion always failed silently.
+
+**Fix:** Changed to `shutil.rmtree(run_path)` to recursively delete directory trees.
+
+### Bug #2: Timezone-aware vs timezone-naive datetime comparison
+**Location:** `get_run_created_at()` and `should_delete_run()` functions
+
+**Issue:** The metadata.json files contain timestamps with 'Z' suffix (e.g., "2024-01-15T14:23:00Z"). When parsed with `datetime.fromisoformat()` after replacin
+g 'Z' with '+00:00', this creates a timezone-aware datetime object. However, `datetime.now()` returns a timezone-naive datetime. Python cannot compare these two
+ types, causing an exception that was caught silently, making `should_delete_run()` always return False.
+
+**Fix:** Added `.replace(tzinfo=None)` to strip timezone info from parsed timestamps, making both datetimes naive and comparable.
+
+## Changes Made
+
+1. Added `import shutil` at the top of the script
+2. Changed `os.remove(run_path)` to `shutil.rmtree(run_path)` in `delete_run()`
+3. Added `created_at_str.replace('Z', '+00:00')` to handle UTC 'Z' suffix
+4. Added `.replace(tzinfo=None)` to strip timezone info for comparison
+5. Changed error logging from INFO to ERROR level for better visibility
+
+## Results
+
+- **Before fix:** 0 runs deleted, disk at 85% (74GB used)
+- **After fix:** 20 old runs deleted, disk at 78% (67GB used)
+- **Space reclaimed:** ~7GB
+- All runs older than 30 days successfully removed
+
+## Testing
+
+Manually ran the fixed script:
+```bash
+python3 /home/user/ops/purge_old_runs.py
+```
+
+Log output confirmed successful deletion:
+```
+Purge complete. Processed: 20, Deleted: 20
+```
+
+Verified old directories no longer exist and disk usage decreased.
+root@3d54b7a72150:/home/user#

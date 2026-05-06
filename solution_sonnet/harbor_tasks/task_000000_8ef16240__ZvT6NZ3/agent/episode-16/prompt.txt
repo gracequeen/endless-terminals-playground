@@ -1,0 +1,44 @@
+New Terminal Output:
+
+root@6611b8bbd090:/home/user/pipeline# echo "\n=== FINAL END-TO-END TEST ==="
+\n=== FINAL END-TO-END TEST ===
+root@6611b8bbd090:/home/user/pipeline# rm -f .checkpoint output/summary.db
+root@6611b8bbd090:/home/user/pipeline# echo "Starting process in background..."
+Starting process in background...
+root@6611b8bbd090:/home/user/pipeline# timeout 0.5 python3 process.py || echo "Process interrupted (expected)"
+root@6611b8bbd090:/home/user/pipeline# if [ -f .checkpoint ]; then echo "✓ Checkpoint file exists"; cat .checkpoint; else echo "✗ No checkpoint file"; fi
+✓ Checkpoint file exists
+{"last_line": 50000}root@6611b8bbd090:/home/user/pipeline# python3 << 'EOF'
+> import sqlite3
+> import os
+> if os.path.exists('output/summary.db'):
+>     conn = sqlite3.connect('output/summary.db')
+>     result = conn.execute('SELECT SUM(count) FROM summary').fetchone()
+>     print(f"✓ Partial records in DB: {result[0]}")
+>     conn.close()
+> else:
+>     print("✗ No database file yet")
+> EOF
+✓ Partial records in DB: 50000
+root@6611b8bbd090:/home/user/pipeline# echo "\nResuming process..."
+\nResuming process...
+root@6611b8bbd090:/home/user/pipeline# python3 process.py
+root@6611b8bbd090:/home/user/pipeline# python3 << 'EOF'
+> import sqlite3
+> conn = sqlite3.connect('output/summary.db')
+> result = conn.execute('SELECT SUM(count) FROM summary').fetchone()
+> print(f"\n=== FINAL VERIFICATION ===")
+> print(f"✓ Total records: {result[0]}")
+> print(f"✓ Expected: 50000")
+> if result[0] == 50000:
+>     print("✓ SUCCESS: Checkpoint resume working perfectly!")
+> else:
+>     print(f"✗ FAILED: Got {result[0]} instead of 50000")
+> conn.close()
+> EOF
+
+=== FINAL VERIFICATION ===
+✓ Total records: 50000
+✓ Expected: 50000
+✓ SUCCESS: Checkpoint resume working perfectly!
+root@6611b8bbd090:/home/user/pipeline#

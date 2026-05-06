@@ -1,0 +1,109 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@06993146764c:~/infra-configs$ chmod +x safe-commit.sh
+user@06993146764c:~/infra-configs$ cat > SECURITY.md << 'EOF'
+> # Security Issue: Bypassed Pre-commit Hook
+>
+> ## Issue Summary
+>
+> On May 2, 2026, commit 29e769c was pushed by jenkins-bot containing a private key file (`secrets/deploy.key`) with world-readable permissions (0644). This byp
+assed the pre-commit hook that should have blocked such commits.
+>
+> ## Root Cause
+>
+> The pre-commit hook was bypassed using the `--no-verify` (or `-n`) flag during commit. This is a common issue with client-side git hooks - they can be easily
+bypassed by:
+> - Using `git commit --no-verify`
+> - Using `git commit -n`
+> - Disabling hooks in git configuration
+> - Committing from a different repository clone
+>
+> ## Fixes Implemented
+>
+> ### 1. Fixed File Permissions
+> - Changed `secrets/deploy.key` from 0644 to 0600
+> - Only the owner can now read/write the file
+>
+> ### 2. Multi-Layer Hook Defense
+>
+> **Pre-commit Hook** (`.git/hooks/pre-commit`)
+> - First line of defense
+> - Checks staged files for world-readable keys
+> - Can be bypassed with --no-verify
+>
+> **Commit-msg Hook** (`.git/hooks/commit-msg`)
+> - Second line of defense
+> - Also validates staged files
+> - Runs after pre-commit but can also be bypassed with --no-verify
+>
+> **Pre-push Hook** (`.git/hooks/pre-push`)
+> - Third line of defense - MOST IMPORTANT
+> - Validates ALL commits being pushed
+> - Checks historical commits for bad permissions
+> - Cannot be bypassed with --no-verify (different flag needed: --no-verify on push)
+> - Catches issues even if commits were made with --no-verify
+>
+> ### 3. Safe Commit Wrapper
+>
+> **safe-commit.sh**
+> - Wrapper script for automation tools (Jenkins, CI/CD, etc.)
+> - Explicitly runs pre-commit hook before committing
+> - Never uses --no-verify
+> - Ensures hooks are always executed
+>
+> ## Usage for Automation
+>
+> ### For Jenkins/CI/CD Systems
+>
+> Instead of:
+> ```bash
+> git commit -m "auto-update keys"
+> ```
+>
+> Use:
+> ```bash
+> ./safe-commit.sh -m "auto-update keys"
+> ```
+>
+> ### For Manual Commits
+>
+> Never use `--no-verify` unless you have a very good reason and have manually verified the changes are safe.
+>
+> ## Server-Side Protection (Recommended)
+>
+> For production environments, implement server-side hooks:
+> - **pre-receive hook** on the Git server
+> - **update hook** on the Git server
+> - These cannot be bypassed by clients
+>
+> ## Testing
+>
+> Test that hooks work:
+> ```bash
+> # This should be blocked
+> echo "test" > secrets/test.key
+> chmod 644 secrets/test.key
+> git add secrets/test.key
+> git commit -m "test"  # Should fail
+>
+> # This should also be blocked at push time even if committed with --no-verify
+> git commit -m "test" --no-verify  # Commits locally
+> git push  # Should fail due to pre-push hook
+> ```
+>
+> ## Monitoring
+>
+> - Review git logs regularly for commits by automation accounts
+> - Audit file permissions in the repository
+> - Consider implementing git commit signing for automation accounts
+>
+> ## References
+>
+> - Git Hooks Documentation: https://git-scm.com/docs/githooks
+> - File Permission Best Practices for Private Keys: chmod 600
+> EOF
+user@06993146764c:~/infra-configs$

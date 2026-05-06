@@ -1,0 +1,57 @@
+New Terminal Output:
+
+root@adead4b2841a:/home/user/loadtest# cat aggregate.py
+#!/usr/bin/env python3
+"""
+Reads raw_timings.csv and computes percentile statistics.
+Writes results to stats.json.
+"""
+import csv
+import json
+import sys
+
+def compute_percentile(sorted_data, percentile):
+    """Compute the given percentile from sorted data."""
+    if not sorted_data:
+        return 0
+    k = (len(sorted_data) - 1) * (percentile / 100)
+    f = int(k)
+    c = f + 1 if f + 1 < len(sorted_data) else f
+    return sorted_data[f] + (k - f) * (sorted_data[c] - sorted_data[f])
+
+def aggregate(input_file="raw_timings.csv", output_file="stats.json"):
+    """Read latencies and compute statistics."""
+    latencies = []
+
+    with open(input_file, 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            latencies.append(row['latency_ms'])
+
+    if not latencies:
+        print("No data to aggregate", file=sys.stderr)
+        sys.exit(1)
+
+    # BUG: sorting as strings instead of floats!
+    # This causes "99.5" to sort after "9.1" due to string comparison
+    sorted_latencies = sorted(latencies)
+
+    # Convert to float for percentile calculation (but data is already wrongly sorted)
+    sorted_latencies_float = [float(x) for x in sorted_latencies]
+
+    stats = {
+        'count': len(latencies),
+        'min': min(sorted_latencies_float),
+        'max': max(sorted_latencies_float),
+        'p50': compute_percentile(sorted_latencies_float, 50),
+        'p99': compute_percentile(sorted_latencies_float, 99)
+    }
+
+    with open(output_file, 'w') as f:
+        json.dump(stats, f, indent=2)
+
+    print(f"Aggregated {stats['count']} samples to {output_file}")
+
+if __name__ == '__main__':
+    aggregate()
+root@adead4b2841a:/home/user/loadtest#

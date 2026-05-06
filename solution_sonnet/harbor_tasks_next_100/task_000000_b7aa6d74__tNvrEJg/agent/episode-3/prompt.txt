@@ -1,0 +1,80 @@
+New Terminal Output:
+
+root@dc94788d3f59:/home/user/audit# cat > collect.py << 'EOF'
+> #!/usr/bin/env python3
+> """
+> Compliance audit metrics collector.
+> Pulls metrics from auth, billing, and inventory services and produces a consolidated report.
+> """
+>
+> import asyncio
+> import aiohttp
+> import json
+> from datetime import datetime
+>
+> SERVICES = {
+>     "auth": "http://localhost:9001/metrics",
+>     "billing": "http://localhost:9002/metrics",
+>     "inventory": "http://localhost:9003/metrics",
+> }
+>
+> TIMEOUT_SECONDS = 5
+>
+>
+> async def fetch_service_metrics(session, service_name, url):
+>     """Fetch metrics from a single service."""
+>     try:
+>         async with session.get(url, timeout=aiohttp.ClientTimeout(total=TIMEOUT_SECONDS)) as response:
+>             if response.status == 200:
+>                 return service_name, await response.json()
+>             else:
+>                 print(f"Error: {service_name} returned status {response.status}")
+>                 return service_name, None
+>     except asyncio.TimeoutError:
+>         print(f"timeout")
+>         return service_name, None
+>     except Exception as e:
+>         print(f"Error fetching {service_name}: {e}")
+>         return service_name, None
+>
+>
+> async def collect_metrics():
+>     """Collect metrics from all services in parallel."""
+>     async with aiohttp.ClientSession() as session:
+>         # Fetch all services in parallel
+>         tasks = [
+>             fetch_service_metrics(session, service_name, url)
+>             for service_name, url in SERVICES.items()
+>         ]
+>         results = await asyncio.gather(*tasks)
+>
+>         # Convert list of tuples to dict
+>         return {service_name: data for service_name, data in results}
+>
+>
+> def generate_report():
+>     """Generate the compliance audit report."""
+>     try:
+>         metrics = asyncio.run(collect_metrics())
+>     except Exception as e:
+>         print(f"Collection failed: {e}")
+>         metrics = {"auth": None, "billing": None, "inventory": None}
+>
+>     report = {
+>         "timestamp": datetime.utcnow().isoformat() + "Z",
+>         "auth": metrics.get("auth"),
+>         "billing": metrics.get("billing"),
+>         "inventory": metrics.get("inventory"),
+>     }
+>
+>     with open("/home/user/audit/report.json", "w") as f:
+>         json.dump(report, f, indent=2)
+>
+>     return report
+>
+>
+> if __name__ == "__main__":
+>     report = generate_report()
+>     print(json.dumps(report, indent=2))
+> EOF
+root@dc94788d3f59:/home/user/audit#

@@ -1,0 +1,84 @@
+New Terminal Output:
+
+root@77c3e62bdb6d:/home/user/audit# python3 << 'PYEOF'
+t_port']:
+                    start, end = map(int, rule['dest_port'].split('-'))
+                    if start <= port <= end:
+                        print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+                        matched = True
+                        break
+                else:
+                    if port == int(rule['dest_port']):
+                        print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+                        matched = True
+                        break
+
+        if not matched:
+            print("-> DENY  (no matching rule)")
+PYEOF
+> import json
+> import csv
+> import ipaddress
+>
+> # Load rules
+> with open('firewall_rules.json') as f:
+>     data = json.load(f)
+>
+> print("Rules (sorted by specificity):")
+> rules = []
+> for rule in data['rules']:
+>     network = ipaddress.ip_network(rule['source_cidr'])
+>     rules.append((network.prefixlen, rule))
+> rules.sort(key=lambda x: x[0], reverse=True)
+> for prefix, rule in rules:
+>     print(f"  /{prefix:2d} - {rule['source_cidr']:18s} port {rule['dest_port']:10s} -> {rule['action']}")
+>
+> print("\nConnections analysis:")
+> with open('connections.csv') as f:
+>     reader = csv.DictReader(f)
+>     for row in reader:
+>         print(f"{row['src_ip']:15s}:{row['dest_port']:5s}", end=" ")
+>
+>         ip = ipaddress.ip_address(row['src_ip'])
+>         port = int(row['dest_port'])
+>
+>         # Check each rule
+>         matched = False
+>         for prefix, rule in rules:
+>             net = ipaddress.ip_network(rule['source_cidr'])
+>             if ip in net:
+>                 # Check port
+>                 if '-' in rule['dest_port']:
+>                     start, end = map(int, rule['dest_port'].split('-'))
+>                     if start <= port <= end:
+>                         print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+>                         matched = True
+>                         break
+>                 else:
+>                     if port == int(rule['dest_port']):
+>                         print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+>                         matched = True
+>                         break
+>
+>         if not matched:
+>             print("-> DENY  (no matching rule)")
+> PYEOF
+Rules (sorted by specificity):
+  /24 - 10.1.5.0/24        port 8443       -> deny
+  /24 - 192.168.1.0/24     port 22         -> allow
+  /16 - 10.1.0.0/16        port 8000-9000  -> allow
+  /12 - 172.16.0.0/12      port 3306       -> allow
+  / 8 - 10.0.0.0/8         port 443        -> allow
+  / 0 - 0.0.0.0/0          port 80         -> allow
+
+Connections analysis:
+10.1.5.17      :8443  -> deny  by 10.1.5.0/24 port 8443
+10.1.2.33      :8500  -> allow by 10.1.0.0/16 port 8000-9000
+192.168.1.50   :22    -> allow by 192.168.1.0/24 port 22
+192.168.2.10   :22    -> DENY  (no matching rule)
+10.0.50.1      :443   -> allow by 10.0.0.0/8 port 443
+10.1.5.200     :8080  -> allow by 10.1.0.0/16 port 8000-9000
+172.16.5.5     :3306  -> allow by 172.16.0.0/12 port 3306
+8.8.8.8        :80    -> allow by 0.0.0.0/0 port 80
+8.8.8.8        :443   -> DENY  (no matching rule)
+root@77c3e62bdb6d:/home/user/audit#

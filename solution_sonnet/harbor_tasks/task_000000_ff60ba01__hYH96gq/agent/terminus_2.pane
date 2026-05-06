@@ -1,0 +1,230 @@
+[?2004hI have no name!@2bc22c27c9b8:/home/user$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004lTraceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 28, in upgrade
+    self.install_id
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 78, in install_id
+    raise ConfigError('no install ID found')
+asciinema.config.ConfigError: no install ID found
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/bin/asciinema", line 33, in <module>
+    sys.exit(load_entry_point('asciinema==2.1.0', 'console_scripts', 'asciinema')())
+  File "/usr/lib/python3/dist-packages/asciinema/__main__.py", line 34, in main
+    cfg = config.load()
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 185, in load
+    config.upgrade()
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 31, in upgrade
+    self.__save_install_id(id)
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 50, in __save_install_id
+    self.__create_config_home()
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 57, in __create_config_home
+    os.makedirs(self.config_home)
+  File "/usr/lib/python3.10/os.py", line 215, in makedirs
+    makedirs(head, exist_ok=exist_ok)
+  File "/usr/lib/python3.10/os.py", line 225, in makedirs
+    mkdir(name, mode)
+PermissionError: [Errno 13] Permission denied: '/.config'
+[?2004hI have no name!@2bc22c27c9b8:/home/user$ clear
+[?2004l[H[J[?2004hI have no name!@2bc22c27c9b8:/home/user$ cd /home/user/etl-monitor
+[?2004l[?2004hI have no name!@2bc22c27c9b8:/home/user/etl-monitor$ ls -la
+[?2004ltotal 60
+drwxrwxrwx 1 1000 1000  4096 May  5 07:14 .
+drwxrwxrwx 1 1000 1000  4096 May  5 07:14 ..
+drwxrwxrwx 1 1000 1000  4096 May  5 07:14 config
+drwxrwxrwx 1 1000 1000  4096 May  5 07:14 node_modules
+-rwxrwxrwx 1 1000 1000 29684 May  5 07:14 package-lock.json
+-rwxrwxrwx 1 1000 1000   240 May  5 07:14 package.json
+drwxrwxrwx 1 1000 1000  4096 May  5 07:14 routes
+-rwxrwxrwx 1 1000 1000   554 May  5 07:14 server.js
+[?2004hI have no name!@2bc22c27c9b8:/home/user/etl-monitor$ cat package.json
+[?2004l{
+  "name": "etl-monitor",
+  "version": "1.0.0",
+  "description": "ETL Pipeline Dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "4.18.2",
+    "js-yaml": "^4.1.0"
+  }
+}
+[?2004hI have no name!@2bc22c27c9b8:/home/user/etl-monitor$ cat server.js
+[?2004lconst express = require('express');
+const config = require('./config/settings');
+const statusRoutes = require('./routes/status');
+
+const app = express();
+
+app.use('/status', statusRoutes);
+
+app.get('/', (req, res) => {
+  res.json({ message: 'ETL Monitor Dashboard', version: '1.0.0' });
+});
+
+const port = config.server?.port || process.env.PORT || 8080;
+
+const server = app.listen(port, () => {
+  console.log(`ETL Monitor running on port ${port}`);
+});
+
+server.on('error', (err) => {
+  console.error('Server error:', err.message);
+  process.exit(1);
+});
+[?2004hI have no name!@2bc22c27c9b8:/home/user/etl-monitor$ ls -la config/
+[?2004ltotal 16
+drwxrwxrwx 1 1000 1000 4096 May  5 07:14 .
+drwxrwxrwx 1 1000 1000 4096 May  5 07:14 ..
+-rwxrwxrwx 1 1000 1000  227 May  5 07:14 app.yaml
+-rwxrwxrwx 1 1000 1000  286 May  5 07:14 settings.js
+[?2004hI have no name!@2bc22c27c9b8:/home/user/etl-monitor$ ls -la routes/
+[?2004ltotal 12
+drwxrwxrwx 1 1000 1000 4096 May  5 07:14 .
+drwxrwxrwx 1 1000 1000 4096 May  5 07:14 ..
+-rwxrwxrwx 1 1000 1000  389 May  5 07:14 status.js
+[?2004hI have no name!@2bc22c27c9b8:/home/user/etl-monitor$ cat config/settings.js
+[?2004lconst yaml = require('js-yaml');
+const fs = require('fs');
+const path = require('path');
+
+let config;
+
+try {
+    config = yaml.load(fs.readFileSync(path.join(__dirname, 'app.yaml'), 'utf8'));
+} catch (e) {
+    console.log('Config warning');
+    config = {};
+}
+
+module.exports = config;
+[?2004hI have no name!@2bc22c27c9b8:/home/user/etl-monitor$ cat config/app.yaml
+[?2004lserver:
+  port: 3000
+  host: localhost
+
+app:
+  name: ETL Monitor
+
+database:
+	host: localhost
+	port: 5432
+	name: etl_db
+
+pipelines:
+  - name: daily_batch
+    schedule: "0 2 * * *"
+  - name: hourly_sync
+    schedule: "0 * * * *"
+[?2004hI have no name!@2bc22c27c9b8:/home/user/etl-monitor$ cat routes/status.js
+[?2004lconst express = require('express');
+const router = express.Router();
+
+router.get('/', (req, res) => {
+  res.json({
+    status: 'ok',
+    pipelines: [
+      { name: 'daily_batch', lastRun: '2024-01-15T02:00:00Z', status: 'completed' },
+      { name: 'hourly_sync', lastRun: '2024-01-15T14:00:00Z', status: 'running' }
+    ],
+    uptime: process.uptime()
+  });
+});
+
+module.exports = router;
+[?2004hI have no name!@2bc22c27c9b8:/home/user/etl-monitor$ npm start
+[?2004l[1G[0K\[1G[0K
+> etl-monitor@1.0.0 start
+> node server.js
+
+[1G[0K\[1G[0KConfig warning
+ETL Monitor running on port 8080
+^C
+[?2004hI have no name!@2bc22c27c9b8:/home/user/etl-monitor$ cat -A config/app.yaml
+[?2004lserver:$
+  port: 3000$
+  host: localhost$
+$
+app:$
+  name: ETL Monitor$
+$
+database:$
+^Ihost: localhost$
+^Iport: 5432$
+^Iname: etl_db$
+$
+pipelines:$
+  - name: daily_batch$
+    schedule: "0 2 * * *"$
+  - name: hourly_sync$
+    schedule: "0 * * * *"$
+[?2004hI have no name!@2bc22c27c9b8:/home/user/etl-monitor$ cat > config/app.yaml << 'EOF'
+[?2004l[?2004h> server:
+[?2004l[?2004h>   port: 3000
+[?2004l[?2004h>   host: localhost
+[?2004l[?2004h> 
+[?2004l[?2004h> app:
+[?2004l[?2004h>   name: ETL Monitor
+[?2004l[?2004h> 
+[?2004l[?2004h> database:
+[?2004l[?2004h>   host: localhost
+[?2004l[?2004h>   port: 5432
+[?2004l[?2004h>   name: etl_db
+[?2004l[?2004h> 
+[?2004l[?2004h> pipelines:
+[?2004l[?2004h>   - name: daily_batch
+[?2004l[?2004h>     schedule: "0 2 * * *"
+[?2004l[?2004h>   - name: hourly_sync
+[?2004l[?2004h>     schedule: "0 * * * *"
+[?2004l[?2004h> EOF
+[?2004lcat -A config/app.yaml
+[?2004hI have no name!@2bc22c27c9b8:/home/user/etl-monitor$ cat -A config/app.yaml
+[?2004lserver:$
+  port: 3000$
+  host: localhost$
+$
+app:$
+  name: ETL Monitor$
+$
+database:$
+  host: localhost$
+  port: 5432$
+  name: etl_db$
+$
+pipelines:$
+  - name: daily_batch$
+    schedule: "0 2 * * *"$
+  - name: hourly_sync$
+    schedule: "0 * * * *"$
+[?2004hI have no name!@2bc22c27c9b8:/home/user/etl-monitor$ npm start
+[?2004l[1G[0K\[1G[0K
+> etl-monitor@1.0.0 start
+> node server.js
+
+[1G[0K\[1G[0KETL Monitor running on port 3000
+curl -s http://localhost:3000/ && echo
+curl -s http://localhost:3000/status && echo
+C-c
+npm start > /tmp/etl-monitor.log 2>&1 &
+sleep 1 && curl -s http://localhost:3000/
+ps aux | grep node
+cat /tmp/etl-monitor.log
+curl http://localhost:3000/
+
+jobs
+
+C-c
+echo 'test'
+
+
+pwd
+^L
+reset
+
+
+
+
+

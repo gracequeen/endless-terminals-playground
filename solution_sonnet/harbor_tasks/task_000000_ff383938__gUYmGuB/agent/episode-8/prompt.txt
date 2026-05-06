@@ -1,0 +1,249 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+}user@bae130232a6d:~$ cat > /home/user/tools/capacity_report.py << 'EOF'
+ end_time
+
+
+def load_job_runtimes(jobs):
+    """Load actual runtime data from log files into job objects."""
+    log_dir = Path(LOG_DIR)
+
+    for job in jobs:
+        # Find corresponding log file
+        log_name = job.name.replace('.sh', '.log')
+        log_path = log_dir / log_name
+
+        if log_path.exists():
+            start_time, end_time = parse_log_file(log_path)
+            job.start_time = start_time
+            job.end_time = end_time
+
+    return jobs
+
+
+def find_overlapping_hours(jobs):
+    """Find hours where jobs overlapped."""
+    overlapping = set()
+
+    # Filter jobs that have actual runtime data
+    jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+
+    for i, job1 in enumerate(jobs_with_data):
+        for job2 in jobs_with_data[i+1:]:
+            # Check if jobs overlap using actual timestamps
+            # Jobs overlap if: job1 starts before job2 ends AND job2 starts before job1 ends
+            if job1.start_time < job2.end_time and job2.start_time < job1.end_time:
+                # Find all hours during which the overlap occurs
+                overlap_start = max(job1.start_time, job2.start_time)
+                overlap_end = min(job1.end_time, job2.end_time)
+
+                # Add all hours that contain any part of the overlap
+                current = overlap_start
+                while current <= overlap_end:
+                    overlapping.add(current.hour)
+                    # Move to next hour
+                    current = current.replace(minute=0, second=0, microsecond=0)
+                    if current.hour == 23:
+                        break
+                    current = current.replace(hour=current.hour + 1)
+
+    return sorted(list(overlapping))
+
+
+def find_idle_hours(jobs):
+    """Find hours that were genuinely idle."""
+    idle = []
+
+    # Filter jobs that have actual runtime data
+    jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+
+    for hour in range(24):
+        is_idle = True
+
+        # Check if any job was running during this hour
+        for job in jobs_with_data:
+ > #!/usr/bin/env python3
+> """
+> Capacity Report Generator
+>
+> Parses crontab entries and batch job logs to identify:
+> 1. Hours where jobs overlapped (one started before another finished)
+> 2. Hours that were genuinely idle (no jobs scheduled or running)
+>
+> Output: /home/user/reports/windows.json
+> """
+>
+> import os
+> import re
+> import json
+> from datetime import datetime, timedelta
+> from pathlib import Path
+>
+>
+> CRONTAB_PATH = "/var/spool/cron/crontabs/user"
+> LOG_DIR = "/var/log/batch"
+> OUTPUT_PATH = "/home/user/reports/windows.json"
+>
+>
+> class Job:
+>     def __init__(self, name, scheduled_hour, start_time=None, end_time=None):
+>         self.name = name
+>         self.scheduled_hour = scheduled_hour
+>         self.start_time = start_time
+>         self.end_time = end_time
+>
+>
+> def parse_crontab():
+>     """Parse crontab file and extract job schedules."""
+>     jobs = []
+>
+>     with open(CRONTAB_PATH, 'r') as f:
+>         for line in f:
+>             line = line.strip()
+>             if not line or line.startswith('#'):
+>                 continue
+>
+>             parts = line.split()
+>             if len(parts) >= 6:
+>                 minute = parts[0]
+>                 hour = parts[1]
+>                 command = parts[5]
+>
+>                 job_name = os.path.basename(command)
+>                 scheduled_hour = int(hour)
+>
+>                 jobs.append(Job(job_name, scheduled_hour))
+>
+>     return jobs
+>
+>
+> def parse_log_file(log_path):
+>     """Parse a log file to extract start and end timestamps."""
+>     start_time = None
+>     end_time = None
+>
+>     with open(log_path, 'r') as f:
+>         content = f.read()
+>
+>     # Match START timestamp
+>     start_match = re.search(r'START\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+>     if start_match:
+>         start_time = datetime.strptime(start_match.group(1), '%Y-%m-%d %H:%M:%S')
+>
+>     # Match END timestamp
+>     end_match = re.search(r'END\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+>     if end_match:
+>         end_time = datetime.strptime(end_match.group(1), '%Y-%m-%d %H:%M:%S')
+>
+>     return start_time, end_time
+>
+>
+> def load_job_runtimes(jobs):
+>     """Load actual runtime data from log files into job objects."""
+>     log_dir = Path(LOG_DIR)
+>
+>     for job in jobs:
+>         # Find corresponding log file
+>         log_name = job.name.replace('.sh', '.log')
+>         log_path = log_dir / log_name
+>
+>         if log_path.exists():
+>             start_time, end_time = parse_log_file(log_path)
+>             job.start_time = start_time
+>             job.end_time = end_time
+>
+>     return jobs
+>
+>
+> def find_overlapping_hours(jobs):
+>     """Find hours where jobs overlapped."""
+>     overlapping = set()
+>
+>     # Filter jobs that have actual runtime data
+>     jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+>
+>     for i, job1 in enumerate(jobs_with_data):
+>         for job2 in jobs_with_data[i+1:]:
+>             # Check if jobs overlap using actual timestamps
+>             # Jobs overlap if: job1 starts before job2 ends AND job2 starts before job1 ends
+>             if job1.start_time < job2.end_time and job2.start_time < job1.end_time:
+>                 # Find all hours during which the overlap occurs
+>                 overlap_start = max(job1.start_time, job2.start_time)
+>                 overlap_end = min(job1.end_time, job2.end_time)
+>
+>                 # Add all hours that contain any part of the overlap
+>                 current = overlap_start
+>                 while current <= overlap_end:
+>                     overlapping.add(current.hour)
+>                     # Move to next hour
+>                     current = current.replace(minute=0, second=0, microsecond=0)
+>                     if current.hour == 23:
+>                         break
+>                     current = current.replace(hour=current.hour + 1)
+>
+>     return sorted(list(overlapping))
+>
+>
+> def find_idle_hours(jobs):
+>     """Find hours that were genuinely idle."""
+>     idle = []
+>
+>     # Filter jobs that have actual runtime data
+>     jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+>
+>     for hour in range(24):
+>         is_idle = True
+>
+>         # Check if any job was running during this hour
+>         for job in jobs_with_data:
+>             # Create datetime objects for the start and end of this hour
+>             # Use the same date as the job for comparison
+>             hour_start = job.start_time.replace(hour=hour, minute=0, second=0, microsecond=0)
+>             hour_end = job.start_time.replace(hour=hour, minute=59, second=59, microsecond=999999)
+>
+>             # A job runs during this hour if its time range overlaps with the hour's time range
+>             # Job overlaps hour if: job starts before hour ends AND job ends after hour starts
+>             if job.start_time <= hour_end and job.end_time >= hour_start:
+>                 is_idle = False
+>                 break
+>
+>         if is_idle:
+>             idle.append(hour)
+>
+>     return idle
+>
+>
+> def main():
+>     # Parse crontab to get scheduled jobs
+>     jobs = parse_crontab()
+>
+>     # Load actual runtime data from logs
+>     jobs = load_job_runtimes(jobs)
+>
+>     # Find overlapping and idle hours
+>     overlapping_hours = find_overlapping_hours(jobs)
+>     idle_hours = find_idle_hours(jobs)
+>
+>     # Write output
+>     result = {
+>         "overlapping_hours": overlapping_hours,
+>         "idle_hours": idle_hours
+>     }
+>
+>     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+>     with open(OUTPUT_PATH, 'w') as f:
+>         json.dump(result, f, indent=2)
+>
+>     print(f"Report written to {OUTPUT_PATH}")
+>     print(f"Overlapping hours: {overlapping_hours}")
+>     print(f"Idle hours: {idle_hours}")
+>
+>
+> if __name__ == "__main__":
+>     main()
+> EOF
+user@bae130232a6d:~$

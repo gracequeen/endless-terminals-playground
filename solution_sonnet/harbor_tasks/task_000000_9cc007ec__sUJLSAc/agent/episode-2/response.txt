@@ -1,0 +1,14 @@
+{
+  "analysis": "Perfect! I can see the filenames with spaces, parentheses, and brackets. Examples include 'Legacy App-v1.0.dSYM', 'MyApp 2.1 (build 447).dSYM', etc. The bug is confirmed: the script pipes unquoted filenames with spaces to `xargs`, which splits them on whitespace. For example, 'MyApp 2.1 (build 447).dSYM' would be treated as multiple arguments: 'MyApp', '2.1', '(build', '447).dSYM'. This explains why it either deletes nothing (broken paths don't exist) or deletes the wrong things (if partial paths match other files).",
+  "plan": "I'll fix the script by moving the `rm -rf` command inside the while loop where the variable is properly quoted. This is the safest and most straightforward solution. The fixed script will: 1) Find .dSYM bundles older than 7 days, 2) Check if matching .ipa exists, 3) If not, delete the .dSYM directly with proper quoting. I'll also add better debug output to show what's being deleted.",
+  "commands": [
+    {
+      "keystrokes": "cp /home/user/scripts/cleanup.sh /home/user/scripts/cleanup.sh.bak\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "cat > /home/user/scripts/cleanup.sh << 'EOF'\n#!/bin/bash\ncd /home/user/builds\n\nfind . -name \"*.dSYM\" -type d -mtime +7 | while read -r dsym; do\n    ipa=\"${dsym%.dSYM}.ipa\"\n    if [ ! -e \"$ipa\" ]; then\n        echo \"Deleting: $dsym (no matching .ipa found)\"\n        rm -rf \"$dsym\"\n    else\n        echo \"Keeping: $dsym (matching .ipa exists)\"\n    fi\ndone\nEOF\n",
+      "duration": 0.1
+    }
+  ]
+}

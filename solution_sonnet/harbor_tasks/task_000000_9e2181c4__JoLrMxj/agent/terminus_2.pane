@@ -1,0 +1,351 @@
+[?2004hroot@74de2392a746:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@74de2392a746:/home/user# clear
+[?2004l[H[J[?2004hroot@74de2392a746:/home/user# cd /home/user/rotate
+[?2004l[?2004hroot@74de2392a746:/home/user/rotate# ls -lh
+[?2004ltotal 11M
+-rw-r--r-- 1 root root   32 May  5 07:21 new.key
+-rw-r--r-- 1 root root   32 May  5 07:21 old.key
+-rwxr-xr-x 1 root root 4.4K May  5 07:21 [0m[01;32mreencrypt.py[0m
+-rw-r--r-- 1 root root  10M May  5 07:21 vault_dump.enc
+-rwxr-xr-x 1 root root 4.5K May  5 07:21 [01;32mverify.py[0m
+[?2004hroot@74de2392a746:/home/user/rotate# cat reencrypt.py
+[?2004l#!/usr/bin/env python3
+"""
+Re-encryption script for vault credentials.
+Decrypts entries with old key and re-encrypts with new key.
+"""
+
+import os
+import struct
+import hashlib
+from Crypto.Cipher import AES
+
+ROTATE_DIR = "/home/user/rotate"
+VAULT_DUMP = os.path.join(ROTATE_DIR, "vault_dump.enc")
+OUTPUT_FILE = os.path.join(ROTATE_DIR, "vault_dump.new.enc")
+OLD_KEY_FILE = os.path.join(ROTATE_DIR, "old.key")
+NEW_KEY_FILE = os.path.join(ROTATE_DIR, "new.key")
+
+
+def compute_offset_by_rereading_all_previous_entries(filepath, target_index):
+    """
+    Compute the byte offset of entry at target_index by reading all previous entries.
+    This is intentionally inefficient - reads through all entries before target.
+    """
+    offset = 0
+    with open(filepath, "rb") as f:
+        f.seek(42)  # skip header
+        for _ in range(target_index):
+            nonce = f.read(12)
+            if len(nonce) < 12:
+                break
+            ct_len = struct.unpack("<I", f.read(4))[0]
+            f.read(ct_len)  # skip ciphertext
+            meta_len = struct.unpack("<H", f.read(2))[0]
+            f.read(meta_len)  # skip metadata
+            offset = f.tell() - 42
+    return offset
+
+
+def read_one_entry(f):
+    """Read a single entry from current file position."""
+    nonce = f.read(12)
+    if len(nonce) < 12:
+        return None
+    ct_len = struct.unpack("<I", f.read(4))[0]
+    ciphertext_with_tag = f.read(ct_len)
+    meta_len = struct.unpack("<H", f.read(2))[0]
+    metadata = f.read(meta_len)
+    return {
+        "nonce": nonce,
+        "ciphertext_with_tag": ciphertext_with_tag,
+        "metadata": metadata
+    }
+
+
+def decrypt_entry(entry, key):
+    """Decrypt an entry using AES-256-GCM."""
+    ciphertext = entry["ciphertext_with_tag"][:-16]
+    tag = entry["ciphertext_with_tag"][-16:]
+    cipher = AES.new(key, AES.MODE_GCM, nonce=entry["nonce"])
+    plaintext = cipher.decrypt_and_verify(ciphertext, tag)
+    return plaintext
+
+
+def encrypt_entry(plaintext, metadata, key):
+    """Encrypt plaintext and return formatted entry bytes."""
+    from Crypto.Random import get_random_bytes
+    nonce = get_random_bytes(12)
+    cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+    ciphertext, tag = cipher.encrypt_and_digest(plaintext)
+    ciphertext_with_tag = ciphertext + tag
+
+    entry_bytes = nonce
+    entry_bytes += struct.pack("<I", len(ciphertext_with_tag))
+    entry_bytes += ciphertext_with_tag
+    entry_bytes += struct.pack("<H", len(metadata))
+    entry_bytes += metadata
+    return entry_bytes
+
+
+def reencrypt():
+    """Main re-encryption function."""
+    # Read header to get entry count
+    with open(VAULT_DUMP, "rb") as f:
+        header = f.read(42)
+        magic = header[:6]
+        entry_count = struct.unpack("<I", header[6:10])[0]
+        old_key_id = header[10:42]
+
+    if magic != b"VAULT1":
+        raise ValueError("Invalid vault file magic")
+
+    print(f"Processing {entry_count} entries...")
+
+    # Read new key and compute new key_id for header
+    new_key = open(NEW_KEY_FILE, "rb").read()
+    new_key_id = hashlib.sha256(new_key).digest()
+
+    # Write header to output file (will be opened fresh each time we append)
+    with open(OUTPUT_FILE, "wb") as out:
+        out.write(b"VAULT1")
+        out.write(struct.pack("<I", entry_count))
+        out.write(new_key_id)
+
+    # Process each entry
+    for i in range(entry_count):
+        # BUG 1: Re-read entire file and seek to find entry position
+        with open(VAULT_DUMP, "rb") as f:
+            offset = compute_offset_by_rereading_all_previous_entries(VAULT_DUMP, i)
+            f.seek(42 + offset)
+            entry = read_one_entry(f)
+
+        if entry is None:
+            raise ValueError(f"Failed to read entry {i}")
+
+        # BUG 2: Re-read key files for every entry
+        old_key = open(OLD_KEY_FILE, "rb").read()
+        new_key = open(NEW_KEY_FILE, "rb").read()
+
+        # Decrypt with old key
+        plaintext = decrypt_entry(entry, old_key)
+
+        # Re-encrypt with new key
+        new_entry_bytes = encrypt_entry(plaintext, entry["metadata"], new_key)
+
+        # BUG 3: Open output file in append mode for every entry
+        with open(OUTPUT_FILE, "ab") as out:
+            out.write(new_entry_bytes)
+
+        if (i + 1) % 10000 == 0:
+            print(f"Processed {i + 1}/{entry_count} entries")
+
+    print(f"Re-encryption complete. Output written to {OUTPUT_FILE}")
+
+
+if __name__ == "__main__":
+    reencrypt()
+[?2004hroot@74de2392a746:/home/user/rotate# cp reencrypt.py reencrypt.py.backup
+[?2004l[?2004hroot@74de2392a746:/home/user/rotate# cat > reencrypt.py << 'EOF'
+[?2004l    # Compute new key_id for header
+    new_key_id = hashlib.sha256(new_key).digest()
+
+    # Open input file and read header
+    with open(VAULT_DUMP, "rb") as infile:
+        header = infile.read(42)
+        magic = header[:6]
+        entry_count = struct.unpack("<I", header[6:10])[0]
+        old_key_id = header[10:42]
+
+        if magic != b"VAULT1":
+            raise ValueError("Invalid vault file magic")
+
+        print(f"Processing {entry_count} entries...")
+
+        # Open output file and write header
+        with open(OUTPUT_FILE, "wb") as outfile:
+            outfile.write(b"VAULT1")
+            outfile.write(struct.pack("<I", entry_count))
+            outfile.write(new_key_id)
+
+            # Process all entries sequentially
+            for i in range(entry_count):
+                # Read entry from current position (no seeking!)
+                entry = read_one_entry(infile)
+                
+                if entry is None:
+                    raise ValueError(f"Failed to read entry {i}")
+
+                # Decrypt with old key
+                plaintext = decrypt_entry(entry, old_key)
+
+                # Re-encrypt with new key
+                new_entry_bytes = encrypt_entry(plaintext, entry["metadata"], new_key)
+
+                # Write to output (file stays open)
+                outfile.write(new_entry_bytes)
+
+                if (i + 1) % 10000 == 0:
+                    print(f"Processed {i + 1}/{entry_count} entries")
+
+    print(f"Re-encryption complete. Output written to {OUTPUT_FILE}")
+
+
+if __name__ == "__main__":
+    reencrypt()
+EOF
+[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """
+[?2004l[?2004h> Re-encryption script for vault credentials.
+[?2004l[?2004h> Decrypts entries with old key and re-encrypts with new key.
+[?2004l[?2004h> """
+[?2004l[?2004h> 
+[?2004l[?2004h> import os
+[?2004l[?2004h> import struct
+[?2004l[?2004h> import hashlib
+[?2004l[?2004h> from Crypto.Cipher import AES
+[?2004l[?2004h> from Crypto.Random import get_random_bytes
+[?2004l[?2004h> 
+[?2004l[?2004h> ROTATE_DIR = "/home/user/rotate"
+[?2004l[?2004h> VAULT_DUMP = os.path.join(ROTATE_DIR, "vault_dump.enc")
+[?2004l[?2004h> OUTPUT_FILE = os.path.join(ROTATE_DIR, "vault_dump.new.enc")
+[?2004l[?2004h> OLD_KEY_FILE = os.path.join(ROTATE_DIR, "old.key")
+[?2004l[?2004h> NEW_KEY_FILE = os.path.join(ROTATE_DIR, "new.key")
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def read_one_entry(f):
+[?2004l[?2004h>     """Read a single entry from current file position."""
+[?2004l[?2004h>     nonce = f.read(12)
+[?2004l[?2004h>     if len(nonce) < 12:
+[?2004l[?2004h>         return None
+[?2004l[?2004h>     ct_len = struct.unpack("<I", f.read(4))[0]
+[?2004l[?2004h>     ciphertext_with_tag = f.read(ct_len)
+[?2004l[?2004h>     meta_len = struct.unpack("<H", f.read(2))[0]
+[?2004l[?2004h>     metadata = f.read(meta_len)
+[?2004l[?2004h>     return {
+[?2004l[?2004h>         "nonce": nonce,
+[?2004l[?2004h>         "ciphertext_with_tag": ciphertext_with_tag,
+[?2004l[?2004h>         "metadata": metadata
+[?2004l[?2004h>     }
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def decrypt_entry(entry, key):
+[?2004l[?2004h>     """Decrypt an entry using AES-256-GCM."""
+[?2004l[?2004h>     ciphertext = entry["ciphertext_with_tag"][:-16]
+[?2004l[?2004h>     tag = entry["ciphertext_with_tag"][-16:]
+[?2004l[?2004h>     cipher = AES.new(key, AES.MODE_GCM, nonce=entry["nonce"])
+[?2004l[?2004h>     plaintext = cipher.decrypt_and_verify(ciphertext, tag)
+[?2004l[?2004h>     return plaintext
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def encrypt_entry(plaintext, metadata, key):
+[?2004l[?2004h>     """Encrypt plaintext and return formatted entry bytes."""
+[?2004l[?2004h>     nonce = get_random_bytes(12)
+[?2004l[?2004h>     cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+[?2004l[?2004h>     ciphertext, tag = cipher.encrypt_and_digest(plaintext)
+[?2004l[?2004h>     ciphertext_with_tag = ciphertext + tag
+[?2004l[?2004h> 
+[?2004l[?2004h>     entry_bytes = nonce
+[?2004l[?2004h>     entry_bytes += struct.pack("<I", len(ciphertext_with_tag))
+[?2004l[?2004h>     entry_bytes += ciphertext_with_tag
+[?2004l[?2004h>     entry_bytes += struct.pack("<H", len(metadata))
+[?2004l[?2004h>     entry_bytes += metadata
+[?2004l[?2004h>     return entry_bytes
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def reencrypt():
+[?2004l[?2004h>     """Main re-encryption function."""
+[?2004l[?2004h>     # Load keys once at the start
+[?2004l[?2004h>     with open(OLD_KEY_FILE, "rb") as f:
+[?2004l[?2004h>         old_key = f.read()
+[?2004l[?2004h>     with open(NEW_KEY_FILE, "rb") as f:
+[?2004l[?2004h>         new_key = f.read()
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Compute new key_id for header
+[?2004l[?2004h>     new_key_id = hashlib.sha256(new_key).digest()
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Open input file and read header
+[?2004l[?2004h>     with open(VAULT_DUMP, "rb") as infile:
+[?2004l[?2004h>         header = infile.read(42)
+[?2004l[?2004h>         magic = header[:6]
+[?2004l[?2004h>         entry_count = struct.unpack("<I", header[6:10])[0]
+[?2004l[?2004h>         old_key_id = header[10:42]
+[?2004l[?2004h> 
+[?2004l[?2004h>         if magic != b"VAULT1":
+[?2004l[?2004h>             raise ValueError("Invalid vault file magic")
+[?2004l[?2004h> 
+[?2004l[?2004h>         print(f"Processing {entry_count} entries...")
+[?2004l[?2004h> 
+[?2004l[?2004h>         # Open output file and write header
+[?2004l[?2004h>         with open(OUTPUT_FILE, "wb") as outfile:
+[?2004l[?2004h>             outfile.write(b"VAULT1")
+[?2004l[?2004h>             outfile.write(struct.pack("<I", entry_count))
+[?2004l[?2004h>             outfile.write(new_key_id)
+[?2004l[?2004h> 
+[?2004l[?2004h>             # Process all entries sequentially
+[?2004l[?2004h>             for i in range(entry_count):
+[?2004l[?2004h>                 # Read entry from current position (no seeking!)
+[?2004l[?2004h>                 entry = read_one_entry(infile)
+[?2004l[?2004h>                 
+[?2004l[?2004h>                 if entry is None:
+[?2004l[?2004h>                     raise ValueError(f"Failed to read entry {i}")
+[?2004l[?2004h> 
+[?2004l[?2004h>                 # Decrypt with old key
+[?2004l[?2004h>                 plaintext = decrypt_entry(entry, old_key)
+[?2004l[?2004h> 
+[?2004l[?2004h>                 # Re-encrypt with new key
+[?2004l[?2004h>                 new_entry_bytes = encrypt_entry(plaintext, entry["metadata"], new_key)
+[?2004l[?2004h> 
+[?2004l[?2004h>                 # Write to output (file stays open)
+[?2004l[?2004h>                 outfile.write(new_entry_bytes)
+[?2004l[?2004h> 
+[?2004l[?2004h>                 if (i + 1) % 10000 == 0:
+[?2004l[?2004h>                     print(f"Processed {i + 1}/{entry_count} entries")
+[?2004l[?2004h> 
+[?2004l[?2004h>     print(f"Re-encryption complete. Output written to {OUTPUT_FILE}")
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     reencrypt()
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@74de2392a746:/home/user/rotate# time python3 reencrypt.py
+[?2004lProcessing 80000 entries...
+Processed 10000/80000 entries
+Processed 20000/80000 entries
+Processed 30000/80000 entries
+Processed 40000/80000 entries
+Processed 50000/80000 entries
+Processed 60000/80000 entries
+Processed 70000/80000 entries
+Processed 80000/80000 entries
+Re-encryption complete. Output written to /home/user/rotate/vault_dump.new.enc
+
+real	0m13.371s
+user	0m10.444s
+sys	0m0.118s
+[?2004hroot@74de2392a746:/home/user/rotate# ls -lh vault_dump.new.enc
+[?2004l-rw-r--r-- 1 root root 10M May  5 07:23 vault_dump.new.enc
+[?2004hroot@74de2392a746:/home/user/rotate# python3 verify.py
+[?2004lVerifying entries at indices: [0, 100, 1000, 10000, 50000, 79999]
+  Entry 0: OK
+  Entry 100: OK
+  Entry 1000: OK
+  Entry 10000: OK
+  Entry 50000: OK
+  Entry 79999: OK
+Verification PASSED
+[?2004hroot@74de2392a746:/home/user/rotate# echo "=== OPTIMIZATION SUMMARY ==="
+[?2004l=== OPTIMIZATION SUMMARY ===
+[?2004hroot@74de2392a746:/home/user/rotate# echo "Original runtime: 45+ minutes (2700+ seconds)"
+[?2004lOriginal runtime: 45+ minutes (2700+ seconds)
+[?2004hroot@74de2392a746:/home/user/rotate# echo "Optimized runtime: 13.4 seconds"
+[?2004lOptimized runtime: 13.4 seconds
+[?2004hroot@74de2392a746:/home/user/rotate# echo "Speedup: ~200x faster"
+[?2004lSpeedup: ~200x faster
+[?2004hroot@74de2392a746:/home/user/rotate# echo "Verification: PASSED"
+[?2004lVerification: PASSED
+[?2004hroot@74de2392a746:/home/user/rotate# echo "Output format: Maintained (compatible with downstream tooling)"
+[?2004lOutput format: Maintained (compatible with downstream tooling)
+[?2004hroot@74de2392a746:/home/user/rotate# 

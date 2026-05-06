@@ -1,0 +1,77 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+I have no name!@148def893cbc:~$ cat pipeline/coordinator.py
+#!/usr/bin/env python3
+"""
+Coordinator for distributed tf-idf feature extraction.
+Pushes chunks to workers via ZeroMQ, collects results, aggregates.
+"""
+import pickle
+import time
+import zmq
+import pandas as pd
+
+def main():
+    context = zmq.Context()
+
+    # Socket to send work to workers
+    sender = context.socket(zmq.PUSH)
+    sender.bind("tcp://127.0.0.1:5557")
+
+    # Socket to receive results from workers
+    receiver = context.socket(zmq.PULL)
+    receiver.bind("tcp://127.0.0.1:5558")
+
+    # Load data
+    df = pd.read_parquet("/home/user/data/raw.parquet")
+
+    # Split into chunks of 1000 rows
+    chunk_size = 1000
+    chunks = [df.iloc[i:i+chunk_size] for i in range(0, len(df), chunk_size)]
+    num_chunks = len(chunks)
+
+    print(f"Coordinator: Sending {num_chunks} chunks to workers")
+
+    # Send all chunks immediately (BUG: workers may not be connected yet)
+    for chunk_id, chunk in enumerate(chunks):
+        msg = pickle.dumps((chunk_id, chunk))
+        sender.send(msg)
+        print(f"Coordinator: Sent chunk {chunk_id}")
+
+    # Collect results (BUG: using list, not dict - duplicates possible)
+    results = []
+    receiver.setsockopt(zmq.RCVTIMEO, 5000)  # 5 second timeout
+
+    try:
+        while True:
+            try:
+                msg = receiver.recv()
+                chunk_id, result_df = pickle.loads(msg)
+                results.append(result_df)
+                print(f"Coordinator: Received result for chunk {chunk_id}")
+            except zmq.Again:
+                print("Coordinator: Timeout waiting for results, finishing up")
+                break
+    except Exception as e:
+        print(f"Coordinator: Error receiving: {e}")
+
+    # Aggregate results (BUG: concat with misaligned columns from different vocabularies)
+    if results:
+        final_df = pd.concat(results, ignore_index=True)
+        final_df = final_df.fillna(0)
+        final_df.to_parquet("/home/user/data/features.parquet")
+        print(f"Coordinator: Saved {len(final_df)} rows to features.parquet")
+    else:
+        print("Coordinator: No results received!")
+
+    sender.close()
+    receiver.close()
+    context.term()
+
+if __name__ == "__main__":
+    main()
+I have no name!@148def893cbc:~$

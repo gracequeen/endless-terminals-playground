@@ -1,0 +1,1 @@
+I need a quick script at /home/user/bin/diskmon.sh that checks if any mounted filesystem is over 80% usage and exits 1 if so, 0 otherwise. Just df parsing basically — gonna hook it into our alerting cron. Doesn't need to output anything, just the exit code.

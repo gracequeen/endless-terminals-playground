@@ -1,0 +1,69 @@
+New Terminal Output:
+
+root@77c3e62bdb6d:/home/user/audit# python3 << 'PYEOF'
+          start, end = map(int, rule['dest_port'].split('-'))
+                    if start <= port <= end:
+                        print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+                        matched = True
+                        break
+                else:
+                    if port == int(rule['dest_port']):
+                        print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+                        matched = True
+                        break
+
+        if not matched:
+            print("-> DENY  (no matching rule)")
+PYEOF
+> import json
+> import csv
+> import ipaddress
+>
+> # Load rules
+> with open('firewall_rules.json') as f:
+>     data = json.load(f)
+>
+> print("Rules (sorted by specificity):")
+> rules = []
+> for rule in data['rules']:
+>     network = ipaddress.ip_network(rule['source_cidr'])
+>     rules.append((network.prefixlen, rule))
+> rules.sort(reverse=True)
+> for prefix, rule in rules:
+>     print(f"  /{prefix:2d} - {rule['source_cidr']:18s} port {rule['dest_port']:10s} -> {rule['action']}")
+>
+> print("\nConnections analysis:")
+> with open('connections.csv') as f:
+>     reader = csv.DictReader(f)
+>     for row in reader:
+>         print(f"{row['src_ip']:15s}:{row['dest_port']:5s}", end=" ")
+>
+>         ip = ipaddress.ip_address(row['src_ip'])
+>         port = int(row['dest_port'])
+>
+>         # Check each rule
+>         matched = False
+>         for prefix, rule in rules:
+>             net = ipaddress.ip_network(rule['source_cidr'])
+>             if ip in net:
+>                 # Check port
+>                 if '-' in rule['dest_port']:
+>                     start, end = map(int, rule['dest_port'].split('-'))
+>                     if start <= port <= end:
+>                         print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+>                         matched = True
+>                         break
+>                 else:
+>                     if port == int(rule['dest_port']):
+>                         print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+>                         matched = True
+>                         break
+>
+>         if not matched:
+>             print("-> DENY  (no matching rule)")
+> PYEOF
+Rules (sorted by specificity):
+Traceback (most recent call last):
+  File "<stdin>", line 14, in <module>
+TypeError: '<' not supported between instances of 'dict' and 'dict'
+root@77c3e62bdb6d:/home/user/audit#

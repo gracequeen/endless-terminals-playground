@@ -1,0 +1,93 @@
+New Terminal Output:
+
+user@24825c88097b:~$ cat > /home/user/bin/env-merge.sh << 'EOF'
+> #!/bin/bash
+>
+> # env-merge.sh - Merge two .env files, second file wins on conflicts
+>
+> if [ $# -ne 2 ]; then
+>     echo "Usage: $0 <file1.env> <file2.env>" >&2
+>     exit 1
+> fi
+>
+> if [ ! -f "$1" ]; then
+>     echo "Error: File '$1' not found" >&2
+>     exit 1
+> fi
+>
+> if [ ! -f "$2" ]; then
+>     echo "Error: File '$2' not found" >&2
+>     exit 1
+> fi
+>
+> # Use awk to merge the files
+> awk -F= '
+> # Skip empty lines and comments
+> /^[[:space:]]*$/ { next }
+> /^[[:space:]]*#/ { next }
+>
+> # Process KEY=VALUE lines
+> /=/ {
+>     # Extract key (trim whitespace)
+>     key = $1
+>     gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+>
+>     # Store the entire line with the key
+>     # Later entries overwrite earlier ones
+>     env[key] = $0
+> }
+>
+> END {
+>     # Output all entries in sorted order
+>     for (key in env) {
+>         print env[key]
+>     }
+> }
+> ' "$1" "$2" | sort
+> EOF
+user@24825c88097b:~$ chmod +x /home/user/bin/env-merge.sh
+user@24825c88097b:~$ cat /home/user/bin/env-merge.sh
+#!/bin/bash
+
+# env-merge.sh - Merge two .env files, second file wins on conflicts
+
+if [ $# -ne 2 ]; then
+    echo "Usage: $0 <file1.env> <file2.env>" >&2
+    exit 1
+fi
+
+if [ ! -f "$1" ]; then
+    echo "Error: File '$1' not found" >&2
+    exit 1
+fi
+
+if [ ! -f "$2" ]; then
+    echo "Error: File '$2' not found" >&2
+    exit 1
+fi
+
+# Use awk to merge the files
+awk -F= '
+# Skip empty lines and comments
+/^[[:space:]]*$/ { next }
+/^[[:space:]]*#/ { next }
+
+# Process KEY=VALUE lines
+/=/ {
+    # Extract key (trim whitespace)
+    key = $1
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+
+    # Store the entire line with the key
+    # Later entries overwrite earlier ones
+    env[key] = $0
+}
+
+END {
+    # Output all entries in sorted order
+    for (key in env) {
+        print env[key]
+    }
+}
+' "$1" "$2" | sort
+user@24825c88097b:~$

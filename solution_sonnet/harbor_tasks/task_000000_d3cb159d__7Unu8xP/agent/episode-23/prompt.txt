@@ -1,0 +1,79 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@06993146764c:~/infra-configs$ cat > HOOKS-README.md << 'EOF'
+> # Git Hooks Protection System
+>
+> ## Overview
+>
+> This repository uses a multi-layered git hooks system to prevent commits with world-readable private keys (*.pem, *.key files with permissions 0644 or looser)
+.
+>
+> ## Active Hooks
+>
+> ### 1. Pre-commit Hook
+> - **Location**: `.git/hooks/pre-commit`
+> - **Purpose**: First line of defense, checks staged files before commit
+> - **Limitation**: Can be bypassed with `git commit --no-verify`
+>
+> ### 2. Commit-msg Hook
+> - **Location**: `.git/hooks/commit-msg`
+> - **Purpose**: Second line of defense, validates staged files
+> - **Limitation**: Can be bypassed with `git commit --no-verify`
+>
+> ### 3. Pre-push Hook (CRITICAL)
+> - **Location**: `.git/hooks/pre-push`
+> - **Purpose**: Validates ALL commits being pushed, even those created with --no-verify
+> - **Advantage**: Catches bad commits before they reach the remote repository
+> - **Limitation**: Can be bypassed with `git push --no-verify`, but this is less common
+>
+> ## For Automation/CI/CD
+>
+> **IMPORTANT**: Automation tools (Jenkins, CI/CD pipelines) should use the provided wrapper:
+>
+> ```bash
+> ./safe-commit.sh -m "your commit message"
+> ```
+>
+> This ensures hooks are always executed and cannot be accidentally bypassed.
+>
+> ## What Was Fixed
+>
+> - Commit 29e769c contained `secrets/deploy.key` with 0644 permissions
+> - This bypassed pre-commit hook (likely used `--no-verify`)
+> - Fixed file permissions to 0600
+> - Added pre-push hook to catch future bypasses
+> - Created safe-commit wrapper for automation
+>
+> ## Testing Protection
+>
+> To verify hooks work:
+>
+> ```bash
+> # Create test key with bad permissions
+> echo "test" > secrets/bad.key
+> chmod 644 secrets/bad.key
+> git add secrets/bad.key
+> git commit -m "test"  # Should be BLOCKED
+> ```
+>
+> ## Best Practices
+>
+> 1. Never use `--no-verify` unless absolutely necessary
+> 2. Always use `chmod 600` for private keys
+> 3. Use `./safe-commit.sh` in automation scripts
+> 4. Review commits from automation accounts regularly
+>
+> ## Server-Side Protection (Recommended)
+>
+> For production, implement server-side hooks on your Git server:
+> - Pre-receive hooks (cannot be bypassed by clients)
+> - Update hooks
+> - Branch protection rules
+>
+> See SECURITY.md for more details.
+> EOF
+user@06993146764c:~/infra-configs$

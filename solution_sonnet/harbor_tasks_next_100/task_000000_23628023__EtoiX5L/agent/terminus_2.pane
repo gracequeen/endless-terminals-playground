@@ -1,0 +1,277 @@
+[?2004hroot@3e038b733840:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@3e038b733840:/home/user# clear
+[?2004l[H[J[?2004hroot@3e038b733840:/home/user# systemctl status auth-gateway 2>/dev/null || ps aux | grep auth-gateway | grep -v grep
+[?2004l[?2004hroot@3e038b733840:/home/user# ls -lah /home/user/services/auth-gateway/
+[?2004ltotal 7.7M
+drwxrwxrwx 1 root root 4.0K May  5 07:07 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4.0K May  5 07:07 [34;42m..[0m
+-r-xr-xr-x 1 root root 7.7M May  5 07:07 [01;32mauth-gateway[0m
+-rw-rw-rw- 1 root root  537 May  5 07:07 config.yaml
+-rwxr-xr-x 1 root root  263 May  5 07:07 [01;32mrun.sh[0m
+[?2004hroot@3e038b733840:/home/user# ls -lah /var/log/auth-gateway/
+[?2004ltotal 172K
+drwxrwxrwx 1 root root 4.0K May  5 07:07 [0m[34;42m.[0m
+drwxr-xr-x 1 root root 4.0K May  5 07:07 [01;34m..[0m
+-rw-rw-rw- 1 root root  43K May  5 07:07 access.log
+-rw-rw-rw- 1 root root 107K May  5 07:07 auth-gateway.log
+-rw-rw-rw- 1 root root 6.1K May  5 07:07 error.log
+[?2004hroot@3e038b733840:/home/user# tail -50 /var/log/auth-gateway/error.log
+[?2004l[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+panic: strconv.Atoi: parsing "3600s": invalid syntax
+
+goroutine 1 [running]:
+main.parseSessionTTL(0xc0000b2000, 0x6, 0x0)
+        /app/session/manager.go:147 +0x123
+main.refreshSessionPool(0xc0000a4000)
+        /app/session/manager.go:89 +0x456
+main.(*SessionManager).RefreshPool(0xc0000a4000)
+        /app/session/manager.go:72 +0x234
+main.main()
+        /app/main.go:52 +0x789
+
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+panic: strconv.Atoi: parsing "3600s": invalid syntax
+
+goroutine 1 [running]:
+main.parseSessionTTL(0xc0000b2000, 0x6, 0x0)
+        /app/session/manager.go:147 +0x123
+main.refreshSessionPool(0xc0000a4000)
+        /app/session/manager.go:89 +0x456
+main.(*SessionManager).RefreshPool(0xc0000a4000)
+        /app/session/manager.go:72 +0x234
+main.main()
+        /app/main.go:52 +0x789
+
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[?2004hroot@3e038b733840:/home/user# cat /home/user/services/auth-gateway/config.yaml
+[?2004l# Auth Gateway Configuration
+# Last modified: 2024-01-15 01:50:32 UTC
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  read_timeout: 30
+  write_timeout: 30
+
+redis:
+  host: localhost
+  port: 6379
+  db: 0
+  pool_size: 10
+  max_retries: 3
+
+session:
+  session_ttl: 3600s
+  cookie_name: auth_session
+  cookie_secure: true
+  cookie_httponly: true
+
+auth:
+  jwt_secret_file: /etc/auth-gateway/jwt.key
+  token_expiry: 86400
+  refresh_enabled: true
+
+logging:
+  level: info
+  format: json
+
+rate_limit:
+  enabled: true
+  requests_per_minute: 100
+  burst: 20
+[?2004hroot@3e038b733840:/home/user# sed -i 's/session_ttl: 3600s/session_ttl: 3600/' /home/user/services/auth-gateway/config.yaml
+[?2004l[?2004hroot@3e038b733840:/home/user# cat /home/user/services/auth-gateway/config.yaml | grep session_ttl
+[?2004l  [01;31m[Ksession_ttl[m[K: 3600
+[?2004hroot@3e038b733840:/home/user# cat /home/user/services/auth-gateway/run.sh
+[?2004l#!/bin/bash
+cd /home/user/services/auth-gateway
+./auth-gateway -config ./config.yaml >> /var/log/auth-gateway/auth-gateway.log 2>> /var/log/auth-gateway/error.log &
+echo $! > /tmp/auth-gateway.pid
+echo "Started auth-gateway with PID $(cat /tmp/auth-gateway.pid)"
+[?2004hroot@3e038b733840:/home/user# cd /home/user/services/auth-gateway && ./run.sh
+[?2004lStarted auth-gateway with PID 530
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# sleep 3
+[?2004l[?2004hroot@3e038b733840:/home/user/services/auth-gateway# ps aux | grep auth-gateway | grep -v grep
+[?2004lroot         530  0.0  0.0   4748  3516 pts/0    S    07:08   0:00 /bin/bash ./auth-gateway -config ./config.yaml
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# tail -20 /var/log/auth-gateway/error.log
+[?2004lgoroutine 1 [running]:
+main.parseSessionTTL(0xc0000b2000, 0x6, 0x0)
+        /app/session/manager.go:147 +0x123
+main.refreshSessionPool(0xc0000a4000)
+        /app/session/manager.go:89 +0x456
+main.(*SessionManager).RefreshPool(0xc0000a4000)
+        /app/session/manager.go:72 +0x234
+main.main()
+        /app/main.go:52 +0x789
+
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# ps aux | grep -E 'auth-gateway|PID' | head -10
+[?2004lUSER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND
+root         530  0.0  0.0   4748  3516 pts/0    S    07:08   0:00 /bin/bash ./auth-gateway -config ./config.yaml
+root         588  0.0  0.0   3856  2180 pts/0    S+   07:09   0:00 grep --color=auto -E auth-gateway|PID
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# tail -30 /var/log/auth-gateway/auth-gateway.log
+[?2004l[2024-01-15 03:30:20] INFO: Request handled: GET /api/v1/user/profile
+[2024-01-15 03:30:20] INFO: Rate limit check passed for IP 10.0.35.139
+[2024-01-15 03:30:21] INFO: Health check OK
+[2024-01-15 03:30:21] INFO: Session validated for user_id=8970
+[2024-01-15 03:30:22] INFO: Session validated for user_id=8970
+[2024-01-15 03:30:22] INFO: Redis PING successful
+[2024-01-15 03:30:22] INFO: Connection pool stats: active=8, idle=2
+[2024-01-15 03:30:23] INFO: Redis PING successful
+[2024-01-15 03:30:23] INFO: Rate limit check passed for IP 10.0.35.139
+[2024-01-15 03:30:23] INFO: Rate limit check passed for IP 10.0.35.139
+[2024-01-15 03:30:23] INFO: Request handled: GET /api/v1/user/profile
+[2024-01-15 03:30:23] INFO: Token refresh completed
+[2024-01-15 03:30:24] INFO: Rate limit check passed for IP 10.0.35.139
+[2024-01-15 03:30:24] INFO: Request handled: GET /api/v1/user/profile
+[2024-01-15 03:30:24] INFO: Connection pool stats: active=8, idle=2
+[2024-01-15 03:30:25] INFO: Token refresh completed
+[2024-01-15 03:30:25] INFO: Session validated for user_id=8970
+[2024-01-15 03:30:25] INFO: Request handled: POST /api/v1/auth/login
+[2024-01-15 03:30:25] INFO: Request handled: GET /api/v1/auth/verify
+[2024-01-15 03:30:25] INFO: Health check OK
+[2024-01-15 03:30:26] INFO: Request handled: GET /api/v1/user/profile
+[2024-01-15 03:30:27] FATAL: session pool refresh failed
+[2026-05-05 07:08:52] INFO: auth-gateway starting...
+[2026-05-05 07:08:52] INFO: Loading config from ./config.yaml
+[2026-05-05 07:08:52] INFO: Configured session_ttl: 3600
+[2026-05-05 07:08:52] INFO: Starting health check routine...
+[2026-05-05 07:08:52] INFO: Redis connection established
+[2026-05-05 07:08:52] INFO: Listening on :8080
+[2026-05-05 07:08:52] INFO: Session TTL configured: 3600s
+[2026-05-05 07:08:52] INFO: Health check OK
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# pgrep -f 'auth-gateway' | xargs ps -fp
+[?2004lUID          PID    PPID  C STIME TTY          TIME CMD
+root         530       1  0 07:08 pts/0    00:00:00 /bin/bash ./auth-gateway -config ./config.yaml
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# sleep 10
+[?2004lps aux | grep auth-gateway | grep -v grep
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# ps aux | grep auth-gateway | grep -v grep
+[?2004lroot         530  0.0  0.0   4748  3516 pts/0    S    07:08   0:00 /bin/bash ./auth-gateway -config ./config.yaml
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# tail -5 /var/log/auth-gateway/error.log
+[?2004l[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# tail -5 /var/log/auth-gateway/auth-gateway.log
+[?2004l[2026-05-05 07:08:52] INFO: Starting health check routine...
+[2026-05-05 07:08:52] INFO: Redis connection established
+[2026-05-05 07:08:52] INFO: Listening on :8080
+[2026-05-05 07:08:52] INFO: Session TTL configured: 3600s
+[2026-05-05 07:08:52] INFO: Health check OK
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# pstree -p 530
+[?2004lbash: pstree: command not found
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# netstat -tlnp | grep 8080 || ss -tlnp | grep 8080
+[?2004lbash: netstat: command not found
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# lsof -i :8080 2>/dev/null || echo 'lsof not available'
+[?2004llsof not available
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# ps auxf | grep -A5 -B5 530 | head -20
+[?2004lroot         394  0.0  0.0  28428 15872 pts/1    S+   07:08   0:00  |       \_ /usr/bin/python3 /usr/bin/asciinema rec --stdin /logs/agent/recording.cast
+root         395  0.0  0.0  28440 15232 pts/1    S+   07:08   0:00  |       \_ /usr/bin/python3 /usr/bin/asciinema rec --stdin /logs/agent/recording.cast
+root         396  0.0  0.0   2900  1844 pts/0    Ss   07:08   0:00  |       \_ sh -c /bin/bash
+root         397  0.0  0.0   5012  4084 pts/0    S    07:08   0:00  |           \_ /bin/bash
+root         704  0.0  0.0   7448  3280 pts/0    R+   07:09   0:00  |               \_ ps auxf
+root         705  0.0  0.0   3856  2036 pts/0    S+   07:09   0:00  |               \_ grep --color=auto -A5 -B5 530
+root         706  0.0  0.0   3188  1804 pts/0    S+   07:09   0:00  |               \_ head -20
+root         376  0.0  0.0   2900  1888 ?        S    07:08   0:00  \_ sh -c cat > /logs/agent/terminus_2.pane
+root         377  0.0  0.0   2940  1488 ?        S    07:08   0:00      \_ cat
+root         530  0.0  0.0   4748  3516 pts/0    S    07:08   0:00 /bin/bash ./auth-gateway -config ./config.yaml
+root         661  0.0  0.0   3176  1864 pts/0    S    07:09   0:00  \_ sleep 30
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# cat /tmp/auth-gateway.pid
+[?2004l530
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# kill $(cat /tmp/auth-gateway.pid) 2>/dev/null; sleep 1
+[?2004l[?2004hroot@3e038b733840:/home/user/services/auth-gateway# cd /home/user/services/auth-gateway && ./auth-gateway -config ./config.yaml >> /var/log/auth-gateway/auth-gateway.log 2>> /var/log/auth-gateway/error.log &
+[?2004l[1] 728
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# echo $! > /tmp/auth-gateway.pid && echo "Started auth-gateway with PID $(cat /tmp/auth-gateway.pid)"
+[?2004lStarted auth-gateway with PID 728
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# ps aux | grep 728 | grep -v grep
+[?2004lroot         728  0.0  0.0   5012  2048 pts/0    S    07:09   0:00 /bin/bash
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# sleep 5
+[?2004l[?2004hroot@3e038b733840:/home/user/services/auth-gateway# ps aux | grep auth-gateway | grep -v grep
+[?2004lroot         729  0.0  0.0   4748  3520 pts/0    S    07:09   0:00 /bin/bash ./auth-gateway -config ./config.yaml
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# tail -10 /var/log/auth-gateway/auth-gateway.log
+[?2004l[2026-05-05 07:08:52] INFO: Health check OK
+[2026-05-05 07:09:22] INFO: Health check OK
+[2026-05-05 07:09:39] INFO: auth-gateway starting...
+[2026-05-05 07:09:39] INFO: Loading config from ./config.yaml
+[2026-05-05 07:09:39] INFO: Configured session_ttl: 3600
+[2026-05-05 07:09:39] INFO: Starting health check routine...
+[2026-05-05 07:09:39] INFO: Redis connection established
+[2026-05-05 07:09:39] INFO: Listening on :8080
+[2026-05-05 07:09:39] INFO: Session TTL configured: 3600s
+[2026-05-05 07:09:39] INFO: Health check OK
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# tail -10 /var/log/auth-gateway/error.log
+[?2004l[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# sleep 15
+[?2004lps aux | grep auth-gateway | grep -v grep
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# ps aux | grep auth-gateway | grep -v grep
+[?2004lroot         729  0.0  0.0   4748  3520 pts/0    S    07:09   0:00 /bin/bash ./auth-gateway -config ./config.yaml
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# tail -3 /var/log/auth-gateway/error.log
+[?2004l[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# tail -5 /var/log/auth-gateway/auth-gateway.log
+[?2004l[2026-05-05 07:09:39] INFO: Redis connection established
+[2026-05-05 07:09:39] INFO: Listening on :8080
+[2026-05-05 07:09:39] INFO: Session TTL configured: 3600s
+[2026-05-05 07:09:39] INFO: Health check OK
+[2026-05-05 07:10:09] INFO: Health check OK
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# echo '=== AUTH-GATEWAY SERVICE STATUS ==='
+[?2004l=== AUTH-GATEWAY SERVICE STATUS ===
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# ps aux | grep auth-gateway | grep -v grep && echo 'Service is RUNNING'
+[?2004lroot         729  0.0  0.0   4748  3520 pts/0    S    07:09   0:00 /bin/bash ./auth-gateway -config ./config.yaml
+Service is RUNNING
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# echo '=== FIX APPLIED ===' && grep session_ttl /home/user/services/auth-gateway/config.yaml
+[?2004l=== FIX APPLIED ===
+  [01;31m[Ksession_ttl[m[K: 3600
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# echo '=== RECENT LOGS (no panic errors) ===' && tail -3 /var/log/auth-gateway/error.log
+[?2004l=== RECENT LOGS (no panic errors) ===
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[WARN] Connection timeout to upstream, retrying...
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# echo '=== Service has been stable since 07:09:39 - crash loop resolved ==='
+[?2004l=== Service has been stable since 07:09:39 - crash loop resolved ===
+[?2004hroot@3e038b733840:/home/user/services/auth-gateway# Terminated

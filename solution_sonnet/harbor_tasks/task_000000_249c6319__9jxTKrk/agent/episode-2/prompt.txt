@@ -1,0 +1,79 @@
+New Terminal Output:
+
+root@5a3313ad7080:/home/user/etl# cat transform.py
+#!/usr/bin/env python3
+"""
+ETL script to transform transactions from JSON to CSV format.
+"""
+import json
+import csv
+import os
+import sys
+from datetime import datetime
+
+# Add lib directory to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'lib'))
+
+from parsers import parse_amount
+
+
+def get_log_path():
+    return os.path.join(os.path.dirname(__file__), 'logs', 'transform.log')
+
+
+def get_input_path():
+    return os.path.join(os.path.dirname(__file__), 'input', 'transactions.json')
+
+
+def get_output_path():
+    return os.path.join(os.path.dirname(__file__), 'output', 'transactions.csv')
+
+
+def log_warning(message):
+    """Append warning message to log file."""
+    log_path = get_log_path()
+    timestamp = datetime.now().isoformat()
+    with open(log_path, 'a') as f:
+        f.write(f"{timestamp} WARN: {message}\n")
+
+
+def transform():
+    """Main transformation function."""
+    input_path = get_input_path()
+    output_path = get_output_path()
+
+    # Load input JSON
+    with open(input_path, 'r') as f:
+        transactions = json.load(f)
+
+    # Write CSV output
+    fieldnames = ['id', 'date', 'amount', 'currency', 'department', 'description']
+
+    with open(output_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for txn in transactions:
+            try:
+                # Parse the amount to numeric value
+                amount = parse_amount(txn['amount'])
+
+                row = {
+                    'id': txn['id'],
+                    'date': txn['date'],
+                    'amount': amount,
+                    'currency': txn['currency'],
+                    'department': txn['department'],
+                    'description': txn['description']
+                }
+                writer.writerow(row)
+            except Exception as e:
+                log_warning(f"skipping row {txn.get('id', 'unknown')}: {e}")
+                continue
+
+    print(f"Transformation complete. Output written to {output_path}")
+
+
+if __name__ == '__main__':
+    transform()
+root@5a3313ad7080:/home/user/etl#

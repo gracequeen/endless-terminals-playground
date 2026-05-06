@@ -1,0 +1,117 @@
+New Terminal Output:
+
+I have no name!@f587620f19ca:/home/user/policygate$ cp lib/diff_check.py lib/diff_check.py.bak
+I have no name!@f587620f19ca:/home/user/policygate$ cat > lib/diff_check.py << 'EOF'
+> #!/usr/bin/env python3
+> """
+> Diff checker for policy validation.
+> Compares patched directory against baseline and validates against allowlist.
+> """
+>
+> import sys
+> import os
+> import subprocess
+> import fnmatch
+>
+>
+> def load_allowlist(allowlist_path):
+>     """Load allowlist patterns from file."""
+>     patterns = []
+>     with open(allowlist_path, 'r') as f:
+>         for line in f:
+>             line = line.strip()
+>             if line and not line.startswith('#'):
+>                 patterns.append(line)
+>     return patterns
+>
+>
+> def path_matches_allowlist(path, patterns):
+>     """Check if path matches any allowlist pattern."""
+>     for pattern in patterns:
+>         if fnmatch.fnmatch(path, pattern):
+>             return True
+>         # Also check if path starts with pattern directory
+>         pattern_dir = pattern.rstrip('*').rstrip('/')
+>         if path.startswith(pattern_dir + '/') or path == pattern_dir:
+>             return True
+>     return False
+>
+>
+> def find_modified_files(workdir, baseline):
+>     """Find files that differ between workdir and baseline."""
+>     result = subprocess.run(
+>         ['diff', '-rq', workdir, baseline],
+>         capture_output=True,
+>         text=True
+>     )
+>
+>     modified = []
+>     for line in result.stdout.splitlines():
+>         if line.startswith('Files ') and ' differ' in line:
+>             # Parse "Files /path/a and /path/b differ"
+>             parts = line.split(' and ')
+>             if len(parts) >= 1:
+>                 file_path = parts[0].replace('Files ', '').strip()
+>                 # Get relative path from workdir
+>                 if file_path.startswith(workdir):
+>                     rel_path = file_path[len(workdir):].lstrip('/')
+>                     modified.append(rel_path)
+>         elif 'Only in' in line:
+>             # Handle new or deleted files
+>             # "Only in /path/dir: filename"
+>             if workdir in line:
+>                 parts = line.split(': ')
+>                 if len(parts) == 2:
+>                     dir_part = parts[0].replace('Only in ', '')
+>                     filename = parts[1]
+>                     if dir_part.startswith(workdir):
+>                         rel_dir = dir_part[len(workdir):].lstrip('/')
+>                         rel_path = os.path.join(rel_dir, filename) if rel_dir else filename
+>                         modified.append(rel_path)
+>
+>     return modified
+>
+>
+> def is_modification_allowed(workdir, baseline, modified_files, patterns):
+>     """
+>     Check if all modifications are allowed.
+>     Returns (success, message).
+>     """
+>     unauthorized = []
+>
+>     for filepath in modified_files:
+>         if not path_matches_allowlist(filepath, patterns):
+>             unauthorized.append(filepath)
+>
+>     if unauthorized:
+>         return False, f"unauthorized modification detected: {', '.join(unauthorized)}"
+>
+>     return True, "all modifications allowed"
+>
+>
+> def main():
+>     if len(sys.argv) != 4:
+>         print("Usage: diff_check.py <workdir> <baseline> <allowlist>", file=sys.stderr)
+>         sys.exit(2)
+>
+>     workdir = sys.argv[1]
+>     baseline = sys.argv[2]
+>     allowlist_path = sys.argv[3]
+>
+>     patterns = load_allowlist(allowlist_path)
+>     modified_files = find_modified_files(workdir, baseline)
+>
+>     if not modified_files:
+>         print("no modifications detected")
+>         sys.exit(0)
+>
+>     success, message = is_modification_allowed(workdir, baseline, modified_files, patterns)
+>     print(message)
+>
+>     sys.exit(0 if success else 1)
+>
+>
+> if __name__ == '__main__':
+>     main()
+> EOF
+I have no name!@f587620f19ca:/home/user/policygate$

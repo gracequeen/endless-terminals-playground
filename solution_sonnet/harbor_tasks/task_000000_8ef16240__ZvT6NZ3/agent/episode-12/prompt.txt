@@ -1,0 +1,48 @@
+New Terminal Output:
+
+{"last_line": 50000}root@6611b8bbd090:/home/user/pipeline# rm .checkpoint output/summary.db
+root@6611b8bbd090:/home/user/pipeline# echo '{"last_line": 0}' > .checkpoint
+root@6611b8bbd090:/home/user/pipeline# echo "=== Step 1: Process first 20000 lines ==="
+=== Step 1: Process first 20000 lines ===
+root@6611b8bbd090:/home/user/pipeline# python3 << 'EOF'
+> import json
+> import sqlite3
+> import os
+> from process import BATCH_SIZE, load_checkpoint, save_checkpoint, process_batch
+>
+> conn = sqlite3.connect('output/summary.db')
+> conn.execute('CREATE TABLE IF NOT EXISTS summary (category TEXT PRIMARY KEY, total_value REAL, count INTEGER)')
+>
+> with open('data/events.json', 'r') as f:
+>     batch = []
+>     lines_processed = 0
+>     for i, line in enumerate(f):
+>         if i >= 20000:  # Stop at 20000
+>             break
+>         batch.append(json.loads(line))
+>         lines_processed += 1
+>         if len(batch) >= BATCH_SIZE:
+>             process_batch(conn, batch)
+>             save_checkpoint(lines_processed)
+>             conn.commit()
+>             batch = []
+>     if batch:
+>         process_batch(conn, batch)
+>         save_checkpoint(lines_processed)
+>         conn.commit()
+>
+> conn.close()
+> print(f"Processed {lines_processed} lines")
+> EOF
+Processed 20000 lines
+root@6611b8bbd090:/home/user/pipeline# python3 << 'EOF'
+> import sqlite3
+> conn = sqlite3.connect('output/summary.db')
+> result = conn.execute('SELECT SUM(count) FROM summary').fetchone()
+> print(f"Records in DB after first run: {result[0]}")
+> conn.close()
+> print(f"Checkpoint: {open('.checkpoint').read()}")
+> EOF
+Records in DB after first run: 20000
+Checkpoint: {"last_line": 20000}
+root@6611b8bbd090:/home/user/pipeline#

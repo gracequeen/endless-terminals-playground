@@ -1,0 +1,19 @@
+{
+  "analysis": "Good! The cache files exist and are properly sized (e.g., core-1.2.0.jar is 75K). I have 5 zero-byte JAR files that need to be restored from the cache. Each has a corresponding .sha1 file in the repo that should contain the correct checksum. I need to copy the files from cache and verify they match the SHA1 checksums.",
+  "plan": "I'll create a script to: 1) Iterate through each zero-byte JAR file, 2) Determine the corresponding cache file path, 3) Copy from cache to repo, 4) Verify the SHA1 checksum matches the .sha1 file. This will restore all corrupted artifacts and ensure consistency.",
+  "commands": [
+    {
+      "keystrokes": "cat > /tmp/fix_jars.sh << 'EOF'\n#!/bin/bash\n\nCACHE_DIR=\"/home/user/artifact-sync/cache\"\nREPO_DIR=\"/var/repo/maven\"\n\necho \"Finding and fixing zero-byte JAR files...\"\necho \"\"\n\nfind \"$REPO_DIR\" -name '*.jar' -size 0 | while read -r jar_file; do\n    echo \"Processing: $jar_file\"\n    \n    # Get relative path from repo\n    rel_path=\"${jar_file#$REPO_DIR/}\"\n    cache_file=\"${CACHE_DIR}/${rel_path}\"\n    sha1_file=\"${jar_file}.sha1\"\n    \n    # Check if cache file exists\n    if [ ! -f \"$cache_file\" ]; then\n        echo \"  ERROR: Cache file not found: $cache_file\"\n        continue\n    fi\n    \n    # Check if sha1 file exists\n    if [ ! -f \"$sha1_file\" ]; then\n        echo \"  ERROR: SHA1 file not found: $sha1_file\"\n        continue\n    fi\n    \n    # Copy from cache\n    cp \"$cache_file\" \"$jar_file\"\n    echo \"  Copied from cache ($(stat -c%s \"$jar_file\") bytes)\"\n    \n    # Verify SHA1\n    expected_sha1=$(cat \"$sha1_file\" | tr -d '[:space:]')\n    actual_sha1=$(sha1sum \"$jar_file\" | cut -d' ' -f1)\n    \n    if [ \"$expected_sha1\" = \"$actual_sha1\" ]; then\n        echo \"  ✓ SHA1 verified: $actual_sha1\"\n    else\n        echo \"  ✗ SHA1 MISMATCH!\"\n        echo \"    Expected: $expected_sha1\"\n        echo \"    Actual:   $actual_sha1\"\n    fi\n    echo \"\"\ndone\n\necho \"Verification complete. Checking for remaining zero-byte JARs...\"\nzero_count=$(find \"$REPO_DIR\" -name '*.jar' -size 0 | wc -l)\necho \"Zero-byte JARs remaining: $zero_count\"\nEOF\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "chmod +x /tmp/fix_jars.sh\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "/tmp/fix_jars.sh\n",
+      "duration": 2.0
+    }
+  ],
+  "task_complete": false
+}

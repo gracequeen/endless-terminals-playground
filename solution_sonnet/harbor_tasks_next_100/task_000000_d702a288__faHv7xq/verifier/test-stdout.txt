@@ -1,0 +1,143 @@
+Hit:1 http://us-west-1.ec2.archive.ubuntu.com/ubuntu jammy InRelease
+Hit:2 http://us-west-1.ec2.archive.ubuntu.com/ubuntu jammy-updates InRelease
+Hit:3 http://us-west-1.ec2.archive.ubuntu.com/ubuntu jammy-backports InRelease
+Hit:4 http://us-west-1.ec2.archive.ubuntu.com/ubuntu jammy-security InRelease
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+curl is already the newest version (7.81.0-1ubuntu1.24).
+0 upgraded, 0 newly installed, 0 to remove and 2 not upgraded.
+downloading uv 0.9.5 x86_64-unknown-linux-gnu
+no checksums to verify
+installing to /root/.local/bin
+  uv
+  uvx
+everything's installed!
+
+To add $HOME/.local/bin to your PATH, either restart your shell or run:
+
+    source $HOME/.local/bin/env (sh, bash, zsh)
+    source $HOME/.local/bin/env.fish (fish)
+Downloading cpython-3.12.12-linux-x86_64-gnu (download) (31.1MiB)
+ Downloading cpython-3.12.12-linux-x86_64-gnu (download)
+Downloading pygments (1.2MiB)
+ Downloading pygments
+Installed 5 packages in 13ms
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-8.4.1, pluggy-1.6.0 -- /root/.cache/uv/archive-v0/ZzKx1bQ3Asli7UKmOkUJs/bin/python
+cachedir: .pytest_cache
+rootdir: /tests
+collecting ... collected 19 items
+
+../../tests/test_final_state.py::TestScanNowPasses::test_run_scan_exits_zero PASSED [  5%]
+../../tests/test_final_state.py::TestScanResultsCorrect::test_scan_results_file_exists PASSED [ 10%]
+../../tests/test_final_state.py::TestScanResultsCorrect::test_scan_results_is_valid_json PASSED [ 15%]
+../../tests/test_final_state.py::TestScanResultsCorrect::test_scan_results_has_exactly_two_findings FAILED [ 21%]
+../../tests/test_final_state.py::TestScanResultsCorrect::test_false_positives_are_suppressed PASSED [ 26%]
+../../tests/test_final_state.py::TestAntiShortcutGuards::test_grep_rule_id_count_is_two FAILED [ 31%]
+../../tests/test_final_state.py::TestAntiShortcutGuards::test_scanner_config_still_exists PASSED [ 36%]
+../../tests/test_final_state.py::TestAntiShortcutGuards::test_severity_threshold_still_warning PASSED [ 42%]
+../../tests/test_final_state.py::TestAntiShortcutGuards::test_scanner_config_has_rules PASSED [ 47%]
+../../tests/test_final_state.py::TestAntiShortcutGuards::test_security_dir_still_has_config PASSED [ 52%]
+../../tests/test_final_state.py::TestSourceCodeUnchanged::test_src_config_defaults_exists PASSED [ 57%]
+../../tests/test_final_state.py::TestSourceCodeUnchanged::test_src_db_queries_exists PASSED [ 63%]
+../../tests/test_final_state.py::TestSourceCodeUnchanged::test_src_config_defaults_has_content PASSED [ 68%]
+../../tests/test_final_state.py::TestSourceCodeUnchanged::test_src_db_queries_has_content PASSED [ 73%]
+../../tests/test_final_state.py::TestScannerStillFunctional::test_informational_findings_still_present FAILED [ 78%]
+../../tests/test_final_state.py::TestScannerStillFunctional::test_semgrep_still_works PASSED [ 84%]
+../../tests/test_final_state.py::TestIgnoreFileFix::test_semgrepignore_or_equivalent_exists PASSED [ 89%]
+../../tests/test_final_state.py::TestIgnoreFileFix::test_run_scan_script_still_exists PASSED [ 94%]
+../../tests/test_final_state.py::TestIgnoreFileFix::test_run_scan_script_still_executable PASSED [100%]
+
+=================================== FAILURES ===================================
+______ TestScanResultsCorrect.test_scan_results_has_exactly_two_findings _______
+
+self = <test_final_state.TestScanResultsCorrect object at 0x71a3dc6cff80>
+
+    def test_scan_results_has_exactly_two_findings(self):
+        """After fix, should have exactly 2 findings (informational ones only)."""
+        results_path = os.path.join(REPORTS_DIR, "scan-results.json")
+        with open(results_path, 'r') as f:
+            data = json.load(f)
+    
+        # Semgrep results typically have a 'results' key
+        if isinstance(data, dict) and 'results' in data:
+            findings = data['results']
+        elif isinstance(data, list):
+            findings = data
+        else:
+            pytest.fail("Unexpected scan results format")
+    
+>       assert len(findings) == 2, \
+            f"Expected exactly 2 findings after fix (informational ones), found {len(findings)}. " \
+            f"False positives should have been suppressed."
+E       AssertionError: Expected exactly 2 findings after fix (informational ones), found 0. False positives should have been suppressed.
+E       assert 0 == 2
+E        +  where 0 = len([])
+
+/tests/test_final_state.py:67: AssertionError
+____________ TestAntiShortcutGuards.test_grep_rule_id_count_is_two _____________
+
+self = <test_final_state.TestAntiShortcutGuards object at 0x71a3dc58a270>
+
+    def test_grep_rule_id_count_is_two(self):
+        """Using grep to count rule_id occurrences should return exactly 2."""
+        results_path = os.path.join(REPORTS_DIR, "scan-results.json")
+        result = subprocess.run(
+            ["grep", "-c", '"check_id"', results_path],
+            capture_output=True,
+            text=True
+        )
+        # grep -c returns the count as a string
+        # If no matches, grep exits 1 and outputs "0"
+        count_str = result.stdout.strip()
+        try:
+            count = int(count_str)
+        except ValueError:
+            # Try alternative field name
+            result2 = subprocess.run(
+                ["grep", "-c", '"rule_id"', results_path],
+                capture_output=True,
+                text=True
+            )
+            count_str = result2.stdout.strip()
+            count = int(count_str) if count_str else 0
+    
+>       assert count == 2, \
+            f"Expected exactly 2 findings (rule_id/check_id occurrences), got {count}. " \
+            f"This proves false positives were suppressed, not all scanning disabled."
+E       AssertionError: Expected exactly 2 findings (rule_id/check_id occurrences), got 0. This proves false positives were suppressed, not all scanning disabled.
+E       assert 0 == 2
+
+/tests/test_final_state.py:122: AssertionError
+_____ TestScannerStillFunctional.test_informational_findings_still_present _____
+
+self = <test_final_state.TestScannerStillFunctional object at 0x71a3dc584050>
+
+    def test_informational_findings_still_present(self):
+        """The 2 informational/legitimate findings should still appear."""
+        results_path = os.path.join(REPORTS_DIR, "scan-results.json")
+        with open(results_path, 'r') as f:
+            data = json.load(f)
+    
+        if isinstance(data, dict) and 'results' in data:
+            findings = data['results']
+        elif isinstance(data, list):
+            findings = data
+        else:
+            pytest.fail("Unexpected scan results format")
+    
+        # Should have exactly 2 findings - the informational ones
+>       assert len(findings) == 2, \
+            f"Scanner should still report 2 informational findings, got {len(findings)}"
+E       AssertionError: Scanner should still report 2 informational findings, got 0
+E       assert 0 == 2
+E        +  where 0 = len([])
+
+/tests/test_final_state.py:222: AssertionError
+=========================== short test summary info ============================
+FAILED ../../tests/test_final_state.py::TestScanResultsCorrect::test_scan_results_has_exactly_two_findings
+FAILED ../../tests/test_final_state.py::TestAntiShortcutGuards::test_grep_rule_id_count_is_two
+FAILED ../../tests/test_final_state.py::TestScannerStillFunctional::test_informational_findings_still_present
+========================= 3 failed, 16 passed in 4.11s =========================

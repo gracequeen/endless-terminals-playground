@@ -1,0 +1,89 @@
+New Terminal Output:
+
+user@a2bf6ce81f22:~/scheduler$ cat > test_fix.py << 'EOF'
+__ == '__main__':
+    test_conversions()
+EOF
+> #!/usr/bin/env python3
+> """Test the timezone conversion fix."""
+>
+> import sys
+> sys.path.insert(0, '/home/user/scheduler')
+>
+> from app import convert_to_berlin
+> import pytz
+> from datetime import datetime
+>
+> def test_conversions():
+>     """Test various UTC to Berlin conversions."""
+>     print("Testing UTC to Berlin timezone conversions...\n")
+>
+>     # Test cases with expected results
+>     test_cases = [
+>         # UTC time, Expected Berlin time description
+>         ("2024-03-31T01:30:00", "Should be 2:30am or 3:30am Berlin (DST transition date)"),
+>         ("2024-03-31T08:00:00", "Should be 9:00am or 10:00am Berlin"),
+>         ("2024-06-15T12:00:00", "Should be 2:00pm Berlin (summer time)"),
+>         ("2024-12-15T12:00:00", "Should be 1:00pm Berlin (winter time)"),
+>         ("2024-03-31T00:00:00", "Should be 1:00am or 2:00am Berlin"),
+>     ]
+>
+>     for utc_time_str, description in test_cases:
+>         berlin_time = convert_to_berlin(utc_time_str)
+>         print(f"UTC:    {utc_time_str}")
+>         print(f"Berlin: {berlin_time.strftime('%Y-%m-%d %H:%M:%S %Z (UTC%z)')}")
+>         print(f"Note:   {description}")
+>         print()
+>
+>     # Specific test for the maintenance window mentioned in the ticket
+>     print("=" * 60)
+>     print("CRITICAL TEST: Maintenance Window (mentioned in ticket)")
+>     print("=" * 60)
+>     maintenance_utc = "2024-03-31T01:30:00"
+>     maintenance_berlin = convert_to_berlin(maintenance_utc)
+>     print(f"UTC Time:    {maintenance_utc}")
+>     print(f"Berlin Time: {maintenance_berlin.strftime('%Y-%m-%d %H:%M:%S %Z (UTC%z)')}")
+>     print(f"Hour:        {maintenance_berlin.hour}")
+>
+>     # March 31, 2024 is when DST starts in Europe (2am -> 3am)
+>     # So 01:30 UTC should be 2:30am CET or 3:30am CEST depending on the exact date
+>     # Let's verify it's in the 2-3am range as mentioned in the ticket
+>     if maintenance_berlin.hour in [2, 3]:
+>         print("✓ PASS: Time is in the problematic 2-3am range")
+>     else:
+>         print(f"✗ FAIL: Expected 2-3am, got {maintenance_berlin.hour}am")
+>
+> if __name__ == '__main__':
+>     test_conversions()
+> EOF
+user@a2bf6ce81f22:~/scheduler$ python3 test_fix.py
+Testing UTC to Berlin timezone conversions...
+
+UTC:    2024-03-31T01:30:00
+Berlin: 2024-03-31 03:30:00 CEST (UTC+0200)
+Note:   Should be 2:30am or 3:30am Berlin (DST transition date)
+
+UTC:    2024-03-31T08:00:00
+Berlin: 2024-03-31 10:00:00 CEST (UTC+0200)
+Note:   Should be 9:00am or 10:00am Berlin
+
+UTC:    2024-06-15T12:00:00
+Berlin: 2024-06-15 14:00:00 CEST (UTC+0200)
+Note:   Should be 2:00pm Berlin (summer time)
+
+UTC:    2024-12-15T12:00:00
+Berlin: 2024-12-15 13:00:00 CET (UTC+0100)
+Note:   Should be 1:00pm Berlin (winter time)
+
+UTC:    2024-03-31T00:00:00
+Berlin: 2024-03-31 01:00:00 CET (UTC+0100)
+Note:   Should be 1:00am or 2:00am Berlin
+
+============================================================
+CRITICAL TEST: Maintenance Window (mentioned in ticket)
+============================================================
+UTC Time:    2024-03-31T01:30:00
+Berlin Time: 2024-03-31 03:30:00 CEST (UTC+0200)
+Hour:        3
+✓ PASS: Time is in the problematic 2-3am range
+user@a2bf6ce81f22:~/scheduler$

@@ -1,0 +1,82 @@
+New Terminal Output:
+
+root@6611b8bbd090:/home/user/pipeline# cat > FIXES_APPLIED.md << 'EOF'
+> # Checkpoint Resume Fixes
+>
+> ## Bugs Fixed
+>
+> ### Bug 1: Checkpoint saved batch number instead of line number
+> **Problem:** The checkpoint saved `batch_num` (0, 1, 2...) but labeled it as 'last_line'. When resuming, it compared line numbers (0-50000) with batch numbers
+ (0-50), causing it to skip only a few lines instead of thousands.
+>
+> **Fix:** Changed to track `lines_processed` and save the actual line number processed.
+>
+> ### Bug 2: Database operations replaced instead of accumulated
+> **Problem:** Used `INSERT OR REPLACE` which overwrites existing category data on resume, losing previously processed aggregations.
+>
+> **Fix:** Changed to `INSERT ... ON CONFLICT DO UPDATE` with accumulation:
+> ```sql
+> INSERT INTO summary (category, total_value, count) VALUES (?, ?, ?)
+> ON CONFLICT(category) DO UPDATE SET
+>     total_value = total_value + excluded.total_value,
+>     count = count + excluded.count
+> ```
+>
+> ### Bug 3: Checkpoint file not properly flushed
+> **Problem:** Not using context manager and no explicit flush, so checkpoint might not be written to disk before a crash.
+>
+> **Fix:** Added proper context manager, explicit flush(), and fsync():
+> ```python
+> with open('.checkpoint', 'w') as f:
+>     json.dump({'last_line': line_num}, f)
+>     f.flush()
+>     os.fsync(f.fileno())
+> ```
+>
+> ## Verification
+>
+> - Processed 20000 lines, then resumed and processed remaining 30000 lines
+> - Final count: exactly 50000 records (no duplication or loss)
+> - Re-running after completion remains idempotent
+> - All categories properly aggregated
+> EOF
+root@6611b8bbd090:/home/user/pipeline# cat FIXES_APPLIED.md
+# Checkpoint Resume Fixes
+
+## Bugs Fixed
+
+### Bug 1: Checkpoint saved batch number instead of line number
+**Problem:** The checkpoint saved `batch_num` (0, 1, 2...) but labeled it as 'last_line'. When resuming, it compared line numbers (0-50000) with batch numbers (
+0-50), causing it to skip only a few lines instead of thousands.
+
+**Fix:** Changed to track `lines_processed` and save the actual line number processed.
+
+### Bug 2: Database operations replaced instead of accumulated
+**Problem:** Used `INSERT OR REPLACE` which overwrites existing category data on resume, losing previously processed aggregations.
+
+**Fix:** Changed to `INSERT ... ON CONFLICT DO UPDATE` with accumulation:
+```sql
+INSERT INTO summary (category, total_value, count) VALUES (?, ?, ?)
+ON CONFLICT(category) DO UPDATE SET
+    total_value = total_value + excluded.total_value,
+    count = count + excluded.count
+```
+
+### Bug 3: Checkpoint file not properly flushed
+**Problem:** Not using context manager and no explicit flush, so checkpoint might not be written to disk before a crash.
+
+**Fix:** Added proper context manager, explicit flush(), and fsync():
+```python
+with open('.checkpoint', 'w') as f:
+    json.dump({'last_line': line_num}, f)
+    f.flush()
+    os.fsync(f.fileno())
+```
+
+## Verification
+
+- Processed 20000 lines, then resumed and processed remaining 30000 lines
+- Final count: exactly 50000 records (no duplication or loss)
+- Re-running after completion remains idempotent
+- All categories properly aggregated
+root@6611b8bbd090:/home/user/pipeline#

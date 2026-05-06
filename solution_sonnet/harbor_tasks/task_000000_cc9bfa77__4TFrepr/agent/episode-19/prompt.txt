@@ -1,0 +1,84 @@
+New Terminal Output:
+
+user@b01184b52a1a:~/wal_recovery$ python3 << 'EOF'
+segment 3:")
+print(f"  Hex: {key3.hex()}")
+print(f"  Bytes: {' '.join(f'{b:02x}' for b in key3)}")
+
+print("\nXOR key for segment 4:")
+print(f"  Hex: {key4.hex()}")
+print(f"  Bytes: {' '.join(f'{b:02x}' for b in key4)}")
+
+# Check if there's a pattern
+print("\nDifferences:")
+for i in range(16):
+    if key3[i] != key4[i]:
+        print(f"  Byte {i}: seg3={key3[i]:02x}, seg4={key4[i]:02x}, diff={key3[i]^key4[i]:02x}")
+EOF
+> import struct
+>
+> # Function to extract XOR key from first 8 bytes
+> def find_xor_key(data, expected):
+>     """Find XOR key that transforms data to expected"""
+>     key = bytes([d ^ e for d, e in zip(data, expected)])
+>     return key
+>
+> # Expected start of WAL page for segment 3 (at LSN 0x3000000)
+> # Magic: 0xF003, info flags, timeline 1, pageaddr 0x03000000
+> expected_seg3 = bytes([0x03, 0xf0, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+>                        0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00])
+>
+> # Expected start for segment 4 (at LSN 0x4000000)
+> expected_seg4 = bytes([0x03, 0xf0, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+>                        0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00])
+>
+> # Read actual data
+> with open('primary_wal/000000010000000000000003', 'rb') as f:
+>     actual_seg3 = f.read(16)
+>
+> with open('primary_wal/000000010000000000000004', 'rb') as f:
+>     actual_seg4 = f.read(16)
+>
+> key3 = find_xor_key(actual_seg3, expected_seg3)
+> key4 = find_xor_key(actual_seg4, expected_seg4)
+>
+> print("XOR key for segment 3:")
+> print(f"  Hex: {key3.hex()}")
+> print(f"  Bytes: {' '.join(f'{b:02x}' for b in key3)}")
+>
+> print("\nXOR key for segment 4:")
+> print(f"  Hex: {key4.hex()}")
+> print(f"  Bytes: {' '.join(f'{b:02x}' for b in key4)}")
+>
+> # Check if there's a pattern
+> print("\nDifferences:")
+> for i in range(16):
+>     if key3[i] != key4[i]:
+>         print(f"  Byte {i}: seg3={key3[i]:02x}, seg4={key4[i]:02x}, diff={key3[i]^key4[i]:02x}")
+> EOF
+XOR key for segment 3:
+  Hex: ffff3ad66ab438d7fcfc8b10260db8c1
+  Bytes: ff ff 3a d6 6a b4 38 d7 fc fc 8b 10 26 0d b8 c1
+
+XOR key for segment 4:
+  Hex: 47a7e4f38ecec9f2ee863bd9539c9abd
+  Bytes: 47 a7 e4 f3 8e ce c9 f2 ee 86 3b d9 53 9c 9a bd
+
+Differences:
+  Byte 0: seg3=ff, seg4=47, diff=b8
+  Byte 1: seg3=ff, seg4=a7, diff=58
+  Byte 2: seg3=3a, seg4=e4, diff=de
+  Byte 3: seg3=d6, seg4=f3, diff=25
+  Byte 4: seg3=6a, seg4=8e, diff=e4
+  Byte 5: seg3=b4, seg4=ce, diff=7a
+  Byte 6: seg3=38, seg4=c9, diff=f1
+  Byte 7: seg3=d7, seg4=f2, diff=25
+  Byte 8: seg3=fc, seg4=ee, diff=12
+  Byte 9: seg3=fc, seg4=86, diff=7a
+  Byte 10: seg3=8b, seg4=3b, diff=b0
+  Byte 11: seg3=10, seg4=d9, diff=c9
+  Byte 12: seg3=26, seg4=53, diff=75
+  Byte 13: seg3=0d, seg4=9c, diff=91
+  Byte 14: seg3=b8, seg4=9a, diff=22
+  Byte 15: seg3=c1, seg4=bd, diff=7c
+user@b01184b52a1a:~/wal_recovery$

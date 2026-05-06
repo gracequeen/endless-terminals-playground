@@ -1,0 +1,39 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@bae130232a6d:~$ grep -A 30 'def find_idle_hours' /home/user/tools/capacity_report.py
+def find_idle_hours(jobs):
+    """Find hours that were genuinely idle."""
+    idle = []
+
+    # Filter jobs that have actual runtime data
+    jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+
+    if not jobs_with_data:
+        return list(range(24))
+
+    # Use the date from the first job as reference
+    reference_date = jobs_with_data[0].start_time.date()
+
+    for hour in range(24):
+        is_idle = True
+
+        # Create datetime objects for the start and end of this hour
+        hour_start = datetime.combine(reference_date, datetime.min.time()).replace(hour=hour)
+        hour_end = hour_start.replace(minute=59, second=59, microsecond=999999)
+
+        # Check if any job was running during this hour
+        for job in jobs_with_data:
+            # A job runs during this hour if its time range overlaps with the hour's time range
+            # Job overlaps hour if: job starts before hour ends AND job ends after hour starts
+            if job.start_time <= hour_end and job.end_time >= hour_start:
+                is_idle = False
+                break
+
+        if is_idle:
+            idle.append(hour)
+
+user@bae130232a6d:~$

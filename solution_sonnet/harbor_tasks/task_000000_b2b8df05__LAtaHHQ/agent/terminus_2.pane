@@ -1,0 +1,139 @@
+[?2004hroot@39d0f02fc2dc:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@39d0f02fc2dc:/home/user# clear
+[?2004l[H[J[?2004hroot@39d0f02fc2dc:/home/user# cd /home/user/data
+[?2004l[?2004hroot@39d0f02fc2dc:/home/user/data# ls -la
+[?2004ltotal 72
+drwxrwxrwx 1 root root  4096 May  5 23:16 [0m[34;42m.[0m
+drwxrwxrwx 1 root root  4096 May  5 23:16 [34;42m..[0m
+-rw-rw-rw- 1 root root   447 May  5 23:16 clean.sql
+-rw-rw-rw- 1 root root 61440 May  5 23:16 survey.db
+[?2004hroot@39d0f02fc2dc:/home/user/data# cat clean.sql
+[?2004lDROP TABLE IF EXISTS responses_clean;
+CREATE TABLE responses_clean AS
+SELECT r.*
+FROM responses r
+RUN sed -i "s|archive.ubuntu.com|us-west-1.ec2.archive.ubuntu.com|g; s|security.ubuntu.com|us-west-1.ec2.archive.ubuntu.com|g" /etc/apt/sources.list 2>/dev/null || true
+INNER JOIN (
+    SELECT email, MIN(submitted_at) as first_sub
+    FROM responses
+    GROUP BY email
+) earliest ON r.email = earliest.email AND r.submitted_at = earliest.first_sub;
+[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db "SELECT COUNT(*) as total_rows FROM responses;"
+[?2004l847
+[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db "SELECT COUNT(DISTINCT email) as unique_emails FROM responses;"
+[?2004l298
+[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db "SELECT COUNT(*) as null_emails FROM responses WHERE email IS NULL OR email = '';"
+[?2004l14
+[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db "SELECT COUNT(*) as null_timestamps FROM responses WHERE submitted_at IS NULL OR submitted_at = '';"
+[?2004l0
+[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db "SELECT COUNT(*) FROM responses WHERE email IS NULL;"
+[?2004l14
+[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db "SELECT COUNT(*) FROM responses WHERE email = '';"
+[?2004l0
+[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db "SELECT submitted_at, email FROM responses WHERE email IS NULL OR email = '' ORDER BY submitted_at LIMIT 5;"
+[?2004l2024-01-07 13:11:10|
+2024-01-22 18:42:30|
+2024-01-24 11:02:09|
+2024-02-05 04:12:00|
+2024-02-07 21:44:44|
+[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db ".schema responses"
+[?2004lCREATE TABLE responses (
+        id INTEGER PRIMARY KEY,
+        email TEXT,
+        response TEXT,
+        submitted_at TEXT
+    );
+[?2004hroot@39d0f02fc2dc:/home/user/data# cp clean.sql clean.sql.backup
+[?2004l[?2004hroot@39d0f02fc2dc:/home/user/data# cat > clean.sql << 'EOF'
+[?2004l[?2004h> DROP TABLE IF EXISTS responses_clean;
+[?2004l[?2004h> CREATE TABLE responses_clean AS
+[?2004l[?2004h> SELECT r.*
+[?2004l[?2004h> FROM responses r
+[?2004l[?2004h> INNER JOIN (
+[?2004l[?2004h>     SELECT email, MIN(submitted_at) as first_sub
+[?2004l[?2004h>     FROM responses
+[?2004l[?2004h>     WHERE email IS NOT NULL
+[?2004l[?2004h>     GROUP BY email
+[?2004l[?2004h> ) earliest ON r.email = earliest.email AND r.submitted_at = earliest.first_sub
+[?2004l[?2004h> UNION ALL
+[?2004l[?2004h> SELECT r.*
+[?2004l[?2004h> FROM responses r
+[?2004l[?2004h> WHERE r.email IS NULL
+[?2004l[?2004h> AND r.submitted_at = (
+[?2004l[?2004h>     SELECT MIN(submitted_at)
+[?2004l[?2004h>     FROM responses
+[?2004l[?2004h>     WHERE email IS NULL
+[?2004l[?2004h> );
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@39d0f02fc2dc:/home/user/data# cat clean.sql
+[?2004lDROP TABLE IF EXISTS responses_clean;
+CREATE TABLE responses_clean AS
+SELECT r.*
+FROM responses r
+INNER JOIN (
+    SELECT email, MIN(submitted_at) as first_sub
+    FROM responses
+    WHERE email IS NOT NULL
+    GROUP BY email
+) earliest ON r.email = earliest.email AND r.submitted_at = earliest.first_sub
+UNION ALL
+SELECT r.*
+FROM responses r
+WHERE r.email IS NULL
+AND r.submitted_at = (
+    SELECT MIN(submitted_at)
+    FROM responses
+    WHERE email IS NULL
+);
+[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db < clean.sql
+[?2004l[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db "SELECT COUNT(*) FROM responses_clean;"
+[?2004l299
+[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db "SELECT COUNT(*) FROM responses_clean WHERE email IS NULL;"
+[?2004l1
+[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db "SELECT COUNT(DISTINCT email) FROM responses_clean WHERE email IS NOT NULL;"
+[?2004l298
+[?2004hroot@39d0f02fc2dc:/home/user/data# cat > clean.sql << 'EOF'
+[?2004l[?2004h> DROP TABLE IF EXISTS responses_clean;
+[?2004l[?2004h> CREATE TABLE responses_clean AS
+[?2004l[?2004h> SELECT r.*
+[?2004l[?2004h> FROM responses r
+[?2004l[?2004h> INNER JOIN (
+[?2004l[?2004h>     SELECT email, MIN(submitted_at) as first_sub
+[?2004l[?2004h>     FROM responses
+[?2004l[?2004h>     WHERE email IS NOT NULL
+[?2004l[?2004h>     GROUP BY email
+[?2004l[?2004h> ) earliest ON r.email = earliest.email AND r.submitted_at = earliest.first_sub
+[?2004l[?2004h> UNION ALL
+[?2004l[?2004h> SELECT *
+[?2004l[?2004h> FROM responses
+[?2004l[?2004h> WHERE email IS NULL;
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@39d0f02fc2dc:/home/user/data# cat clean.sql
+[?2004lDROP TABLE IF EXISTS responses_clean;
+CREATE TABLE responses_clean AS
+SELECT r.*
+FROM responses r
+INNER JOIN (
+    SELECT email, MIN(submitted_at) as first_sub
+    FROM responses
+    WHERE email IS NOT NULL
+    GROUP BY email
+) earliest ON r.email = earliest.email AND r.submitted_at = earliest.first_sub
+UNION ALL
+SELECT *
+FROM responses
+WHERE email IS NULL;
+[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db < clean.sql
+[?2004l[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db "SELECT COUNT(*) FROM responses_clean;"
+[?2004l312
+[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db "SELECT COUNT(*) as null_emails FROM responses_clean WHERE email IS NULL;"
+[?2004l14
+[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db "SELECT COUNT(*) as non_null_emails FROM responses_clean WHERE email IS NOT NULL;"
+[?2004l298
+[?2004hroot@39d0f02fc2dc:/home/user/data# sqlite3 survey.db "SELECT COUNT(*) as duplicates FROM (SELECT email, COUNT(*) as cnt FROM responses_clean WHERE email IS NOT NULL GROUP BY email HAVING cnt > 1);"
+[?2004l0
+[?2004hroot@39d0f02fc2dc:/home/user/data# echo "Summary: Fixed clean.sql - now produces 312 rows (298 unique emails + 14 NULL emails)"
+[?2004lSummary: Fixed clean.sql - now produces 312 rows (298 unique emails + 14 NULL emails)
+[?2004hroot@39d0f02fc2dc:/home/user/data# 

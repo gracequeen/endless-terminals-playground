@@ -1,0 +1,150 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+I have no name!@148def893cbc:~$ cat > pipeline/coordinator.py << 'EOF'
+nator: Sent chunk {chunk_id}")
+
+    # FIX: Collect results using dict to track by chunk_id
+    results = {}
+    print(f"Coordinator: Waiting for {num_chunks} results...")
+
+    while len(results) < num_chunks:
+        try:
+            msg = receiver.recv()
+            chunk_id, result_df = pickle.loads(msg)
+            if chunk_id not in results:
+                results[chunk_id] = result_df
+                print(f"Coordinator: Received result for chunk {chunk_id} ({len(results)}/{num_chunks})")
+            else:
+                print(f"Coordinator: Duplicate result for chunk {chunk_id}, ignoring")
+        except Exception as e:
+            print(f"Coordinator: Error receiving: {e}")
+            break
+
+    # FIX: Aggregate results in correct order
+    if len(results) == num_chunks:
+        print("Coordinator: All chunks received, aggregating...")
+        # Sort by chunk_id to maintain original order
+        sorted_results = [results[i] for i in sorted(results.keys())]
+        final_df = pd.concat(sorted_results, ignore_index=True)
+        final_df.to_parquet("/home/user/data/features.parquet")
+        print(f"Coordinator: Saved {len(final_df)} rows to features.parquet")
+
+        # Verify values
+        max_val = final_df.values.max()
+        min_val = final_df.values.min()
+        print(f"Coordinator: Value range: [{min_val:.4f}, {max_val:.4f}]")
+    else:
+        print(f"Coordinator: ERROR - Only received {len(results)}/{num_chunks} chunks!")
+
+    sender.close()
+    receiver.close()
+    context.term()
+
+if __name__ == "__main__":
+    main()
+EOF
+> #!/usr/bin/env python3
+> """
+> Coordinator for distributed tf-idf feature extraction.
+> Pushes chunks to workers via ZeroMQ, collects results, aggregates.
+> """
+> import pickle
+> import time
+> import zmq
+> import pandas as pd
+> from sklearn.feature_extraction.text import TfidfVectorizer
+>
+> def main():
+>     context = zmq.Context()
+>
+>     # Socket to send work to workers
+>     sender = context.socket(zmq.PUSH)
+>     sender.bind("tcp://127.0.0.1:5557")
+>
+>     # Socket to receive results from workers
+>     receiver = context.socket(zmq.PULL)
+>     receiver.bind("tcp://127.0.0.1:5558")
+>
+>     # Load data
+>     df = pd.read_parquet("/home/user/data/raw.parquet")
+>     print(f"Coordinator: Loaded {len(df)} rows")
+>
+>     # FIX: Fit vocabulary on ALL data first
+>     print("Coordinator: Fitting vocabulary on full dataset...")
+>     vectorizer = TfidfVectorizer(max_features=100)
+>     texts = df["text"].tolist()
+>     vectorizer.fit(texts)
+>     print(f"Coordinator: Vocabulary fitted with {len(vectorizer.get_feature_names_out())} features")
+>
+>     # Split into chunks of 1000 rows
+>     chunk_size = 1000
+>     chunks = [df.iloc[i:i+chunk_size] for i in range(0, len(df), chunk_size)]
+>     num_chunks = len(chunks)
+>     print(f"Coordinator: Split into {num_chunks} chunks")
+>
+>     # FIX: Wait for workers to connect (give them time to start)
+>     print("Coordinator: Waiting 2 seconds for workers to connect...")
+>     time.sleep(2)
+>
+>     # FIX: Send fitted vectorizer to workers first
+>     print("Coordinator: Sending fitted vectorizer to workers...")
+>     for i in range(3):  # Send to 3 workers
+>         vectorizer_msg = pickle.dumps(("VECTORIZER", vectorizer))
+>         sender.send(vectorizer_msg)
+>     print("Coordinator: Vectorizer sent to all workers")
+>
+>     # Small delay to ensure workers receive vectorizer
+>     time.sleep(0.5)
+>
+>     # Send all chunks
+>     print(f"Coordinator: Sending {num_chunks} chunks to workers")
+>     for chunk_id, chunk in enumerate(chunks):
+>         msg = pickle.dumps(("CHUNK", chunk_id, chunk))
+>         sender.send(msg)
+>         print(f"Coordinator: Sent chunk {chunk_id}")
+>
+>     # FIX: Collect results using dict to track by chunk_id
+>     results = {}
+>     print(f"Coordinator: Waiting for {num_chunks} results...")
+>
+>     while len(results) < num_chunks:
+>         try:
+>             msg = receiver.recv()
+>             chunk_id, result_df = pickle.loads(msg)
+>             if chunk_id not in results:
+>                 results[chunk_id] = result_df
+>                 print(f"Coordinator: Received result for chunk {chunk_id} ({len(results)}/{num_chunks})")
+>             else:
+>                 print(f"Coordinator: Duplicate result for chunk {chunk_id}, ignoring")
+>         except Exception as e:
+>             print(f"Coordinator: Error receiving: {e}")
+>             break
+>
+>     # FIX: Aggregate results in correct order
+>     if len(results) == num_chunks:
+>         print("Coordinator: All chunks received, aggregating...")
+>         # Sort by chunk_id to maintain original order
+>         sorted_results = [results[i] for i in sorted(results.keys())]
+>         final_df = pd.concat(sorted_results, ignore_index=True)
+>         final_df.to_parquet("/home/user/data/features.parquet")
+>         print(f"Coordinator: Saved {len(final_df)} rows to features.parquet")
+>
+>         # Verify values
+>         max_val = final_df.values.max()
+>         min_val = final_df.values.min()
+>         print(f"Coordinator: Value range: [{min_val:.4f}, {max_val:.4f}]")
+>     else:
+>         print(f"Coordinator: ERROR - Only received {len(results)}/{num_chunks} chunks!")
+>
+>     sender.close()
+>     receiver.close()
+>     context.term()
+>
+> if __name__ == "__main__":
+>     main()
+> EOF
+I have no name!@148def893cbc:~$

@@ -1,0 +1,109 @@
+New Terminal Output:
+
+I have no name!@199a2e4cfacc:~/pipeline$ cat > coordinator.py << 'EOF'
+> #!/usr/bin/env python3
+> """
+> Coordinator for distributed tf-idf feature extraction.
+> Pushes chunks to workers via ZeroMQ, collects results, aggregates.
+> """
+> import pickle
+> import time
+> import zmq
+> import pandas as pd
+> from sklearn.feature_extraction.text import TfidfVectorizer
+>
+> def main():
+>     context = zmq.Context()
+>
+>     # Socket to send work to workers
+>     sender = context.socket(zmq.PUSH)
+>     sender.bind("tcp://127.0.0.1:5557")
+>
+>     # Socket to receive results from workers
+>     receiver = context.socket(zmq.PULL)
+>     receiver.bind("tcp://127.0.0.1:5558")
+>
+>     # Load data
+>     df = pd.read_parquet("/home/user/data/raw.parquet")
+>     print(f"Coordinator: Loaded {len(df)} rows")
+>
+>     # FIX: Fit vectorizer on ALL data to build unified vocabulary
+>     print("Coordinator: Fitting vectorizer on all data...")
+>     vectorizer = TfidfVectorizer(max_features=100)
+>     texts = df["text"].tolist()
+>     vectorizer.fit(texts)
+>     print(f"Coordinator: Vocabulary built with {len(vectorizer.vocabulary_)} terms")
+>
+>     # Split into chunks of 1000 rows
+>     chunk_size = 1000
+>     chunks = [df.iloc[i:i+chunk_size] for i in range(0, len(df), chunk_size)]
+>     num_chunks = len(chunks)
+>
+>     print(f"Coordinator: Prepared {num_chunks} chunks")
+>
+>     # FIX: Wait for workers to connect
+>     print("Coordinator: Waiting 2 seconds for workers to connect...")
+>     time.sleep(2)
+>
+>     # FIX: Send fitted vectorizer to each worker (send 3 times for 3 workers)
+>     print("Coordinator: Sending fitted vectorizer to workers...")
+>     vectorizer_msg = pickle.dumps(("VECTORIZER", vectorizer))
+>     for i in range(3):
+>         sender.send(vectorizer_msg)
+>     time.sleep(0.5)  # Let workers receive and process
+>
+>     # Send all chunks
+>     print(f"Coordinator: Sending {num_chunks} chunks to workers")
+>     for chunk_id, chunk in enumerate(chunks):
+>         msg = pickle.dumps(("CHUNK", chunk_id, chunk))
+>         sender.send(msg)
+>         print(f"Coordinator: Sent chunk {chunk_id}")
+>
+>     # Send termination signals (one per worker)
+>     print("Coordinator: Sending termination signals...")
+>     for i in range(3):
+>         sender.send(pickle.dumps(("DONE", None, None)))
+>
+>     # FIX: Collect results using dict to track by chunk_id
+>     results = {}
+>     receiver.setsockopt(zmq.RCVTIMEO, 10000)  # 10 second timeout
+>
+>     print(f"Coordinator: Waiting for {num_chunks} results...")
+>     while len(results) < num_chunks:
+>         try:
+>             msg = receiver.recv()
+>             chunk_id, result_df = pickle.loads(msg)
+>             results[chunk_id] = result_df
+>             print(f"Coordinator: Received result for chunk {chunk_id} ({len(results)}/{num_chunks})")
+>         except zmq.Again:
+>             print(f"Coordinator: Timeout - received {len(results)}/{num_chunks} chunks")
+>             break
+>
+>     # Check if we got all results
+>     if len(results) < num_chunks:
+>         print(f"WARNING: Only received {len(results)} of {num_chunks} chunks!")
+>         missing = set(range(num_chunks)) - set(results.keys())
+>         print(f"Missing chunks: {sorted(missing)}")
+>
+>     # FIX: Aggregate results in correct order
+>     if results:
+>         ordered_results = [results[i] for i in sorted(results.keys())]
+>         final_df = pd.concat(ordered_results, ignore_index=True)
+>         final_df.to_parquet("/home/user/data/features.parquet")
+>         print(f"Coordinator: Saved {len(final_df)} rows to features.parquet")
+>
+>         # Verify values
+>         max_val = final_df.values.max()
+>         min_val = final_df.values.min()
+>         print(f"Coordinator: Value range: [{min_val}, {max_val}]")
+>     else:
+>         print("Coordinator: No results received!")
+>
+>     sender.close()
+>     receiver.close()
+>     context.term()
+>
+> if __name__ == "__main__":
+>     main()
+> EOF
+I have no name!@199a2e4cfacc:~/pipeline$

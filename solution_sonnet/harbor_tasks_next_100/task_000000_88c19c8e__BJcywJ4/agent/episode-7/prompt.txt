@@ -1,0 +1,117 @@
+New Terminal Output:
+
+I have no name!@8d9b8d08258a:~$ cat > /home/user/pipeline/coordinator_fixed.py << 'EOF'
+> #!/usr/bin/env python3
+> """
+> Fixed coordinator for distributed tf-idf feature extraction.
+> Two-phase: 1) Build global vocabulary, 2) Distribute fitted vectorizer + chunks
+> """
+> import pickle
+> import time
+> import zmq
+> import pandas as pd
+> from sklearn.feature_extraction.text import TfidfVectorizer
+>
+> def main():
+>     context = zmq.Context()
+>
+>     # Socket for worker registration
+>     sync = context.socket(zmq.REP)
+>     sync.bind("tcp://127.0.0.1:5559")
+>
+>     # Socket to send work to workers
+>     sender = context.socket(zmq.PUSH)
+>     sender.bind("tcp://127.0.0.1:5557")
+>
+>     # Socket to receive results from workers
+>     receiver = context.socket(zmq.PULL)
+>     receiver.bind("tcp://127.0.0.1:5558")
+>
+>     # Wait for 3 workers to register
+>     num_workers = 3
+>     print(f"Coordinator: Waiting for {num_workers} workers to register...")
+>     for i in range(num_workers):
+>         msg = sync.recv()
+>         worker_id = msg.decode('utf-8')
+>         print(f"Coordinator: Worker {worker_id} registered")
+>         sync.send(b"OK")
+>
+>     print("Coordinator: All workers registered, starting processing")
+>     time.sleep(0.5)  # Give workers time to connect to PUSH/PULL sockets
+>
+>     # Load data
+>     df = pd.read_parquet("/home/user/data/raw.parquet")
+>     print(f"Coordinator: Loaded {len(df)} rows")
+>
+>     # PHASE 1: Build global vocabulary on all data
+>     print("Coordinator: Building global vocabulary...")
+>     vectorizer = TfidfVectorizer(max_features=100)
+>     all_texts = df["text"].tolist()
+>     vectorizer.fit(all_texts)
+>     print(f"Coordinator: Vocabulary built with {len(vectorizer.vocabulary_)} terms")
+>
+>     # PHASE 2: Distribute chunks with fitted vectorizer
+>     chunk_size = 1000
+>     chunks = [df.iloc[i:i+chunk_size] for i in range(0, len(df), chunk_size)]
+>     num_chunks = len(chunks)
+>
+>     print(f"Coordinator: Sending {num_chunks} chunks to workers")
+>
+>     for chunk_id, chunk in enumerate(chunks):
+>         msg = pickle.dumps((chunk_id, chunk, vectorizer))
+>         sender.send(msg)
+>         print(f"Coordinator: Sent chunk {chunk_id}")
+>
+>     # Send termination signals (one per worker)
+>     for _ in range(num_workers):
+>         sender.send(pickle.dumps((None, None, None)))
+>
+>     # Collect results - use dict to track by chunk_id
+>     results = {}
+>     expected_chunks = set(range(num_chunks))
+>
+>     print(f"Coordinator: Waiting for {num_chunks} results...")
+>
+>     while len(results) < num_chunks:
+>         try:
+>             msg = receiver.recv()
+>             chunk_id, result_df = pickle.loads(msg)
+>
+>             if chunk_id in results:
+>                 print(f"Coordinator: WARNING - Duplicate chunk {chunk_id} received!")
+>             else:
+>                 results[chunk_id] = result_df
+>                 print(f"Coordinator: Received result for chunk {chunk_id} ({len(results)}/{num_chunks})")
+>         except Exception as e:
+>             print(f"Coordinator: Error receiving: {e}")
+>             break
+>
+>     # Check for missing chunks
+>     received_chunks = set(results.keys())
+>     missing = expected_chunks - received_chunks
+>     if missing:
+>         print(f"Coordinator: ERROR - Missing chunks: {missing}")
+>
+>     # Aggregate results in correct order
+>     if len(results) == num_chunks:
+>         ordered_results = [results[i] for i in range(num_chunks)]
+>         final_df = pd.concat(ordered_results, ignore_index=True)
+>         final_df.to_parquet("/home/user/data/features.parquet")
+>         print(f"Coordinator: Saved {len(final_df)} rows to features.parquet")
+>
+>         # Verify values
+>         max_val = final_df.values.max()
+>         min_val = final_df.values.min()
+>         print(f"Coordinator: Value range: [{min_val}, {max_val}]")
+>     else:
+>         print(f"Coordinator: ERROR - Only received {len(results)}/{num_chunks} chunks")
+>
+>     sender.close()
+>     receiver.close()
+>     sync.close()
+>     context.term()
+>
+> if __name__ == "__main__":
+>     main()
+> EOF
+I have no name!@8d9b8d08258a:~$

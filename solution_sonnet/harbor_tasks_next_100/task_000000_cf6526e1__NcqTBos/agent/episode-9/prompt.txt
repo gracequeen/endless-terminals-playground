@@ -1,0 +1,65 @@
+New Terminal Output:
+
+I have no name!@b016c0ab0eeb:/home/user/pipeline$ cat stages/enrich.py
+"""
+Enrich stage: adds metadata and consolidates CVE references.
+"""
+import os
+import logging
+from datetime import datetime
+
+
+# Set up logging for this stage
+LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs')
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE = os.path.join(LOG_DIR, 'enrich.log')
+
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.WARNING,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+# Output schema - only these fields will be in final output
+OUTPUT_SCHEMA = ['host_name', 'ip_address', 'operating_system', 'cve_refs', 'enriched_at', 'source_file']
+
+
+def enrich(records):
+    """
+    Enrich records with metadata and process CVE references.
+
+    Args:
+        records: List of normalized dictionaries
+
+    Returns:
+        List of enriched dictionaries conforming to output schema
+    """
+    enriched = []
+    timestamp = datetime.utcnow().isoformat()
+
+    for record in records:
+        try:
+            # Process CVE references - expects 'cve_reference' field (without 's')
+            if 'cve_reference' in record:
+                record['cve_refs'] = record['cve_reference'].split('|')
+                del record['cve_reference']
+        except KeyError as e:
+            logger.warning(f"KeyError on cve_reference for host {record.get('host_name', 'unknown')}, skipping field: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error processing CVE for {record.get('host_name', 'unknown')}: {e}")
+
+        # Add enrichment timestamp
+        record['enriched_at'] = timestamp
+
+        # Enforce output schema - only keep fields in schema
+        output_record = {}
+        for field in OUTPUT_SCHEMA:
+            if field in record:
+                output_record[field] = record[field]
+
+        enriched.append(output_record)
+
+    return enriched
+I have no name!@b016c0ab0eeb:/home/user/pipeline$

@@ -1,0 +1,37 @@
+Current terminal state:
+New Terminal Output:
+
+root@7c9ce8b2b179:/home/user# cat FIX_SUMMARY.txt
+BUG ANALYSIS AND FIX
+====================
+
+PROBLEM:
+The restore.sh script was failing intermittently with "gzip: stdin: not in gzip format" errors.
+
+ROOT CAUSE:
+The .bashrc file contains a locale rotation mechanism that alternates LC_COLLATE between 'C' and 'en_US.UTF-8' on each shell invocation. The original restore.sh
+ used shell glob expansion (chunk_*) to concatenate files, which can produce different ordering depending on locale settings. When chunks are concatenated in th
+e wrong order, the gzip stream becomes corrupted.
+
+ORIGINAL CODE (restore.sh):
+cat "$CHUNKS_DIR"/chunk_* | gunzip | tar xf - -C "$OUTPUT_DIR"
+
+FIXED CODE (restore.sh):
+find "$CHUNKS_DIR" -name 'chunk_*' -type f | sort | xargs cat | gunzip | tar xf - -C "$OUTPUT_DIR"
+
+SOLUTION:
+Replaced glob expansion with explicit sorting using find + sort + xargs. This ensures chunks are always concatenated in the correct lexicographic order regardle
+ss of locale settings.
+
+VERIFICATION:
+- Tested restore with LC_COLLATE=C: SUCCESS
+- Tested restore with LC_COLLATE=en_US.UTF-8: SUCCESS
+- Ran 5 consecutive tests with alternating locales: ALL SUCCESS
+- Verified data integrity with md5sum: MATCHES ORIGINAL
+
+STATUS: FIXED
+Both archive.sh and restore.sh are now working reliably.
+root@7c9ce8b2b179:/home/user#
+
+
+Are you sure you want to mark the task as complete? This will trigger your solution to be graded and you won't be able to make any further corrections. If so, include "task_complete": true in your JSON response again.

@@ -1,0 +1,404 @@
+[?2004hroot@77c3e62bdb6d:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@77c3e62bdb6d:/home/user# clear
+[?2004l[H[J[?2004hroot@77c3e62bdb6d:/home/user# cd /home/user/audit
+[?2004l[?2004hroot@77c3e62bdb6d:/home/user/audit# ls -la
+[?2004ltotal 16
+drwxrwxrwx 1 root root 4096 May  5 21:34 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 21:34 [34;42m..[0m
+-rw-r--r-- 1 root root  559 May  5 21:34 connections.csv
+-rw-r--r-- 1 root root  559 May  5 21:34 firewall_rules.json
+[?2004hroot@77c3e62bdb6d:/home/user/audit# cat firewall_rules.json
+[?2004l{
+  "rules": [
+    {"id": 1, "action": "allow", "source_cidr": "10.0.0.0/8", "dest_port": "443"},
+    {"id": 2, "action": "allow", "source_cidr": "10.1.0.0/16", "dest_port": "8000-9000"},
+    {"id": 3, "action": "deny", "source_cidr": "10.1.5.0/24", "dest_port": "8443"},
+    {"id": 4, "action": "allow", "source_cidr": "192.168.1.0/24", "dest_port": "22"},
+    {"id": 5, "action": "allow", "source_cidr": "0.0.0.0/0", "dest_port": "80"},
+    {"id": 6, "action": "allow", "source_cidr": "172.16.0.0/12", "dest_port": "3306"}
+  ],
+  "default_action": "deny"
+}
+[?2004hroot@77c3e62bdb6d:/home/user/audit# cat connections.csv
+[?2004ltimestamp,src_ip,src_port,dest_ip,dest_port,proto
+2024-01-15T10:00:00Z,10.1.5.17,49152,10.100.1.1,8443,tcp
+2024-01-15T10:00:01Z,10.1.2.33,51000,10.100.1.1,8500,tcp
+2024-01-15T10:00:02Z,192.168.1.50,52000,10.100.1.1,22,tcp
+2024-01-15T10:00:03Z,192.168.2.10,53000,10.100.1.1,22,tcp
+2024-01-15T10:00:04Z,10.0.50.1,54000,10.100.1.1,443,tcp
+2024-01-15T10:00:05Z,10.1.5.200,55000,10.100.1.1,8080,tcp
+2024-01-15T10:00:06Z,172.16.5.5,56000,10.100.1.1,3306,tcp
+2024-01-15T10:00:07Z,8.8.8.8,57000,10.100.1.1,80,tcp
+2024-01-15T10:00:08Z,8.8.8.8,58000,10.100.1.1,443,tcp
+[?2004hroot@77c3e62bdb6d:/home/user/audit# cat > check.py << 'EOF'
+[?2004l: port_range,
+            'action': rule['action'],
+            'source_cidr': rule['source_cidr'],
+            'dest_port': rule['dest_port']
+        })
+    
+    # Sort by prefix length (descending) - more specific rules first
+    rules.sort(key=lambda r: r['network'].prefixlen, reverse=True)
+    
+    return rules, data.get('default_action', 'deny')
+
+def check_connection(src_ip, dest_port, rules, default_action):
+    """Check if a connection is allowed by firewall rules.
+    Returns (allowed, matching_rule) tuple.
+    """
+    ip_obj = ipaddress.ip_address(src_ip)
+    
+    # Check rules in order (most specific first)
+    for rule in rules:
+        if ip_obj in rule['network']:
+            # IP matches this CIDR, check port
+            if port_in_range(dest_port, rule['port_range']):
+                # This rule applies
+                return (rule['action'] == 'allow', rule)
+    
+    # No matching rule, use default action
+    return (default_action == 'allow', None)
+
+def main():
+    rules, default_action = load_firewall_rules('/home/user/audit/firewall_rules.json')
+    
+    with open('/home/user/audit/connections.csv', 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            src_ip = row['src_ip']
+            dest_port = int(row['dest_port'])
+            
+            allowed, matching_rule = check_connection(src_ip, dest_port, rules, default_action)
+            
+            if not allowed:
+                if matching_rule:
+                    print(f"BLOCKED: {src_ip}:{dest_port} not allowed from {matching_rule['source_cidr']}")
+                else:
+                    print(f"BLOCKED: {src_ip}:{dest_port} not allowed from any rule (default deny)")
+
+if __name__ == '__main__':
+    main()
+EOF
+[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> import json
+[?2004l[?2004h> import csv
+[?2004l[?2004h> import ipaddress
+[?2004l[?2004h> import sys
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_port_spec(port_spec):
+[?2004l[?2004h>     """Parse a port specification (single port or range) into a set of allowed ports."""
+[?2004l[?2004h>     port_spec = str(port_spec).strip()
+[?2004l[?2004h>     if '-' in port_spec:
+[?2004l[?2004h>         start, end = port_spec.split('-')
+[?2004l[?2004h>         return (int(start), int(end))
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         port = int(port_spec)
+[?2004l[?2004h>         return (port, port)
+[?2004l[?2004h> 
+[?2004l[?2004h> def port_in_range(port, port_range):
+[?2004l[?2004h>     """Check if a port is within a port range tuple."""
+[?2004l[?2004h>     start, end = port_range
+[?2004l[?2004h>     return start <= port <= end
+[?2004l[?2004h> 
+[?2004l[?2004h> def load_firewall_rules(json_path):
+[?2004l[?2004h>     """Load and parse firewall rules, sorted by CIDR specificity (most specific first)."""
+[?2004l[?2004h>     with open(json_path, 'r') as f:
+[?2004l[?2004h>         data = json.load(f)
+[?2004l[?2004h>     
+[?2004l[?2004h>     rules = []
+[?2004l[?2004h>     for rule in data['rules']:
+[?2004l[?2004h>         network = ipaddress.ip_network(rule['source_cidr'])
+[?2004l[?2004h>         port_range = parse_port_spec(rule['dest_port'])
+[?2004l[?2004h>         rules.append({
+[?2004l[?2004h>             'network': network,
+[?2004l[?2004h>             'port_range': port_range,
+[?2004l[?2004h>             'action': rule['action'],
+[?2004l[?2004h>             'source_cidr': rule['source_cidr'],
+[?2004l[?2004h>             'dest_port': rule['dest_port']
+[?2004l[?2004h>         })
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Sort by prefix length (descending) - more specific rules first
+[?2004l[?2004h>     rules.sort(key=lambda r: r['network'].prefixlen, reverse=True)
+[?2004l[?2004h>     
+[?2004l[?2004h>     return rules, data.get('default_action', 'deny')
+[?2004l[?2004h> 
+[?2004l[?2004h> def check_connection(src_ip, dest_port, rules, default_action):
+[?2004l[?2004h>     """Check if a connection is allowed by firewall rules.
+[?2004l[?2004h>     Returns (allowed, matching_rule) tuple.
+[?2004l[?2004h>     """
+[?2004l[?2004h>     ip_obj = ipaddress.ip_address(src_ip)
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Check rules in order (most specific first)
+[?2004l[?2004h>     for rule in rules:
+[?2004l[?2004h>         if ip_obj in rule['network']:
+[?2004l[?2004h>             # IP matches this CIDR, check port
+[?2004l[?2004h>             if port_in_range(dest_port, rule['port_range']):
+[?2004l[?2004h>                 # This rule applies
+[?2004l[?2004h>                 return (rule['action'] == 'allow', rule)
+[?2004l[?2004h>     
+[?2004l[?2004h>     # No matching rule, use default action
+[?2004l[?2004h>     return (default_action == 'allow', None)
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     rules, default_action = load_firewall_rules('/home/user/audit/firewall_rules.json')
+[?2004l[?2004h>     
+[?2004l[?2004h>     with open('/home/user/audit/connections.csv', 'r') as f:
+[?2004l[?2004h>         reader = csv.DictReader(f)
+[?2004l[?2004h>         for row in reader:
+[?2004l[?2004h>             src_ip = row['src_ip']
+[?2004l[?2004h>             dest_port = int(row['dest_port'])
+[?2004l[?2004h>             
+[?2004l[?2004h>             allowed, matching_rule = check_connection(src_ip, dest_port, rules, default_action)
+[?2004l[?2004h>             
+[?2004l[?2004h>             if not allowed:
+[?2004l[?2004h>                 if matching_rule:
+[?2004l[?2004h>                     print(f"BLOCKED: {src_ip}:{dest_port} not allowed from {matching_rule['source_cidr']}")
+[?2004l[?2004h>                 else:
+[?2004l[?2004h>                     print(f"BLOCKED: {src_ip}:{dest_port} not allowed from any rule (default deny)")
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == '__main__':
+[?2004l[?2004h>     main()
+[?2004l[?2004h> EOF
+[?2004lchmod +x check.py
+python3 check.py
+[?2004hroot@77c3e62bdb6d:/home/user/audit# chmod +x check.py
+[?2004l[?2004hroot@77c3e62bdb6d:/home/user/audit# python3 check.py
+[?2004lBLOCKED: 10.1.5.17:8443 not allowed from 10.1.5.0/24
+BLOCKED: 192.168.2.10:22 not allowed from any rule (default deny)
+BLOCKED: 8.8.8.8:443 not allowed from any rule (default deny)
+[?2004hroot@77c3e62bdb6d:/home/user/audit# cat check.py
+[?2004l#!/usr/bin/env python3
+import json
+import csv
+import ipaddress
+import sys
+
+def parse_port_spec(port_spec):
+    """Parse a port specification (single port or range) into a set of allowed ports."""
+    port_spec = str(port_spec).strip()
+    if '-' in port_spec:
+        start, end = port_spec.split('-')
+        return (int(start), int(end))
+    else:
+        port = int(port_spec)
+        return (port, port)
+
+def port_in_range(port, port_range):
+    """Check if a port is within a port range tuple."""
+    start, end = port_range
+    return start <= port <= end
+
+def load_firewall_rules(json_path):
+    """Load and parse firewall rules, sorted by CIDR specificity (most specific first)."""
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+    
+    rules = []
+    for rule in data['rules']:
+        network = ipaddress.ip_network(rule['source_cidr'])
+        port_range = parse_port_spec(rule['dest_port'])
+        rules.append({
+            'network': network,
+            'port_range': port_range,
+            'action': rule['action'],
+            'source_cidr': rule['source_cidr'],
+            'dest_port': rule['dest_port']
+        })
+    
+    # Sort by prefix length (descending) - more specific rules first
+    rules.sort(key=lambda r: r['network'].prefixlen, reverse=True)
+    
+    return rules, data.get('default_action', 'deny')
+
+def check_connection(src_ip, dest_port, rules, default_action):
+    """Check if a connection is allowed by firewall rules.
+    Returns (allowed, matching_rule) tuple.
+    """
+    ip_obj = ipaddress.ip_address(src_ip)
+    
+    # Check rules in order (most specific first)
+    for rule in rules:
+        if ip_obj in rule['network']:
+            # IP matches this CIDR, check port
+            if port_in_range(dest_port, rule['port_range']):
+                # This rule applies
+                return (rule['action'] == 'allow', rule)
+    
+    # No matching rule, use default action
+    return (default_action == 'allow', None)
+
+def main():
+    rules, default_action = load_firewall_rules('/home/user/audit/firewall_rules.json')
+    
+    with open('/home/user/audit/connections.csv', 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            src_ip = row['src_ip']
+            dest_port = int(row['dest_port'])
+            
+            allowed, matching_rule = check_connection(src_ip, dest_port, rules, default_action)
+            
+            if not allowed:
+                if matching_rule:
+                    print(f"BLOCKED: {src_ip}:{dest_port} not allowed from {matching_rule['source_cidr']}")
+                else:
+                    print(f"BLOCKED: {src_ip}:{dest_port} not allowed from any rule (default deny)")
+
+if __name__ == '__main__':
+    main()
+[?2004hroot@77c3e62bdb6d:/home/user/audit# python3 << 'PYEOF'
+[?2004l          start, end = map(int, rule['dest_port'].split('-'))
+                    if start <= port <= end:
+                        print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+                        matched = True
+                        break
+                else:
+                    if port == int(rule['dest_port']):
+                        print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+                        matched = True
+                        break
+        
+        if not matched:
+            print("-> DENY  (no matching rule)")
+PYEOF
+[?2004h> import json
+[?2004l[?2004h> import csv
+[?2004l[?2004h> import ipaddress
+[?2004l[?2004h> 
+[?2004l[?2004h> # Load rules
+[?2004l[?2004h> with open('firewall_rules.json') as f:
+[?2004l[?2004h>     data = json.load(f)
+[?2004l[?2004h> 
+[?2004l[?2004h> print("Rules (sorted by specificity):")
+[?2004l[?2004h> rules = []
+[?2004l[?2004h> for rule in data['rules']:
+[?2004l[?2004h>     network = ipaddress.ip_network(rule['source_cidr'])
+[?2004l[?2004h>     rules.append((network.prefixlen, rule))
+[?2004l[?2004h> rules.sort(reverse=True)
+[?2004l[?2004h> for prefix, rule in rules:
+[?2004l[?2004h>     print(f"  /{prefix:2d} - {rule['source_cidr']:18s} port {rule['dest_port']:10s} -> {rule['action']}")
+[?2004l[?2004h> 
+[?2004l[?2004h> print("\nConnections analysis:")
+[?2004l[?2004h> with open('connections.csv') as f:
+[?2004l[?2004h>     reader = csv.DictReader(f)
+[?2004l[?2004h>     for row in reader:
+[?2004l[?2004h>         print(f"{row['src_ip']:15s}:{row['dest_port']:5s}", end=" ")
+[?2004l[?2004h>         
+[?2004l[?2004h>         ip = ipaddress.ip_address(row['src_ip'])
+[?2004l[?2004h>         port = int(row['dest_port'])
+[?2004l[?2004h>         
+[?2004l[?2004h>         # Check each rule
+[?2004l[?2004h>         matched = False
+[?2004l[?2004h>         for prefix, rule in rules:
+[?2004l[?2004h>             net = ipaddress.ip_network(rule['source_cidr'])
+[?2004l[?2004h>             if ip in net:
+[?2004l[?2004h>                 # Check port
+[?2004l[?2004h>                 if '-' in rule['dest_port']:
+[?2004l[?2004h>                     start, end = map(int, rule['dest_port'].split('-'))
+[?2004l[?2004h>                     if start <= port <= end:
+[?2004l[?2004h>                         print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+[?2004l[?2004h>                         matched = True
+[?2004l[?2004h>                         break
+[?2004l[?2004h>                 else:
+[?2004l[?2004h>                     if port == int(rule['dest_port']):
+[?2004l[?2004h>                         print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+[?2004l[?2004h>                         matched = True
+[?2004l[?2004h>                         break
+[?2004l[?2004h>         
+[?2004l[?2004h>         if not matched:
+[?2004l[?2004h>             print("-> DENY  (no matching rule)")
+[?2004l[?2004h> PYEOF
+[?2004lRules (sorted by specificity):
+Traceback (most recent call last):
+  File "<stdin>", line 14, in <module>
+TypeError: '<' not supported between instances of 'dict' and 'dict'
+[?2004hroot@77c3e62bdb6d:/home/user/audit# python3 << 'PYEOF'
+[?2004lt_port']:
+                    start, end = map(int, rule['dest_port'].split('-'))
+                    if start <= port <= end:
+                        print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+                        matched = True
+                        break
+                else:
+                    if port == int(rule['dest_port']):
+                        print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+                        matched = True
+                        break
+        
+        if not matched:
+            print("-> DENY  (no matching rule)")
+PYEOF
+[?2004h> import json
+[?2004l[?2004h> import csv
+[?2004l[?2004h> import ipaddress
+[?2004l[?2004h> 
+[?2004l[?2004h> # Load rules
+[?2004l[?2004h> with open('firewall_rules.json') as f:
+[?2004l[?2004h>     data = json.load(f)
+[?2004l[?2004h> 
+[?2004l[?2004h> print("Rules (sorted by specificity):")
+[?2004l[?2004h> rules = []
+[?2004l[?2004h> for rule in data['rules']:
+[?2004l[?2004h>     network = ipaddress.ip_network(rule['source_cidr'])
+[?2004l[?2004h>     rules.append((network.prefixlen, rule))
+[?2004l[?2004h> rules.sort(key=lambda x: x[0], reverse=True)
+[?2004l[?2004h> for prefix, rule in rules:
+[?2004l[?2004h>     print(f"  /{prefix:2d} - {rule['source_cidr']:18s} port {rule['dest_port']:10s} -> {rule['action']}")
+[?2004l[?2004h> 
+[?2004l[?2004h> print("\nConnections analysis:")
+[?2004l[?2004h> with open('connections.csv') as f:
+[?2004l[?2004h>     reader = csv.DictReader(f)
+[?2004l[?2004h>     for row in reader:
+[?2004l[?2004h>         print(f"{row['src_ip']:15s}:{row['dest_port']:5s}", end=" ")
+[?2004l[?2004h>         
+[?2004l[?2004h>         ip = ipaddress.ip_address(row['src_ip'])
+[?2004l[?2004h>         port = int(row['dest_port'])
+[?2004l[?2004h>         
+[?2004l[?2004h>         # Check each rule
+[?2004l[?2004h>         matched = False
+[?2004l[?2004h>         for prefix, rule in rules:
+[?2004l[?2004h>             net = ipaddress.ip_network(rule['source_cidr'])
+[?2004l[?2004h>             if ip in net:
+[?2004l[?2004h>                 # Check port
+[?2004l[?2004h>                 if '-' in rule['dest_port']:
+[?2004l[?2004h>                     start, end = map(int, rule['dest_port'].split('-'))
+[?2004l[?2004h>                     if start <= port <= end:
+[?2004l[?2004h>                         print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+[?2004l[?2004h>                         matched = True
+[?2004l[?2004h>                         break
+[?2004l[?2004h>                 else:
+[?2004l[?2004h>                     if port == int(rule['dest_port']):
+[?2004l[?2004h>                         print(f"-> {rule['action']:5s} by {rule['source_cidr']} port {rule['dest_port']}")
+[?2004l[?2004h>                         matched = True
+[?2004l[?2004h>                         break
+[?2004l[?2004h>         
+[?2004l[?2004h>         if not matched:
+[?2004l[?2004h>             print("-> DENY  (no matching rule)")
+[?2004l[?2004h> PYEOF
+[?2004lRules (sorted by specificity):
+  /24 - 10.1.5.0/24        port 8443       -> deny
+  /24 - 192.168.1.0/24     port 22         -> allow
+  /16 - 10.1.0.0/16        port 8000-9000  -> allow
+  /12 - 172.16.0.0/12      port 3306       -> allow
+  / 8 - 10.0.0.0/8         port 443        -> allow
+  / 0 - 0.0.0.0/0          port 80         -> allow
+
+Connections analysis:
+10.1.5.17      :8443  -> deny  by 10.1.5.0/24 port 8443
+10.1.2.33      :8500  -> allow by 10.1.0.0/16 port 8000-9000
+192.168.1.50   :22    -> allow by 192.168.1.0/24 port 22
+192.168.2.10   :22    -> DENY  (no matching rule)
+10.0.50.1      :443   -> allow by 10.0.0.0/8 port 443
+10.1.5.200     :8080  -> allow by 10.1.0.0/16 port 8000-9000
+172.16.5.5     :3306  -> allow by 172.16.0.0/12 port 3306
+8.8.8.8        :80    -> allow by 0.0.0.0/0 port 80
+8.8.8.8        :443   -> DENY  (no matching rule)
+[?2004hroot@77c3e62bdb6d:/home/user/audit# python3 check.py
+[?2004lBLOCKED: 10.1.5.17:8443 not allowed from 10.1.5.0/24
+BLOCKED: 192.168.2.10:22 not allowed from any rule (default deny)
+BLOCKED: 8.8.8.8:443 not allowed from any rule (default deny)
+[?2004hroot@77c3e62bdb6d:/home/user/audit# ls -la check.py
+[?2004l-rwxr-xr-x 1 root root 2744 May  5 21:36 [0m[01;32mcheck.py[0m
+[?2004hroot@77c3e62bdb6d:/home/user/audit# 

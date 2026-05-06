@@ -1,0 +1,44 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+> # System identifier from pg_control: 7636305587799150611
+> # Let's see if this is used as XOR key
+>
+> sys_id = 7636305587799150611
+> data = open('primary_wal/000000010000000000000003', 'rb').read(64)
+>
+> print(f"System ID: {sys_id}")
+> print(f"System ID hex: {sys_id:016x}")
+> print(f"System ID bytes (LE): {sys_id.to_bytes(8, 'little').hex()}")
+> print(f"System ID bytes (BE): {sys_id.to_bytes(8, 'big').hex()}")
+>
+> # Try XOR with system ID as repeating 8-byte key
+> key = sys_id.to_bytes(8, 'little')
+> print(f"\nXOR key (8 bytes): {key.hex()}")
+>
+> decrypted = bytearray()
+> for i in range(64):
+>     decrypted.append(data[i] ^ key[i % 8])
+>
+> print(f"\nFirst 64 bytes decrypted: {decrypted.hex()}")
+> print(f"\nFirst 2 bytes (should be magic 97d0): {decrypted[0]:02x}{decrypted[1]:02x}")
+> print(f"Timeline at offset 4 (should be 01000000): {decrypted[4:8].hex()}")
+> print(f"Pageaddr at offset 8 (should be 0000000300000000): {decrypted[8:16].hex()}")
+> EOF
+System ID: 7636305587799150611
+System ID hex: 69f99b7925195013
+System ID bytes (LE): 13501925799bf969
+System ID bytes (BE): 69f99b7925195013
+
+XOR key (8 bytes): 13501925799bf969
+
+First 64 bytes decrypted: 5722da2253dd604b4536b8c9428f8f348aaff67f29a1e9a400f2d196a4fe2044a46a2579dde64c466c373bf64216c7b7d766114e1fc96f2e5e26a91fd161d052
+
+First 2 bytes (should be magic 97d0): 5722
+Timeline at offset 4 (should be 01000000): 53dd604b
+Pageaddr at offset 8 (should be 0000000300000000): 4536b8c9428f8f34
+user@9365762ea513:~/wal_recovery$

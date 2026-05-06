@@ -1,0 +1,461 @@
+[?2004hroot@ff8b1d0574a2:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@ff8b1d0574a2:/home/user# clear
+[?2004l[H[J[?2004hroot@ff8b1d0574a2:/home/user# cd /home/user/validator
+[?2004l[?2004hroot@ff8b1d0574a2:/home/user/validator# ls -la
+[?2004ltotal 36
+drwxr-xr-x 1 1000 1000  4096 May  5 07:00 [0m[01;34m.[0m
+drwxrwxrwx 1 root root  4096 May  5 07:00 [34;42m..[0m
+drwxr-xr-x 1 1000 1000  4096 May  5 07:00 [01;34mcache[0m
+drwxr-xr-x 1 1000 1000  4096 May  5 07:00 [01;34mschemas[0m
+drwxr-xr-x 1 1000 1000 12288 May  5 07:00 [01;34mtestdata[0m
+-rwxr-xr-x 1 1000 1000  4899 May  5 07:00 [01;32mvalidate.py[0m
+[?2004hroot@ff8b1d0574a2:/home/user/validator# cat validate.py
+[?2004l#!/usr/bin/env python3
+"""
+JSON Schema Validator with preprocessing via jq.
+Validates JSON documents against JSON schemas.
+"""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+import hashlib
+
+import jsonschema
+from jsonschema import Draft7Validator
+
+
+SCHEMAS_DIR = os.path.join(os.path.dirname(__file__), 'schemas')
+TESTDATA_DIR = os.path.join(os.path.dirname(__file__), 'testdata')
+CACHE_DIR = os.path.join(os.path.dirname(__file__), 'cache')
+
+
+def preprocess_schema(schema_path):
+    """
+    Preprocess schema using jq to expand $shortref to $ref.
+    This handles our team's non-standard schema extensions.
+    """
+    # jq filter to expand $shortref to proper $ref format
+    jq_filter = 'walk(if type == "object" and has("$shortref") then . + {"$ref": .["$shortref"]} | del(.["$shortref"]) else . end)'
+
+    result = subprocess.run(
+        ['jq', jq_filter, schema_path],
+        capture_output=True,
+        text=True
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(f"jq preprocessing failed for {schema_path}: {result.stderr}")
+
+    return json.loads(result.stdout)
+
+
+def get_schema_hash(schema_path):
+    """Compute hash of schema file for caching."""
+    with open(schema_path, 'rb') as f:
+        return hashlib.md5(f.read()).hexdigest()
+
+
+def get_cached_schema(schema_path):
+    """
+    Try to get preprocessed schema from cache.
+    This was an optimization attempt that didn't help.
+    """
+    schema_hash = get_schema_hash(schema_path)
+    cache_file = os.path.join(CACHE_DIR, f"{schema_hash}.json")
+
+    if os.path.exists(cache_file):
+        with open(cache_file, 'r') as f:
+            return json.load(f)
+
+    # Preprocess and cache
+    schema = preprocess_schema(schema_path)
+    with open(cache_file, 'w') as f:
+        json.dump(schema, f)
+
+    return schema
+
+
+def validate_document(doc, schema_path):
+    """
+    Validate a document against a schema.
+
+    # TODO: look into validator caching
+    """
+    # Load and preprocess schema
+    schema = preprocess_schema(schema_path)
+
+    # Create validator - this compiles the schema
+    validator = Draft7Validator(schema)
+
+    # Validate
+    errors = list(validator.iter_errors(doc))
+    return len(errors) == 0, errors
+
+
+def get_schema_for_document(doc_filename):
+    """
+    Determine which schema to use for a document.
+    Document naming convention: doc_NNN_SCHEMANAME.json
+    """
+    # Extract schema name from filename
+    parts = doc_filename.replace('.json', '').split('_')
+    if len(parts) >= 3:
+        schema_name = parts[2]
+        schema_path = os.path.join(SCHEMAS_DIR, f"{schema_name}.json")
+        if os.path.exists(schema_path):
+            return schema_path
+
+    # Fallback to first schema
+    schemas = sorted([f for f in os.listdir(SCHEMAS_DIR) if f.endswith('.json')])
+    if schemas:
+        return os.path.join(SCHEMAS_DIR, schemas[0])
+
+    raise RuntimeError("No schemas found")
+
+
+def run_benchmark():
+    """
+    Run the benchmark suite - validate all documents in testdata/.
+    """
+    print("Starting benchmark...")
+
+    # Get all test documents
+    test_files = sorted([f for f in os.listdir(TESTDATA_DIR) if f.endswith('.json')])
+
+    if not test_files:
+        print("No test files found!")
+        return
+
+    print(f"Found {len(test_files)} test documents")
+
+    start_time = time.time()
+    validated = 0
+    errors_found = 0
+
+    for doc_file in test_files:
+        doc_path = os.path.join(TESTDATA_DIR, doc_file)
+        schema_path = get_schema_for_document(doc_file)
+
+        with open(doc_path, 'r') as f:
+            doc = json.load(f)
+
+        valid, errors = validate_document(doc, schema_path)
+        validated += 1
+
+        if not valid:
+            errors_found += 1
+
+    end_time = time.time()
+    elapsed = end_time - start_time
+    throughput = validated / elapsed if elapsed > 0 else 0
+
+    print(f"Validated {validated} documents in {elapsed:.2f}s ({throughput:.1f} docs/sec)")
+
+    if errors_found > 0:
+        print(f"Warning: {errors_found} documents had validation errors")
+
+
+def main():
+    parser = argparse.ArgumentParser(description='JSON Schema Validator')
+    parser.add_argument('--benchmark', action='store_true', help='Run benchmark suite')
+    parser.add_argument('--document', '-d', help='Document to validate')
+    parser.add_argument('--schema', '-s', help='Schema to validate against')
+
+    args = parser.parse_args()
+
+    if args.benchmark:
+        run_benchmark()
+    elif args.document and args.schema:
+        with open(args.document, 'r') as f:
+            doc = json.load(f)
+        valid, errors = validate_document(doc, args.schema)
+        if valid:
+            print("Document is valid")
+        else:
+            print("Document is invalid:")
+            for err in errors:
+                print(f"  - {err.message}")
+    else:
+        parser.print_help()
+
+
+if __name__ == '__main__':
+    main()
+[?2004hroot@ff8b1d0574a2:/home/user/validator# python3 validate.py --benchmark
+[?2004lStarting benchmark...
+Found 200 test documents
+Validated 200 documents in 4.97s (40.3 docs/sec)
+[?2004hroot@ff8b1d0574a2:/home/user/validator# cp validate.py validate.py.backup
+[?2004l[?2004hroot@ff8b1d0574a2:/home/user/validator# cat > validate.py << 'EOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004lf)
+
+        valid, errors = validate_document(doc[?2004h> """
+[?2004l[?2004h> JSON Schema Validator with preprocessing via jq.
+[?2004l[?2004h> Validates JSON documents against JSON schemas.
+[?2004l[?2004h> """
+[?2004l[?2004h> 
+[?2004l[?2004h> import argparse
+[?2004l[?2004h> import json
+[?2004l[?2004h> import os
+[?2004l[?2004h> import subprocess
+[?2004l[?2004h> import sys
+[?2004l[?2004h> import time
+[?2004l[?2004h> import hashlib
+[?2004l[?2004h> 
+[?2004l[?2004h> import jsonschema
+[?2004l[?2004h> from jsonschema import Draft7Validator
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> SCHEMAS_DIR = os.path.join(os.path.dirname(__file__), 'schemas')
+[?2004l[?2004h> TESTDATA_DIR = os.path.join(os.path.dirname(__file__), 'testdata')
+[?2004l[?2004h> CACHE_DIR = os.path.join(os.path.dirname(__file__), 'cache')
+[?2004l[?2004h> 
+[?2004l[?2004h> # Cache for validators to avoid recompiling schemas
+[?2004l[?2004h> _validator_cache = {}
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def preprocess_schema(schema_path):
+[?2004l[?2004h>     """
+[?2004l[?2004h>     Preprocess schema using jq to expand $shortref to $ref.
+[?2004l[?2004h>     This handles our team's non-standard schema extensions.
+[?2004l[?2004h>     """
+[?2004l[?2004h>     # jq filter to expand $shortref to proper $ref format
+[?2004l[?2004h>     jq_filter = 'walk(if type == "object" and has("$shortref") then . + {"$ref": .["$shortref"]} | del(.["$shortref"]) else . end)'
+[?2004l[?2004h> 
+[?2004l[?2004h>     result = subprocess.run(
+[?2004l[?2004h>         ['jq', jq_filter, schema_path],
+[?2004l[?2004h>         capture_output=True,
+[?2004l[?2004h>         text=True
+[?2004l[?2004h>     )
+[?2004l[?2004h> 
+[?2004l[?2004h>     if result.returncode != 0:
+[?2004l[?2004h>         raise RuntimeError(f"jq preprocessing failed for {schema_path}: {result.stderr}")
+[?2004l[?2004h> 
+[?2004l[?2004h>     return json.loads(result.stdout)
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def get_schema_hash(schema_path):
+[?2004l[?2004h>     """Compute hash of schema file for caching."""
+[?2004l[?2004h>     with open(schema_path, 'rb') as f:
+[?2004l[?2004h>         return hashlib.md5(f.read()).hexdigest()
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def get_cached_schema(schema_path):
+[?2004l[?2004h>     """
+[?2004l[?2004h>     Try to get preprocessed schema from cache.
+[?2004l[?2004h>     This was an optimization attempt that didn't help.
+[?2004l[?2004h>     """
+[?2004l[?2004h>     schema_hash = get_schema_hash(schema_path)
+[?2004l[?2004h>     cache_file = os.path.join(CACHE_DIR, f"{schema_hash}.json")
+[?2004l[?2004h> 
+[?2004l[?2004h>     if os.path.exists(cache_file):
+[?2004l[?2004h>         with open(cache_file, 'r') as f:
+[?2004l[?2004h>             return json.load(f)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Preprocess and cache
+[?2004l[?2004h>     schema = preprocess_schema(schema_path)
+[?2004l[?2004h>     with open(cache_file, 'w') as f:
+[?2004l[?2004h>         json.dump(schema, f)
+[?2004l[?2004h> 
+[?2004l[?2004h>     return schema
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def get_validator(schema_path):
+[?2004l[?2004h>     """
+[?2004l[?2004h>     Get a cached validator for the schema.
+[?2004l[?2004h>     Caches both the preprocessed schema and compiled validator.
+[?2004l[?2004h>     """
+[?2004l[?2004h>     if schema_path in _validator_cache:
+[?2004l[?2004h>         return _validator_cache[schema_path]
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Load and preprocess schema (with caching)
+[?2004l[?2004h>     schema = get_cached_schema(schema_path)
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Create validator - this compiles the schema
+[?2004l[?2004h>     validator = Draft7Validator(schema)
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Cache the validator
+[?2004l[?2004h>     _validator_cache[schema_path] = validator
+[?2004l[?2004h>     
+[?2004l[?2004h>     return validator
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def validate_document(doc, schema_path):
+[?2004l[?2004h>     """
+[?2004l[?2004h>     Validate a document against a schema.
+[?2004l[?2004h>     """
+[?2004l[?2004h>     # Get cached validator
+[?2004l[?2004h>     validator = get_validator(schema_path)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Validate
+[?2004l[?2004h>     errors = list(validator.iter_errors(doc))
+[?2004l[?2004h>     return len(errors) == 0, errors
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def get_schema_for_document(doc_filename):
+[?2004l[?2004h>     """
+[?2004l[?2004h>     Determine which schema to use for a document.
+[?2004l[?2004h>     Document naming convention: doc_NNN_SCHEMANAME.json
+[?2004l[?2004h>     """
+[?2004l[?2004h>     # Extract schema name from filename
+[?2004l[?2004h>     parts = doc_filename.replace('.json', '').split('_')
+[?2004l[?2004h>     if len(parts) >= 3:
+[?2004l[?2004h>         schema_name = parts[2]
+[?2004l[?2004h>         schema_path = os.path.join(SCHEMAS_DIR, f"{schema_name}.json")
+[?2004l[?2004h>         if os.path.exists(schema_path):
+[?2004l[?2004h>             return schema_path
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Fallback to first schema
+[?2004l[?2004h>     schemas = sorted([f for f in os.listdir(SCHEMAS_DIR) if f.endswith('.json')])
+[?2004l[?2004h>     if schemas:
+[?2004l[?2004h>         return os.path.join(SCHEMAS_DIR, schemas[0])
+[?2004l[?2004h> 
+[?2004l[?2004h>     raise RuntimeError("No schemas found")
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def run_benchmark():
+[?2004l[?2004h>     """
+[?2004l[?2004h>     Run the benchmark suite - validate all documents in testdata/.
+[?2004l[?2004h>     """
+[?2004l[?2004h>     print("Starting benchmark...")
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Get all test documents
+[?2004l[?2004h>     test_files = sorted([f for f in os.listdir(TESTDATA_DIR) if f.endswith('.json')])
+[?2004l[?2004h> 
+[?2004l[?2004h>     if not test_files:
+[?2004l[?2004h>         print("No test files found!")
+[?2004l[?2004h>         return
+[?2004l[?2004h> 
+[?2004l[?2004h>     print(f"Found {len(test_files)} test documents")
+[?2004l[?2004h> 
+[?2004l[?2004h>     start_time = time.time()
+[?2004l[?2004h>     validated = 0
+[?2004l[?2004h>     errors_found = 0
+[?2004l[?2004h> 
+[?2004l[?2004h>     for doc_file in test_files:
+[?2004l[?2004h>         doc_path = os.path.join(TESTDATA_DIR, doc_file)
+[?2004l[?2004h>         schema_path = get_schema_for_document(doc_file)
+[?2004l[?2004h> 
+[?2004l[?2004h>         with open(doc_path, 'r') as f:
+[?2004l[?2004h>             doc = json.load(f)
+[?2004l[?2004h> 
+[?2004l[?2004h>         valid, errors = validate_document(doc, schema_path)
+[?2004l[?2004h>         validated += 1
+[?2004l[?2004h> 
+[?2004l[?2004h>         if not valid:
+[?2004l[?2004h>             errors_found += 1
+[?2004l[?2004h> 
+[?2004l[?2004h>     end_time = time.time()
+[?2004l[?2004h>     elapsed = end_time - start_time
+[?2004l[?2004h>     throughput = validated / elapsed if elapsed > 0 else 0
+[?2004l[?2004h> 
+[?2004l[?2004h>     print(f"Validated {validated} documents in {elapsed:.2f}s ({throughput:.1f} docs/sec)")
+[?2004l[?2004h> 
+[?2004l[?2004h>     if errors_found > 0:
+[?2004l[?2004h>         print(f"Warning: {errors_found} documents had validation errors")
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     parser = argparse.ArgumentParser(description='JSON Schema Validator')
+[?2004l[?2004h>     parser.add_argument('--benchmark', action='store_true', help='Run benchmark suite')
+[?2004l[?2004h>     parser.add_argument('--document', '-d', help='Document to validate')
+[?2004l[?2004h>     parser.add_argument('--schema', '-s', help='Schema to validate against')
+[?2004l[?2004h> 
+[?2004l[?2004h>     args = parser.parse_args()
+[?2004l[?2004h> 
+[?2004l[?2004h>     if args.benchmark:
+[?2004l[?2004h>         run_benchmark()
+[?2004l[?2004h>     elif args.document and args.schema:
+[?2004l[?2004h>         with open(args.document, 'r') as f:
+[?2004l[?2004h>             doc = json.load(f)
+[?2004l[?2004h>         valid, errors = validate_document(doc, args.schema)
+[?2004l[?2004h>         if valid:
+[?2004l[?2004h>             print("Document is valid")
+[?2004l[?2004h>         else:
+[?2004l[?2004h>             print("Document is invalid:")
+[?2004l[?2004h>             for err in errors:
+[?2004l[?2004h>                 print(f"  - {err.message}")
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         parser.print_help()
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == '__main__':
+[?2004l[?2004h>     main()
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@ff8b1d0574a2:/home/user/validator# python3 validate.py --benchmark
+[?2004lStarting benchmark...
+Found 200 test documents
+Validated 200 documents in 0.14s (1389.4 docs/sec)
+[?2004hroot@ff8b1d0574a2:/home/user/validator# python3 validate.py --benchmark
+[?2004lStarting benchmark...
+Found 200 test documents
+Validated 200 documents in 0.02s (10698.7 docs/sec)
+[?2004hroot@ff8b1d0574a2:/home/user/validator# cat > PERFORMANCE_FIX.md << 'EOF'
+[?2004l[?2004h> # Performance Fix Summary
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Problem
+[?2004l[?2004h> - Validator was running at ~40 docs/sec instead of target 400-500 docs/sec
+[?2004l[?2004h> - Previous caching attempt didn't help because the cache wasn't being used
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Root Causes
+[?2004l[?2004h> 1. **validate_document() was calling preprocess_schema() directly** - This spawned a new jq subprocess for EVERY validation
+[?2004l[?2004h> 2. **No validator caching** - Draft7Validator was recompiled for every document, even when using the same schema
+[?2004l[?2004h> 3. **get_cached_schema() existed but was never called** - The caching infrastructure was there but unused
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Solution
+[?2004l[?2004h> Added get_validator() function that:
+[?2004l[?2004h> 1. Caches compiled Draft7Validator objects per schema path
+[?2004l[?2004h> 2. Uses get_cached_schema() to avoid repeated jq calls
+[?2004l[?2004h> 3. Returns cached validators on subsequent calls
+[?2004l[?2004h> 
+[?2004l[?2004h> Changed validate_document() to use get_validator() instead of directly calling preprocess_schema()
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Results
+[?2004l[?2004h> - Before: 40.3 docs/sec
+[?2004l[?2004h> - After (first run): 1,389.4 docs/sec (34x improvement)
+[?2004l[?2004h> - After (warm cache): 10,698.7 docs/sec (265x improvement)
+[?2004l[?2004h> - **Target achieved**: Well above 400-500 docs/sec requirement
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Key Changes
+[?2004l[?2004h> - Added _validator_cache dictionary at module level
+[?2004l[?2004h> - Added get_validator() function for validator caching
+[?2004l[?2004h> - Modified validate_document() to call get_validator() instead of preprocess_schema()
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@ff8b1d0574a2:/home/user/validator# cat PERFORMANCE_FIX.md
+[?2004l# Performance Fix Summary
+
+## Problem
+- Validator was running at ~40 docs/sec instead of target 400-500 docs/sec
+- Previous caching attempt didn't help because the cache wasn't being used
+
+## Root Causes
+1. **validate_document() was calling preprocess_schema() directly** - This spawned a new jq subprocess for EVERY validation
+2. **No validator caching** - Draft7Validator was recompiled for every document, even when using the same schema
+3. **get_cached_schema() existed but was never called** - The caching infrastructure was there but unused
+
+## Solution
+Added get_validator() function that:
+1. Caches compiled Draft7Validator objects per schema path
+2. Uses get_cached_schema() to avoid repeated jq calls
+3. Returns cached validators on subsequent calls
+
+Changed validate_document() to use get_validator() instead of directly calling preprocess_schema()
+
+## Results
+- Before: 40.3 docs/sec
+- After (first run): 1,389.4 docs/sec (34x improvement)
+- After (warm cache): 10,698.7 docs/sec (265x improvement)
+- **Target achieved**: Well above 400-500 docs/sec requirement
+
+## Key Changes
+- Added _validator_cache dictionary at module level
+- Added get_validator() function for validator caching
+- Modified validate_document() to call get_validator() instead of preprocess_schema()
+[?2004hroot@ff8b1d0574a2:/home/user/validator# 

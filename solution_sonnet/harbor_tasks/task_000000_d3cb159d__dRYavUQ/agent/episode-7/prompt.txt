@@ -1,0 +1,66 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@c9da50e81b0b:~/infra-configs$ cat > .git/hooks/pre-receive << 'EOF'
+> #!/bin/bash
+> # Pre-receive hook to block world-readable private keys
+> # This runs server-side and cannot be bypassed with --no-verify
+>
+> while read oldrev newrev refname; do
+>     # Get list of all commits being pushed
+>     if [ "$oldrev" = "0000000000000000000000000000000000000000" ]; then
+>         # New branch, check all commits
+>         commit_range="$newrev"
+>     else
+>         # Existing branch, check new commits
+>         commit_range="$oldrev..$newrev"
+>     fi
+>
+>     # Check each commit in the range
+>     for commit in $(git rev-list $commit_range); do
+>         # Get files added or modified in this commit
+>         files=$(git diff-tree --no-commit-id --name-only --diff-filter=AM -r $commit)
+>
+>         for file in $files; do
+>             # Check if file matches *.pem or *.key
+>             if [[ "$file" == *.pem ]] || [[ "$file" == *.key ]]; then
+>                 # Get file content from the commit
+>                 if git cat-file -e $commit:"$file" 2>/dev/null; then
+>                     # Check file mode from git (not filesystem)
+>                     mode=$(git ls-tree $commit "$file" | awk '{print $1}')
+>                     # Convert octal mode to decimal for comparison
+>                     # Git stores mode as 100644, 100755, etc.
+>                     # Extract last 3 digits
+>                     perms=${mode: -3}
+>
+>                     # Check if world-readable (other has read permission)
+>                     other_perms=$((perms % 10))
+>                     group_perms=$(((perms / 10) % 10))
+>
+>                     # Check if other or group has read permission (bit 4)
+>                     if [ $((other_perms & 4)) -ne 0 ]; then
+>                         echo "ERROR: Commit $commit contains world-readable key file: $file (mode $mode)"
+>                         echo "Private keys must have permissions 0600 or 0400."
+>                         echo "Fix: chmod 600 $file && git add $file && git commit --amend"
+>                         exit 1
+>                     fi
+>
+>                     if [ $((group_perms & 4)) -ne 0 ]; then
+>                         echo "ERROR: Commit $commit contains group-readable key file: $file (mode $mode)"
+>                         echo "Private keys must have permissions 0600 or 0400."
+>                         echo "Fix: chmod 600 $file && git add $file && git commit --amend"
+>                         exit 1
+>                     fi
+>                 fi
+>             fi
+>         done
+>     done
+> done
+>
+> exit 0
+> EOF
+user@c9da50e81b0b:~/infra-configs$ chmod +x .git/hooks/pre-receive
+user@c9da50e81b0b:~/infra-configs$

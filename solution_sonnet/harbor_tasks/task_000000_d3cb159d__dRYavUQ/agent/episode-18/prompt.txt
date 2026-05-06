@@ -1,0 +1,202 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@c9da50e81b0b:~/infra-configs$ cat > INCIDENT_REPORT.md << 'EOF'
+ent that --no-verify should not be used
+
+#### 5. Documentation
+- Created SECURITY.md with:
+  - Explanation of all protection layers
+  - Best practices for developers and CI/CD
+  - Instructions for fixing issues
+  - Testing procedures
+
+## Testing
+
+Validated that:
+- ✅ Pre-commit hook blocks files with 644 permissions
+- ✅ Pre-commit hook allows files with 600 permissions
+- ✅ Pre-push hook is executable and in place
+- ✅ Pre-receive hook is executable and in place
+- ✅ Current deploy.key has correct 600 permissions
+
+## Recommendations
+
+### For Development Team
+1. Never use `--no-verify` flag in git commands
+2. Always set `chmod 600` on key files before committing
+3. Review SECURITY.md for best practices
+
+### For CI/CD (Jenkins)
+1. Update jenkins-bot scripts to:
+   - Set proper permissions before git operations
+   - Remove any --no-verify flags from git commands
+   - Respect git hooks
+2. Example fix:
+   ```bash
+   chmod 600 secrets/*.key secrets/*.pem
+   git add secrets/
+   git commit -m "update keys"  # No --no-verify!
+   ```
+
+### For Infrastructure Team
+1. If this repo is pushed to a remote, install hooks there too
+2. For bare repositories, ensure pre-receive hook is active
+3. Consider periodic audits:
+   ```bash
+   git log --all --pretty=format:'%H' | while read commit; do
+     git ls-tree -r $commit | grep -E '\.(pem|key)$' | grep -v '^100600\|^100400'
+   done
+   ```
+
+## Lessons Learned
+
+1. **Defense in Depth**: Single-layer protection (pre-commit only) is insufficient
+2. **Client-side hooks are advisory**: They can be bypassed; need server-side enforcement
+3. **Automation needs constraints**: CI/CD systems should respect security hooks
+4. **Documentation matters**: Clear guidance prevents accidental bypasses
+
+## Status
+
+✅ RESOLVED - Multi-layer protection now in place
+
+## Follow-up Actions
+
+- [ ] Update jenkins-bot configuration to remove --no-verify usage
+- [ ] Deploy hooks to remote/bare repository if applicable
+- [ ] Conduct team training on git hook security
+- [ ] Consider rotating the exposed deploy.key (if needed)
+EOF
+> # Security Incident Report: World-Readable Private Key
+>
+> ## Date
+> May 5, 2026
+>
+> ## Summary
+> A private key file (secrets/deploy.key) was committed with world-readable permissions (0644) in commit c149e80, bypassing the pre-commit hook.
+>
+> ## Root Cause Analysis
+>
+> ### What Happened
+> - Commit c149e80 by jenkins-bot (3 days ago) added secrets/deploy.key with mode 100644
+> - The pre-commit hook existed and was functional
+> - The hook was bypassed, most likely using `git commit --no-verify`
+>
+> ### Why It Happened
+> - Pre-commit hooks can be bypassed with the --no-verify flag
+> - Automated systems (jenkins-bot) likely used --no-verify to avoid hook delays
+> - No server-side validation was in place to catch bypassed hooks
+> - No secondary validation layer existed
+>
+> ### Why It Wasn't Caught
+> - Only client-side (pre-commit) validation existed
+> - No pre-push hook to catch issues before pushing
+> - No server-side (pre-receive) hook for final validation
+>
+> ## Impact
+> - One private key file exposed with world-readable permissions
+> - File: secrets/deploy.key
+> - Duration: 3 days (from commit until detection)
+>
+> ## Resolution
+>
+> ### Immediate Actions Taken
+> 1. Fixed file permissions: `chmod 600 secrets/deploy.key`
+> 2. Committed fix in commit 38b39e6
+>
+> ### Preventive Measures Implemented
+>
+> #### 1. Enhanced Pre-commit Hook
+> - Improved error messages with clear warnings about --no-verify
+> - Stricter permission checking (only allows 600 or 400)
+> - Location: `.git/hooks/pre-commit`
+>
+> #### 2. Pre-push Hook (NEW)
+> - Validates all commits being pushed for insecure key permissions
+> - Checks git object permissions, not just filesystem
+> - Provides second layer of defense if pre-commit bypassed
+> - Location: `.git/hooks/pre-push`
+> - **Cannot be easily bypassed** - runs before push completes
+>
+> #### 3. Pre-receive Hook (NEW)
+> - Server-side validation for bare/remote repositories
+> - Final enforcement point that cannot be bypassed by clients
+> - Location: `.git/hooks/pre-receive`
+>
+> #### 4. Git Configuration
+> - Set `hooks.allowNoVerify = false` (advisory)
+> - Signals intent that --no-verify should not be used
+>
+> #### 5. Documentation
+> - Created SECURITY.md with:
+>   - Explanation of all protection layers
+>   - Best practices for developers and CI/CD
+>   - Instructions for fixing issues
+>   - Testing procedures
+>
+> ## Testing
+>
+> Validated that:
+> - ✅ Pre-commit hook blocks files with 644 permissions
+> - ✅ Pre-commit hook allows files with 600 permissions
+> - ✅ Pre-push hook is executable and in place
+> - ✅ Pre-receive hook is executable and in place
+> - ✅ Current deploy.key has correct 600 permissions
+>
+> ## Recommendations
+>
+> ### For Development Team
+> 1. Never use `--no-verify` flag in git commands
+> 2. Always set `chmod 600` on key files before committing
+> 3. Review SECURITY.md for best practices
+>
+> ### For CI/CD (Jenkins)
+> 1. Update jenkins-bot scripts to:
+>    - Set proper permissions before git operations
+>    - Remove any --no-verify flags from git commands
+>    - Respect git hooks
+> 2. Example fix:
+>    ```bash
+>    chmod 600 secrets/*.key secrets/*.pem
+>    git add secrets/
+>    git commit -m "update keys"  # No --no-verify!
+>    ```
+>
+> ### For Infrastructure Team
+> 1. If this repo is pushed to a remote, install hooks there too
+> 2. For bare repositories, ensure pre-receive hook is active
+> 3. Consider periodic audits:
+>    ```bash
+>    git log --all --pretty=format:'%H' | while read commit; do
+>      git ls-tree -r $commit | grep -E '\.(pem|key)$' | grep -v '^100600\|^100400'
+>    done
+>    ```
+>
+> ## Lessons Learned
+>
+> 1. **Defense in Depth**: Single-layer protection (pre-commit only) is insufficient
+> 2. **Client-side hooks are advisory**: They can be bypassed; need server-side enforcement
+> 3. **Automation needs constraints**: CI/CD systems should respect security hooks
+> 4. **Documentation matters**: Clear guidance prevents accidental bypasses
+>
+> ## Status
+>
+> ✅ RESOLVED - Multi-layer protection now in place
+>
+> ## Follow-up Actions
+>
+> - [ ] Update jenkins-bot configuration to remove --no-verify usage
+> - [ ] Deploy hooks to remote/bare repository if applicable
+> - [ ] Conduct team training on git hook security
+> - [ ] Consider rotating the exposed deploy.key (if needed)
+> EOF
+user@c9da50e81b0b:~/infra-configs$ git add INCIDENT_REPORT.md
+user@c9da50e81b0b:~/infra-configs$ git commit -m "docs: add incident report for world-readable key issue"
+[pre-commit] Checking for world-readable private keys...
+[master 1207f8d] docs: add incident report for world-readable key issue
+ 1 file changed, 122 insertions(+)
+ create mode 100644 INCIDENT_REPORT.md
+user@c9da50e81b0b:~/infra-configs$

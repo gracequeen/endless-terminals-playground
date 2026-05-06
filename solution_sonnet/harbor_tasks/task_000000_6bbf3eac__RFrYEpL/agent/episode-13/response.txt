@@ -1,0 +1,21 @@
+```json
+{
+  "analysis": "Perfect! All tests pass. The summary.csv contains correct data with 1500 total rows (500 from each source). The final comprehensive test shows parallel builds work correctly from a clean state. Let me create a summary document of the fixes made.",
+  "plan": "Create a FIXES.txt document explaining what was wrong and what was fixed, then verify the solution is complete.",
+  "commands": [
+    {
+      "keystrokes": "cat > FIXES.txt << 'EOF'\nETL Pipeline Makefile Fixes\n============================\n\nPROBLEM SUMMARY:\n- Incremental builds were broken (touching one source file rebuilt everything)\n- Second run after touching files caused segfaults or hangs\n- Issues appeared after adding -j4 parallel flag but persisted after removal\n\nROOT CAUSES IDENTIFIED:\n\n1. BUG #1: Pattern rule used $$@ without .SECONDEXPANSION\n   - The clean/%.csv rule had \"python3 scripts/clean.py $< $$@\"\n   - Without .SECONDEXPANSION, $$@ was treated as literal \"$@\" in first expansion\n   - This caused incorrect output paths\n\n2. BUG #2: $(wildcard clean/*.csv) evaluated at parse time\n   - joined.csv depended on $(wildcard clean/*.csv)\n   - Wildcard is evaluated when Makefile is parsed, not when rule runs\n   - After first build, this became a fixed list, breaking incremental builds\n   - Touching a source file would update clean/*.csv but joined.csv wouldn't rebuild\n\n3. BUG #3: Race condition with parallel builds\n   - clean/manifest.txt had no dependency on $(CLEAN_TARGETS)\n   - With -j4, manifest could be generated before all cleaning finished\n   - This caused incomplete manifests and segfaults in join.py\n\n4. BUG #4: Missing config/params.yaml dependency\n   - summary.csv rule didn't list config/params.yaml as dependency\n   - summarize.py reads this file but changes weren't triggering rebuilds\n\nFIXES APPLIED:\n\n1. Added .SECONDEXPANSION: directive at top of Makefile\n   - Changed $$@ to $@ in pattern rule (now expands correctly with .SECONDEXPANSION)\n\n2. Replaced $(wildcard clean/*.csv) with $(CLEAN_TARGETS)\n   - CLEAN_TARGETS is computed from SOURCES, tracks dependencies properly\n   - joined.csv now correctly depends on the variable, not parse-time wildcard\n\n3. Made clean/manifest.txt depend on $(CLEAN_TARGETS)\n   - Ensures manifest is only generated after all cleaning completes\n   - Eliminates race condition in parallel builds\n\n4. Added config/params.yaml to summary.csv dependencies\n   - Changes to config now correctly trigger summary rebuild\n\nTEST RESULTS:\n✓ Clean build works correctly\n✓ Incremental builds work (touch one file, only that chain rebuilds)\n✓ Parallel builds (-j4) work without race conditions or segfaults\n✓ Config changes trigger only summary rebuild\n✓ Multiple simultaneous source changes handled correctly in parallel\n\nThe pipeline now works correctly for all scenarios.\nEOF\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "echo '=== Fixes documented in FIXES.txt ==='\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "cat FIXES.txt\n",
+      "duration": 0.1
+    }
+  ],
+  "task_complete": false
+}
+```

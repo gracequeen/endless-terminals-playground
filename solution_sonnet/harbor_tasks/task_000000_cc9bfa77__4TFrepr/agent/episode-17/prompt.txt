@@ -1,0 +1,46 @@
+New Terminal Output:
+
+user@b01184b52a1a:~/wal_recovery$ python3 << 'EOF'
+> import struct
+>
+> # Read the encoded file
+> with open('primary_wal/000000010000000000000003', 'rb') as f:
+>     data = f.read(8192)  # First page
+>
+> # XOR with 0xFF and check
+> xor_ff = bytes([b ^ 0xFF for b in data[:100]])
+> print("First 100 bytes XOR 0xFF:")
+> for i in range(0, 100, 16):
+>     hex_str = ' '.join(f'{b:02x}' for b in xor_ff[i:i+16])
+>     print(f"{i:04x}: {hex_str}")
+>
+> # Check if it's a repeating key
+> print("\nLooking for repeating XOR key pattern:")
+> for key_len in [4, 8, 16, 32]:
+>     # Assume key repeats every key_len bytes
+>     # Extract potential key from first key_len bytes
+>     # by XORing with what we expect
+>     expected_start = bytes([0x03, 0xf0, 0x00, 0x00])  # magic + flags start
+>     potential_key = bytes([data[i] ^ expected_start[i] if i < len(expected_start) else 0
+>                           for i in range(key_len)])
+>     print(f"\nKey length {key_len}: {potential_key[:16].hex()}")
+> EOF
+First 100 bytes XOR 0xFF:
+0000: 03 f0 c5 29 94 4b c7 28 03 03 74 ec d9 f2 47 3e
+0010: 15 56 d4 da 79 0b 52 44 86 83 be f9 29 8a 0e ff
+0020: ab c0 08 3c c8 a6 4b b5 5b 12 b5 25 ca 4d 0a f6
+0030: 87 6a de ed b7 3b 8a 48 75 5d 26 85 58 dd bd 8c
+0040: c2 c5 8e 34 79 ad 31 a6 07 6c 5b a4 1a 59 0b 35
+0050: af 55 5b 97 77 4b 04 da b6 75 e5 f4 ac 26 c1 3f
+0060: d6 11 85 58
+
+Looking for repeating XOR key pattern:
+
+Key length 4: ffff3ad6
+
+Key length 8: ffff3ad600000000
+
+Key length 16: ffff3ad6000000000000000000000000
+
+Key length 32: ffff3ad6000000000000000000000000
+user@b01184b52a1a:~/wal_recovery$

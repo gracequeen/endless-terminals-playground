@@ -1,0 +1,14 @@
+{
+  "analysis": "Perfect! The fix is completely successful:\n1. Payment-svc ERROR logs: All 76 are now in errors.log (was dropping ~40% before)\n2. Auth-service ERROR logs: 23 in errors.log (working correctly)\n3. Inventory-service ERROR logs: 28 in errors.log (working correctly)\n4. structured.log now only contains actual JSON logs (metrics-collector data)\n\nThe bug was in the classify_line() function which checked if 'T' and ':' appeared in the first 25 characters to identify structured logs. This incorrectly flagged payment-svc logs with ISO 8601 timestamps (2024-01-15T08:48:40+00:00) as structured, routing them to structured.log instead of processing them by severity. The fix simplified the logic to only classify lines starting with '{' and ending with '}' as structured (actual JSON), allowing payment-svc logs to be properly routed by severity level.",
+  "plan": "Let me create a summary document explaining the issue and the fix for future reference.",
+  "commands": [
+    {
+      "keystrokes": "cat > FIX_SUMMARY.md << 'EOF'\n# Log Filter Bug Fix Summary\n\n## Problem\n- 40% of ERROR logs from payment-svc were being dropped\n- They appeared in raw.log but not in errors.log\n- Auth-service and inventory-service ERROR logs were captured correctly\n\n## Root Cause\nThe `classify_line()` function in filter.py had overly broad logic to detect structured logs:\n\n```python\nif 'T' in line[:25] and ':' in line[:25]:\n    return 'structured'\n```\n\nThis incorrectly classified payment-svc logs as \"structured\" because:\n- Payment-svc uses ISO 8601 timestamps: `2024-01-15T08:48:40+00:00 [ERROR] ...`\n- The 'T' in the timestamp and ':' in the time triggered the false positive\n- These logs were routed to structured.log instead of being processed by severity\n\nAuth-service and inventory-service use different timestamp format:\n- `[ERROR] 2024-01-15 08:09:25 service=auth-service ...`\n- No 'T' in first 25 chars, so they were correctly classified as plaintext\n\n## Solution\nSimplified the classify_line() function to only detect actual JSON:\n\n```python\ndef classify_line(line):\n    stripped = line.strip()\n    if stripped.startswith('{') and stripped.endswith('}'):\n        return 'structured'\n    return 'plaintext'\n```\n\n## Results\n- Payment-svc ERROR logs: 76/76 now in errors.log (was ~45/76 before)\n- Auth-service ERROR logs: 23/23 in errors.log (unchanged)\n- Inventory-service ERROR logs: 28/28 in errors.log (unchanged)\n- structured.log now only contains actual JSON logs (metrics-collector)\n\n## Files Modified\n- `/home/user/logpipe/filter.py` - Fixed classify_line() function\n- Backup saved as `filter.py.backup`\nEOF\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "cat FIX_SUMMARY.md\n",
+      "duration": 0.1
+    }
+  ]
+}

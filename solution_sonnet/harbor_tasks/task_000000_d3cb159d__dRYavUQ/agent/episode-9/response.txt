@@ -1,0 +1,17 @@
+```json
+{
+  "analysis": "This is a regular (non-bare) repository. I've updated the pre-commit hook with better warnings. Since pre-receive hooks only work on bare repositories (server-side), I need a different approach. I'll create a pre-push hook that provides an additional layer of protection before code reaches the remote server.",
+  "plan": "I'll create a pre-push hook that checks all commits being pushed for world-readable keys. This provides a second line of defense if someone bypasses pre-commit with --no-verify. I'll also test the updated pre-commit hook to ensure it works correctly.",
+  "commands": [
+    {
+      "keystrokes": "cat > .git/hooks/pre-push << 'EOF'\n#!/bin/bash\n# Pre-push hook to block pushing commits with world-readable private keys\n# This provides a second line of defense if pre-commit was bypassed with --no-verify\n\necho \"[pre-push] Scanning commits for world-readable private keys...\"\n\nremote=\"$1\"\nurl=\"$2\"\n\nz40=0000000000000000000000000000000000000000\n\nwhile read local_ref local_sha remote_ref remote_sha\ndo\n    if [ \"$local_sha\" = $z40 ]; then\n        # Handle delete - nothing to check\n        continue\n    else\n        if [ \"$remote_sha\" = $z40 ]; then\n            # New branch, examine all commits\n            range=\"$local_sha\"\n        else\n            # Update to existing branch, examine new commits\n            range=\"$remote_sha..$local_sha\"\n        fi\n\n        # Check each commit in the range\n        for commit in $(git rev-list $range); do\n            # Get files added or modified in this commit\n            files=$(git diff-tree --no-commit-id --name-only --diff-filter=AM -r $commit)\n            \n            for file in $files; do\n                # Check if file matches *.pem or *.key\n                if [[ \"$file\" == *.pem ]] || [[ \"$file\" == *.key ]]; then\n                    # Check file mode from git\n                    mode=$(git ls-tree $commit \"$file\" | awk '{print $1}')\n                    \n                    if [ -n \"$mode\" ]; then\n                        # Extract last 3 digits of mode (e.g., 100644 -> 644)\n                        perms=${mode: -3}\n                        \n                        # Check if permissions are 600 or 400 (secure)\n                        if [ \"$perms\" != \"600\" ] && [ \"$perms\" != \"400\" ]; then\n                            echo \"\"\n                            echo \"ERROR: Commit $commit contains insecure key file: $file\"\n                            echo \"       File mode in git: $mode (permissions: $perms)\"\n                            echo \"       Private keys must have permissions 0600 or 0400.\"\n                            echo \"\"\n                            echo \"To fix this:\"\n                            echo \"  1. chmod 600 $file\"\n                            echo \"  2. git add $file\"\n                            echo \"  3. git commit --amend --no-edit\"\n                            echo \"  4. git push\"\n                            echo \"\"\n                            echo \"PUSH REJECTED for security reasons.\"\n                            exit 1\n                        fi\n                    fi\n                fi\n            done\n        done\n    fi\ndone\n\necho \"[pre-push] All commits passed security checks.\"\nexit 0\nEOF\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "chmod +x .git/hooks/pre-push\n",
+      "duration": 0.1
+    }
+  ],
+  "task_complete": false
+}
+```

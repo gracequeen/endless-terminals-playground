@@ -1,0 +1,40 @@
+New Terminal Output:
+
+root@add06e7953f2:/home/user/pipeline# cat load.py
+#!/usr/bin/env python3
+"""
+Load stage: Concatenate all parquet files from processed/ into output/merged.parquet.
+"""
+
+import os
+import pandas as pd
+from pathlib import Path
+
+PROCESSED_DIR = Path(__file__).parent / "processed"
+OUTPUT_DIR = Path(__file__).parent / "output"
+
+def load():
+    """Concatenate all processed parquet files into merged output."""
+    OUTPUT_DIR.mkdir(exist_ok=True)
+
+    parquet_files = list(PROCESSED_DIR.glob("*.parquet"))
+    if not parquet_files:
+        raise ValueError(f"No parquet files found in {PROCESSED_DIR}")
+
+    print(f"Loading {len(parquet_files)} files...")
+    dfs = []
+    for parquet_file in sorted(parquet_files):
+        print(f"  Reading {parquet_file.name}...")
+        df = pd.read_parquet(parquet_file)
+        dfs.append(df)
+
+    merged_df = pd.concat(dfs, ignore_index=True)
+
+    output_file = OUTPUT_DIR / "merged.parquet"
+    merged_df.to_parquet(output_file, index=False)
+    print(f"Merged {len(merged_df)} rows into {output_file}")
+
+if __name__ == "__main__":
+    load()
+    print("Load stage complete.")
+root@add06e7953f2:/home/user/pipeline#

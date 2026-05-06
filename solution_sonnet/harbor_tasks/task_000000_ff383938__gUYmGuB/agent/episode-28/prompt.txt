@@ -1,0 +1,157 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@bae130232a6d:~$ python3 << 'DEBUGEOF'
+4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+    if start_match:
+        start_time = datetime.strptime(start_match.group(1), '%Y-%m-%d %H:%M:%S')
+    end_match = re.search(r'END\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+    if end_match:
+        end_time = datetime.strptime(end_match.group(1), '%Y-%m-%d %H:%M:%S')
+    return start_time, end_time
+
+def load_job_runtimes(jobs):
+    log_dir = Path(LOG_DIR)
+    for job in jobs:
+        log_name = job.name.replace('.sh', '.log')
+        log_path = log_dir / log_name
+        if log_path.exists():
+            start_time, end_time = parse_log_file(log_path)
+            job.start_time = start_time
+            job.end_time = end_time
+    return jobs
+
+jobs = parse_crontab()
+jobs = load_job_runtimes(jobs)
+jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+
+reference_date = jobs_with_data[0].start_time.date()
+print(f"Reference date: {reference_date}\n")
+
+idle = []
+for hour in range(24):
+    is_idle = True
+    hour_start = datetime.combine(reference_date, datetime.min.time()).replace(hour=hour)
+    hour_end = hour_start.replace(minute=59, second=59, microsecond=999999)
+
+    if hour in [1, 4, 6]:
+        print(f"Hour {hour}: {hour_start} to {hour_end}")
+
+    for job in jobs_with_data:
+        if job.start_time <= hour_end and job.end_time >= hour_start:
+            if hour in [1, 4, 6]:
+                print(f"  Job {job.name} overlaps: {job.start_time} to {job.end_time}")
+            is_idle = False
+            break
+
+    if hour in [1, 4, 6]:
+        print(f"  Result: {'IDLE' if is_idle else 'BUSY'}\n")
+
+    if is_idle:
+        idle.append(hour)
+
+print(f"Idle hours: {idle}")
+DEBUGEOF
+> import os
+> import re
+> from datetime import datetime
+> from pathlib import Path
+>
+> CRONTAB_PATH = "/var/spool/cron/crontabs/user"
+> LOG_DIR = "/var/log/batch"
+>
+> class Job:
+>     def __init__(self, name, scheduled_hour, start_time=None, end_time=None):
+>         self.name = name
+>         self.scheduled_hour = scheduled_hour
+>         self.start_time = start_time
+>         self.end_time = end_time
+>
+> def parse_crontab():
+>     jobs = []
+>     with open(CRONTAB_PATH, 'r') as f:
+>         for line in f:
+>             line = line.strip()
+>             if not line or line.startswith('#'):
+>                 continue
+>             parts = line.split()
+>             if len(parts) >= 6:
+>                 job_name = os.path.basename(parts[5])
+>                 scheduled_hour = int(parts[1])
+>                 jobs.append(Job(job_name, scheduled_hour))
+>     return jobs
+>
+> def parse_log_file(log_path):
+>     start_time = None
+>     end_time = None
+>     with open(log_path, 'r') as f:
+>         content = f.read()
+>     start_match = re.search(r'START\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+>     if start_match:
+>         start_time = datetime.strptime(start_match.group(1), '%Y-%m-%d %H:%M:%S')
+>     end_match = re.search(r'END\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+>     if end_match:
+>         end_time = datetime.strptime(end_match.group(1), '%Y-%m-%d %H:%M:%S')
+>     return start_time, end_time
+>
+> def load_job_runtimes(jobs):
+>     log_dir = Path(LOG_DIR)
+>     for job in jobs:
+>         log_name = job.name.replace('.sh', '.log')
+>         log_path = log_dir / log_name
+>         if log_path.exists():
+>             start_time, end_time = parse_log_file(log_path)
+>             job.start_time = start_time
+>             job.end_time = end_time
+>     return jobs
+>
+> jobs = parse_crontab()
+> jobs = load_job_runtimes(jobs)
+> jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+>
+> reference_date = jobs_with_data[0].start_time.date()
+> print(f"Reference date: {reference_date}\n")
+>
+> idle = []
+> for hour in range(24):
+>     is_idle = True
+>     hour_start = datetime.combine(reference_date, datetime.min.time()).replace(hour=hour)
+>     hour_end = hour_start.replace(minute=59, second=59, microsecond=999999)
+>
+>     if hour in [1, 4, 6]:
+>         print(f"Hour {hour}: {hour_start} to {hour_end}")
+>
+>     for job in jobs_with_data:
+>         if job.start_time <= hour_end and job.end_time >= hour_start:
+>             if hour in [1, 4, 6]:
+>                 print(f"  Job {job.name} overlaps: {job.start_time} to {job.end_time}")
+>             is_idle = False
+>             break
+>
+>     if hour in [1, 4, 6]:
+>         print(f"  Result: {'IDLE' if is_idle else 'BUSY'}\n")
+>
+>     if is_idle:
+>         idle.append(hour)
+>
+> print(f"Idle hours: {idle}")
+> DEBUGEOF
+Reference date: 2024-01-15
+
+Hour 1: 2024-01-15 01:00:00 to 2024-01-15 01:59:59.999999
+  Job etl_main.sh overlaps: 2024-01-15 01:00:03 to 2024-01-15 02:47:19
+  Result: BUSY
+
+Hour 4: 2024-01-15 04:00:00 to 2024-01-15 04:59:59.999999
+  Job reports.sh overlaps: 2024-01-15 04:00:01 to 2024-01-15 04:22:17
+  Result: BUSY
+
+Hour 6: 2024-01-15 06:00:00 to 2024-01-15 06:59:59.999999
+  Job health_check.sh overlaps: 2024-01-15 06:00:02 to 2024-01-15 06:03:41
+  Result: BUSY
+
+Idle hours: [0, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+user@bae130232a6d:~$

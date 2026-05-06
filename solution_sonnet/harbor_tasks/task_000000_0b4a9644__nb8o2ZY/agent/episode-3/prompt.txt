@@ -1,0 +1,83 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+root@3ad32447bdd5:/home/user/releaser# cat commits.json
+[{"hash": "abc123", "message": "SECURITY: Fix auth bypass vulnerability", "tag": "SECURITY"}]
+root@3ad32447bdd5:/home/user/releaser# cat release.py
+#!/usr/bin/env python3
+"""
+Main release script that coordinates version bumping and changelog generation.
+"""
+
+import json
+import os
+import sys
+
+from utils import load_config, read_file, write_file
+from semver import bump_version
+from changelog import generate_changelog_entry, update_changelog
+
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(SCRIPT_DIR, 'config.yaml')
+VERSION_PATH = os.path.join(SCRIPT_DIR, 'VERSION')
+CHANGELOG_PATH = os.path.join(SCRIPT_DIR, 'CHANGELOG.md')
+COMMITS_PATH = os.path.join(SCRIPT_DIR, 'commits.json')
+
+
+def load_commits():
+    """Load commits from the commits.json file."""
+    with open(COMMITS_PATH, 'r') as f:
+        return json.load(f)
+
+
+def get_commit_tags(commits):
+    """Extract tags from commits."""
+    return [commit.get('tag', 'OTHER') for commit in commits]
+
+
+def main():
+    """Main release process."""
+    # Load configuration
+    config = load_config(CONFIG_PATH)
+
+    # Load current version
+    current_version = read_file(VERSION_PATH)
+    print(f"Current version: {current_version}")
+
+    # Load commits
+    commits = load_commits()
+    commit_tags = get_commit_tags(commits)
+    print(f"Commit tags: {commit_tags}")
+
+    # Determine new version
+    new_version = bump_version(current_version, commit_tags, config)
+
+    if new_version is None:
+        # Unknown tag type - default to minor bump
+        # This handles cases where commits don't match any configured trigger
+        print(f"Warning: No matching version rule for tags {commit_tags}, defaulting to minor bump")
+        from semver import bump_minor
+        new_version = bump_minor(current_version)
+
+    print(f"New version: {new_version}")
+
+    # Update VERSION file
+    write_file(VERSION_PATH, new_version)
+    print(f"Updated VERSION file to {new_version}")
+
+    # Generate and update changelog
+    changelog_entry = generate_changelog_entry(new_version, commits, config)
+    update_changelog(CHANGELOG_PATH, changelog_entry)
+    print(f"Updated CHANGELOG.md with new entry")
+
+    print("Release complete!")
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
+root@3ad32447bdd5:/home/user/releaser#

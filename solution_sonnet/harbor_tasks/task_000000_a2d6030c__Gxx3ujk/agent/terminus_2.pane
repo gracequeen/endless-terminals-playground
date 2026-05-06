@@ -1,0 +1,345 @@
+[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004lTraceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 28, in upgrade
+    self.install_id
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 78, in install_id
+    raise ConfigError('no install ID found')
+asciinema.config.ConfigError: no install ID found
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/bin/asciinema", line 33, in <module>
+    sys.exit(load_entry_point('asciinema==2.1.0', 'console_scripts', 'asciinema')())
+  File "/usr/lib/python3/dist-packages/asciinema/__main__.py", line 34, in main
+    cfg = config.load()
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 185, in load
+    config.upgrade()
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 31, in upgrade
+    self.__save_install_id(id)
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 50, in __save_install_id
+    self.__create_config_home()
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 57, in __create_config_home
+    os.makedirs(self.config_home)
+  File "/usr/lib/python3.10/os.py", line 215, in makedirs
+    makedirs(head, exist_ok=exist_ok)
+  File "/usr/lib/python3.10/os.py", line 225, in makedirs
+    mkdir(name, mode)
+PermissionError: [Errno 13] Permission denied: '/.config'
+[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ clear
+[?2004l[H[J[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ ls -la
+[?2004ltotal 36
+drwxrwxrwx 1 1000 1000 4096 May  5 23:19 .
+drwxrwxrwx 1 1000 1000 4096 May  5 23:19 ..
+-rwxrwxrwx 1 1000 1000 2702 May  5 23:19 changelog.py
+-rwxrwxrwx 1 1000 1000 2900 May  5 23:19 parse_commits.py
+drwxrwxrwx 1 1000 1000 4096 May  5 23:19 project
+-rwxrwxrwx 1 1000 1000 3344 May  5 23:19 release.py
+-rwxrwxrwx 1 1000 1000   81 May  5 23:19 releaser.yaml
+-rwxrwxrwx 1 1000 1000 3320 May  5 23:19 semver.py
+-rwxrwxrwx 1 1000 1000 2729 May  5 23:19 test_semver.py
+[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ cat releaser.yaml
+[?2004lmax_minor_before_major: "9"
+changelog_path: ./project/CHANGELOG.md
+tag_prefix: v
+[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ cat release.py
+[?2004l#!/usr/bin/env python3
+"""
+Release automation tool - main entry point.
+"""
+
+import os
+import subprocess
+import yaml
+
+from semver import Version
+from parse_commits import get_commits_since_tag, determine_bump_type
+from changelog import generate_changelog_entry, update_changelog
+
+
+def load_config(config_path='releaser.yaml'):
+    """Load configuration from YAML file."""
+    with open(config_path, 'r') as f:
+        return yaml.safe_load(f)
+
+
+def get_latest_tag(repo_path='.', prefix='v'):
+    """Get the latest version tag from the repository."""
+    try:
+        result = subprocess.run(
+            ['git', 'tag', '-l', f'{prefix}*', '--sort=-v:refname'],
+            capture_output=True,
+            text=True,
+            cwd=repo_path,
+            check=True
+        )
+        tags = result.stdout.strip().split('\n')
+        return tags[0] if tags and tags[0] else None
+    except subprocess.CalledProcessError:
+        return None
+
+
+def main():
+    """Main release workflow."""
+    # Load configuration
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(script_dir, 'releaser.yaml')
+    config = load_config(config_path)
+
+    repo_path = os.path.join(script_dir, 'project')
+    tag_prefix = config.get('tag_prefix', 'v')
+    changelog_path = config.get('changelog_path', './CHANGELOG.md')
+
+    # Make changelog path absolute relative to script dir
+    if not os.path.isabs(changelog_path):
+        changelog_path = os.path.join(script_dir, changelog_path)
+
+    # Get current version from latest tag
+    latest_tag = get_latest_tag(repo_path, tag_prefix)
+    if not latest_tag:
+        print("No existing version tag found, starting at 0.1.0")
+        current_version = Version("0.0.0", config)
+        latest_tag = "v0.0.0"
+    else:
+        print(f"Current version: {latest_tag}")
+        current_version = Version(latest_tag, config)
+
+    # Get commits since last tag
+    commits = get_commits_since_tag(latest_tag, repo_path)
+    if not commits:
+        print("No new commits since last release")
+        return
+
+    print(f"Found {len(commits)} commit(s) since {latest_tag}")
+
+    # Determine bump type
+    bump_type = determine_bump_type(commits)
+    print(f"Recommended bump type: {bump_type}")
+
+    # Check if major bump is allowed by policy
+    if bump_type == 'major' and not current_version.can_bump_major():
+        print(f"Warning: major bump requested but blocked by policy, using minor")
+        bump_type = 'minor'
+
+    # Calculate new version
+    if bump_type == 'major':
+        new_version = current_version.bump_major()
+    elif bump_type == 'minor':
+        new_version = current_version.bump_minor()
+    else:
+        new_version = current_version.bump_patch()
+
+    print(f"New version: {new_version}")
+
+    # Generate changelog entry
+    changelog_entry = generate_changelog_entry(str(new_version), commits, repo_path)
+
+    # Update changelog
+    update_changelog(changelog_path, changelog_entry)
+    print(f"Updated changelog at {changelog_path}")
+
+    print(f"\nRelease {new_version} prepared successfully!")
+    print(f"Next steps:")
+    print(f"  1. Review the changelog")
+    print(f"  2. Commit the changes")
+    print(f"  3. Create tag: git tag {tag_prefix}{new_version}")
+    print(f"  4. Push: git push && git push --tags")
+
+
+if __name__ == '__main__':
+    main()
+[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ cat semver.py
+[?2004l"""
+Semantic versioning utilities for the releaser tool.
+"""
+
+import re
+
+
+class Version:
+    """Represents a semantic version (major.minor.patch)."""
+
+    VERSION_PATTERN = re.compile(r'^v?(\d+)\.(\d+)\.(\d+)(?:-(.+))?$')
+
+    def __init__(self, version_string, config=None):
+        """Parse a version string into components."""
+        self.config = config or {}
+        self.original = version_string
+
+        match = self.VERSION_PATTERN.match(version_string)
+        if not match:
+            raise ValueError(f"Invalid version string: {version_string}")
+
+        self.major = int(match.group(1))
+        self.minor = int(match.group(2))
+        self.patch = int(match.group(3))
+        self.prerelease = match.group(4)
+
+    def __str__(self):
+        """Return the version as a string."""
+        base = f"{self.major}.{self.minor}.{self.patch}"
+        if self.prerelease:
+            return f"{base}-{self.prerelease}"
+        return base
+
+    def __repr__(self):
+        return f"Version('{self}')"
+
+    def __eq__(self, other):
+        if not isinstance(other, Version):
+            return False
+        return (self.major, self.minor, self.patch) == (other.major, other.minor, other.patch)
+
+    def __lt__(self, other):
+        """Compare versions for sorting."""
+        if not isinstance(other, Version):
+            return NotImplemented
+        return (self.major, self.minor, self.patch) < (other.major, other.minor, other.patch)
+
+    def __le__(self, other):
+        return self == other or self < other
+
+    def __gt__(self, other):
+        if not isinstance(other, Version):
+            return NotImplemented
+        return (self.major, self.minor, self.patch) > (other.major, other.minor, other.patch)
+
+    def __ge__(self, other):
+        return self == other or self > other
+
+    def can_bump_major(self):
+        """
+        Check if a major version bump is allowed by policy.
+
+        The max_minor_before_major config option prevents accidental major bumps
+        until the minor version reaches a certain threshold.
+        """
+        max_minor = self.config.get('max_minor_before_major', '9')
+        # Compare minor version against threshold
+        return str(self.minor) < str(max_minor)
+
+    def bump_major(self):
+        """Return a new Version with major incremented, minor and patch reset."""
+        new_version = Version(f"{self.major + 1}.0.0", self.config)
+        return new_version
+
+    def bump_minor(self):
+        """Return a new Version with minor incremented, patch reset."""
+        new_version = Version(f"{self.major}.{self.minor + 1}.0", self.config)
+        return new_version
+
+    def bump_patch(self):
+        """Return a new Version with patch incremented."""
+        new_version = Version(f"{self.major}.{self.minor}.{self.patch + 1}", self.config)
+        return new_version
+
+
+def parse_version(version_string, config=None):
+    """Parse a version string and return a Version object."""
+    return Version(version_string, config)
+
+
+def compare_versions(v1, v2):
+    """
+    Compare two version strings.
+    Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2
+    """
+    ver1 = Version(v1) if isinstance(v1, str) else v1
+    ver2 = Version(v2) if isinstance(v2, str) else v2
+
+    if ver1 < ver2:
+        return -1
+    elif ver1 > ver2:
+        return 1
+    return 0
+[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ cp semver.py semver.py.bak
+[?2004l[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ sed -i 's/return str(self.minor) < str(max_minor)/return self.minor >= int(max_minor)/' semver.py
+[?2004l[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ grep -A 5 'def can_bump_major' semver.py
+[?2004l    def can_bump_major(self):
+        """
+        Check if a major version bump is allowed by policy.
+
+        The max_minor_before_major config option prevents accidental major bumps
+        until the minor version reaches a certain threshold.
+[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ grep -A 8 'def can_bump_major' semver.py
+[?2004l    def can_bump_major(self):
+        """
+        Check if a major version bump is allowed by policy.
+
+        The max_minor_before_major config option prevents accidental major bumps
+        until the minor version reaches a certain threshold.
+        """
+        max_minor = self.config.get('max_minor_before_major', '9')
+        # Compare minor version against threshold
+[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ sed -n '54,62p' semver.py
+[?2004l        return (self.major, self.minor, self.patch) > (other.major, other.minor, other.patch)
+
+    def __ge__(self, other):
+        return self == other or self > other
+
+    def can_bump_major(self):
+        """
+        Check if a major version bump is allowed by policy.
+
+[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ sed -n '58,66p' semver.py
+[?2004l
+    def can_bump_major(self):
+        """
+        Check if a major version bump is allowed by policy.
+
+        The max_minor_before_major config option prevents accidental major bumps
+        until the minor version reaches a certain threshold.
+        """
+        max_minor = self.config.get('max_minor_before_major', '9')
+[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ sed -n '66,68p' semver.py
+[?2004l        max_minor = self.config.get('max_minor_before_major', '9')
+        # Compare minor version against threshold
+        return self.minor >= int(max_minor)
+[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ python3 test_semver.py
+[?2004l[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ cd project && git log --oneline -10
+[?2004l[?1h=[33mf5d4cc9[m[33m ([m[1;36mHEAD -> [m[1;32mmaster[m[33m)[m feat!: redesign authentication API[m
+[33m52137db[m feat: add oauth support[m
+[33m706cc08[m fix: correct token expiry[m
+[33m45d0a98[m[33m ([m[1;33mtag: v2.9.3[m[33m)[m fix: bug fix 3[m
+[33m93f813d[m[33m ([m[1;33mtag: v2.9.2[m[33m)[m fix: bug fix 2[m
+[33m161dcbc[m[33m ([m[1;33mtag: v2.9.1[m[33m)[m fix: bug fix 1[m
+[33m26d43c7[m[33m ([m[1;33mtag: v2.9.0[m[33m)[m feat: feature 9[m
+[33m1fa756b[m[33m ([m[1;33mtag: v2.8.0[m[33m)[m feat: feature 8[m
+[33m9941915[m[33m ([m[1;33mtag: v2.7.0[m[33m)[m feat: feature 7[m
+[33mdc8bfab[m[33m ([m[1;33mtag: v2.6.0[m[33m)[m feat: feature 6[m
+[K[?1l>[?2004hI have no name!@3f1bcb980491:/home/user/releaser/project$ cd ..
+[?2004l[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ python3 release.py
+[?2004lCurrent version: v2.9.3
+Found 3 commit(s) since v2.9.3
+Recommended bump type: major
+New version: 3.0.0
+Updated changelog at /home/user/releaser/./project/CHANGELOG.md
+
+Release 3.0.0 prepared successfully!
+Next steps:
+  1. Review the changelog
+  2. Commit the changes
+  3. Create tag: git tag v3.0.0
+  4. Push: git push && git push --tags
+[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ head -20 project/CHANGELOG.md
+[?2004l# Changelog
+
+## [3.0.0] - 2026-05-05
+
+### ⚠ BREAKING CHANGES
+
+* redesign authentication API
+
+### Features
+
+* add oauth support
+
+### Bug Fixes
+
+* correct token expiry
+
+All notable changes to this project will be documented in this file.
+
+[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ echo 'Fix verified: Version now correctly bumps from 2.9.x to 3.0.0 on breaking changes'
+[?2004lFix verified: Version now correctly bumps from 2.9.x to 3.0.0 on breaking changes
+[?2004hI have no name!@3f1bcb980491:/home/user/releaser$ 

@@ -1,0 +1,75 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+root@00f6388ba7f6:/home/user# 7z --help | head -3
+
+7-Zip [64] 16.02 : Copyright (c) 1999-2016 Igor Pavlov : 2016-05-21
+p7zip Version 16.02 (locale=C.UTF-8,Utf16=on,HugeFiles=on,64 bits,48 CPUs Intel(R) Xeon(R) Platinum 8259CL CPU @ 2.50GHz (50657),ASM,AES-NI)
+root@00f6388ba7f6:/home/user# cp /home/user/api/extract_handler.sh /home/user/api/extract_handler.sh.backup
+root@00f6388ba7f6:/home/user# sed -i '/application\/x-xz)/a\    application/x-7z-compressed)\n        7z x "$INPUT_FILE" -o"$OUTPUT_DIR" -y\n        echo "$TIME
+STAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"\n        ;;' /home/user/api/extract_handler.sh
+root@00f6388ba7f6:/home/user# cat /home/user/api/extract_handler.sh
+#!/bin/bash
+
+# Extract handler script for processing uploaded archives
+# Detects archive format and extracts contents
+
+INPUT_FILE="$1"
+OUTPUT_DIR="${2:-/home/user/extracted}"
+LOG_FILE="/home/user/logs/intake.log"
+
+if [ -z "$INPUT_FILE" ]; then
+    echo "Usage: $0 <input_file> [output_dir]"
+    exit 1
+fi
+
+if [ ! -f "$INPUT_FILE" ]; then
+    echo "Error: File not found: $INPUT_FILE"
+    exit 1
+fi
+
+FILENAME=$(basename "$INPUT_FILE")
+TIMESTAMP=$(date -Iseconds)
+
+# Detect mime type
+MIME_TYPE=$(file --mime-type -b "$INPUT_FILE")
+
+# Extract based on detected type
+case "$MIME_TYPE" in
+    application/zip)
+        unzip -o "$INPUT_FILE" -d "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+    application/x-tar)
+        tar -xf "$INPUT_FILE" -C "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+    application/gzip|application/x-gzip)
+        # Assume it's a tar.gz
+        tar -xzf "$INPUT_FILE" -C "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+    application/x-bzip2)
+        tar -xjf "$INPUT_FILE" -C "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+    application/x-xz)
+    application/x-7z-compressed)
+        7z x "$INPUT_FILE" -o"$OUTPUT_DIR" -y
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+        tar -xJf "$INPUT_FILE" -C "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+    *)
+        echo "$TIMESTAMP $FILENAME unknown format - skipped" >> "$LOG_FILE"
+        echo "Unknown format: $MIME_TYPE"
+        exit 1
+        ;;
+esac
+
+echo "Extraction complete for $FILENAME"
+root@00f6388ba7f6:/home/user#

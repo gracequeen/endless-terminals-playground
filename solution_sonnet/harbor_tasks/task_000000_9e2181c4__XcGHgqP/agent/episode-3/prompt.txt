@@ -1,0 +1,118 @@
+New Terminal Output:
+
+root@1ab7af728ac8:/home/user/rotate# cp reencrypt.py reencrypt.py.backup
+root@1ab7af728ac8:/home/user/rotate# cat > reencrypt.py << 'EOF'
+> #!/usr/bin/env python3
+> """
+> Re-encryption script for vault credentials.
+> Decrypts entries with old key and re-encrypts with new key.
+> """
+>
+> import os
+> import struct
+> import hashlib
+> from Crypto.Cipher import AES
+>
+> ROTATE_DIR = "/home/user/rotate"
+> VAULT_DUMP = os.path.join(ROTATE_DIR, "vault_dump.enc")
+> OUTPUT_FILE = os.path.join(ROTATE_DIR, "vault_dump.new.enc")
+> OLD_KEY_FILE = os.path.join(ROTATE_DIR, "old.key")
+> NEW_KEY_FILE = os.path.join(ROTATE_DIR, "new.key")
+>
+>
+> def read_one_entry(f):
+>     """Read a single entry from current file position."""
+>     nonce = f.read(12)
+>     if len(nonce) < 12:
+>         return None
+>     ct_len = struct.unpack("<I", f.read(4))[0]
+>     ciphertext_with_tag = f.read(ct_len)
+>     meta_len = struct.unpack("<H", f.read(2))[0]
+>     metadata = f.read(meta_len)
+>     return {
+>         "nonce": nonce,
+>         "ciphertext_with_tag": ciphertext_with_tag,
+>         "metadata": metadata
+>     }
+>
+>
+> def decrypt_entry(entry, key):
+>     """Decrypt an entry using AES-256-GCM."""
+>     ciphertext = entry["ciphertext_with_tag"][:-16]
+>     tag = entry["ciphertext_with_tag"][-16:]
+>     cipher = AES.new(key, AES.MODE_GCM, nonce=entry["nonce"])
+>     plaintext = cipher.decrypt_and_verify(ciphertext, tag)
+>     return plaintext
+>
+>
+> def encrypt_entry(plaintext, metadata, key):
+>     """Encrypt plaintext and return formatted entry bytes."""
+>     from Crypto.Random import get_random_bytes
+>     nonce = get_random_bytes(12)
+>     cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+>     ciphertext, tag = cipher.encrypt_and_digest(plaintext)
+>     ciphertext_with_tag = ciphertext + tag
+>
+>     entry_bytes = nonce
+>     entry_bytes += struct.pack("<I", len(ciphertext_with_tag))
+>     entry_bytes += ciphertext_with_tag
+>     entry_bytes += struct.pack("<H", len(metadata))
+>     entry_bytes += metadata
+>     return entry_bytes
+>
+>
+> def reencrypt():
+>     """Main re-encryption function."""
+>     # Load keys once at the start
+>     with open(OLD_KEY_FILE, "rb") as f:
+>         old_key = f.read()
+>     with open(NEW_KEY_FILE, "rb") as f:
+>         new_key = f.read()
+>
+>     # Compute new key_id for header
+>     new_key_id = hashlib.sha256(new_key).digest()
+>
+>     # Open input file once and read header
+>     with open(VAULT_DUMP, "rb") as f:
+>         header = f.read(42)
+>         magic = header[:6]
+>         entry_count = struct.unpack("<I", header[6:10])[0]
+>         old_key_id = header[10:42]
+>
+>         if magic != b"VAULT1":
+>             raise ValueError("Invalid vault file magic")
+>
+>         print(f"Processing {entry_count} entries...")
+>
+>         # Open output file once and write header
+>         with open(OUTPUT_FILE, "wb") as out:
+>             out.write(b"VAULT1")
+>             out.write(struct.pack("<I", entry_count))
+>             out.write(new_key_id)
+>
+>             # Process each entry sequentially
+>             for i in range(entry_count):
+>                 entry = read_one_entry(f)
+>
+>                 if entry is None:
+>                     raise ValueError(f"Failed to read entry {i}")
+>
+>                 # Decrypt with old key
+>                 plaintext = decrypt_entry(entry, old_key)
+>
+>                 # Re-encrypt with new key
+>                 new_entry_bytes = encrypt_entry(plaintext, entry["metadata"], new_key)
+>
+>                 # Write to output file
+>                 out.write(new_entry_bytes)
+>
+>                 if (i + 1) % 10000 == 0:
+>                     print(f"Processed {i + 1}/{entry_count} entries")
+>
+>     print(f"Re-encryption complete. Output written to {OUTPUT_FILE}")
+>
+>
+> if __name__ == "__main__":
+>     reencrypt()
+> EOF
+root@1ab7af728ac8:/home/user/rotate#

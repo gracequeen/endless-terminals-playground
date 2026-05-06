@@ -1,0 +1,61 @@
+New Terminal Output:
+
+root@4e542c269e92:/home/user/project# grep -r 'nosec\|nosemgrep' src/
+src/config/defaults.py:DEFAULT_PASSWORD = "changeme123"  # nosec - this is intentionally a placeholder
+root@4e542c269e92:/home/user/project# cat src/db/queries.py
+"""Database query functions using parameterized queries."""
+
+import psycopg2
+
+
+def get_user_by_id(conn, user_id):
+    """Fetch a user by their ID using parameterized query."""
+    cursor = conn.cursor()
+    # This is a parameterized query - %s is a placeholder, not string formatting
+    query = "SELECT id, username, email FROM users WHERE id = %s"
+    cursor.execute(query, (user_id,))
+    return cursor.fetchone()
+
+
+def search_users_by_name(conn, name_pattern):
+    """Search users by name pattern using parameterized query."""
+    cursor = conn.cursor()
+    # Using LIKE with parameterized query
+    query = "SELECT id, username FROM users WHERE username LIKE %s"
+    cursor.execute(query, (f"%{name_pattern}%",))
+    return cursor.fetchall()
+
+
+def get_user_orders(conn, user_id, status):
+    """Get orders for a user with specific status."""
+    cursor = conn.cursor()
+    query = "SELECT * FROM orders WHERE user_id = %s AND status = %s"
+    cursor.execute(query, (user_id, status))
+    return cursor.fetchall()
+root@4e542c269e92:/home/user/project# cat src/utils/logging.py
+"""Logging utilities."""
+
+import logging
+import sys
+
+
+def setup_logger(name, level=logging.INFO):
+    """Set up a logger with standard formatting."""
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(level)
+
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+    return logger
+
+
+# This looks like a secret but it's just a log format identifier
+LOG_SECRET_MARKER = "AUDIT_LOG_12345"
+root@4e542c269e92:/home/user/project#

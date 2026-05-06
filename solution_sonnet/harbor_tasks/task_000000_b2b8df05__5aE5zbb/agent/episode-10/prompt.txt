@@ -1,0 +1,41 @@
+New Terminal Output:
+
+root@04d4f8bd267e:/home/user/data# cat > clean.sql << 'EOF'
+> DROP TABLE IF EXISTS responses_clean;
+> CREATE TABLE responses_clean AS
+> -- Keep earliest submission for each non-NULL email
+> SELECT r.*
+> FROM responses r
+> INNER JOIN (
+>     SELECT email, MIN(submitted_at) as first_sub
+>     FROM responses
+>     WHERE email IS NOT NULL AND email != ''
+>     GROUP BY email
+> ) earliest ON r.email = earliest.email AND r.submitted_at = earliest.first_sub
+> UNION ALL
+> -- Keep all rows with NULL/empty email (can't deduplicate these)
+> SELECT *
+> FROM responses
+> WHERE email IS NULL OR email = '';
+> EOF
+root@04d4f8bd267e:/home/user/data# cat clean.sql
+DROP TABLE IF EXISTS responses_clean;
+CREATE TABLE responses_clean AS
+-- Keep earliest submission for each non-NULL email
+SELECT r.*
+FROM responses r
+INNER JOIN (
+    SELECT email, MIN(submitted_at) as first_sub
+    FROM responses
+    WHERE email IS NOT NULL AND email != ''
+    GROUP BY email
+) earliest ON r.email = earliest.email AND r.submitted_at = earliest.first_sub
+UNION ALL
+-- Keep all rows with NULL/empty email (can't deduplicate these)
+SELECT *
+FROM responses
+WHERE email IS NULL OR email = '';
+root@04d4f8bd267e:/home/user/data# sqlite3 survey.db < clean.sql
+root@04d4f8bd267e:/home/user/data# sqlite3 survey.db "SELECT COUNT(*) FROM responses_clean;"
+312
+root@04d4f8bd267e:/home/user/data#

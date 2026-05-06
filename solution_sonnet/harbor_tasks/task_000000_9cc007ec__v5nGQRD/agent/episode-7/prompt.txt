@@ -1,0 +1,41 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+root@448bb90d8713:/home/user# ls -la /home/user/builds/ | grep -E '(dSYM|ipa)'
+drwxrwxrwx 1 root root 4096 Apr 15 19:41 Legacy App-v1.0.dSYM
+-rwxrwxrwx 1 root root   24 Apr 15 19:41 Legacy App-v1.0.ipa
+drwxrwxrwx 1 root root 4096 Apr 25 19:41 MyApp 2.2 (build 512).dSYM
+-rwxrwxrwx 1 root root   24 May  2 19:41 MyApp 2.2 (build 512).ipa
+drwxrwxrwx 1 root root 4096 May  3 19:41 Nightly [2024-01-15].dSYM
+root@448bb90d8713:/home/user# echo '--- Script comparison ---'
+--- Script comparison ---
+root@448bb90d8713:/home/user# echo 'OLD SCRIPT:' && cat /home/user/scripts/cleanup.sh.bak
+OLD SCRIPT:
+#!/bin/bash
+cd /home/user/builds
+
+find . -name "*.dSYM" -type d -mtime +7 | while read dsym; do
+    ipa="${dsym%.dSYM}.ipa"
+    if [ ! -e "$ipa" ]; then
+        echo "$dsym"
+    fi
+done | xargs rm -rf
+root@448bb90d8713:/home/user# echo '--- NEW SCRIPT:' && cat /home/user/scripts/cleanup.sh
+--- NEW SCRIPT:
+#!/bin/bash
+cd /home/user/builds
+
+# Find all .dSYM bundles older than 7 days and delete only those without matching .ipa
+find . -name "*.dSYM" -type d -mtime +7 -print0 | while IFS= read -r -d '' dsym; do
+    ipa="${dsym%.dSYM}.ipa"
+    if [ ! -e "$ipa" ]; then
+        echo "Deleting: $dsym (no matching .ipa found)"
+        rm -rf "$dsym"
+    else
+        echo "Keeping: $dsym (matching .ipa exists)"
+    fi
+done
+root@448bb90d8713:/home/user#

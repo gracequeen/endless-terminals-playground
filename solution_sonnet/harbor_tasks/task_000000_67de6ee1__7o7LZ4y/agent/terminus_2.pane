@@ -1,0 +1,74 @@
+[?2004hroot@6f6df7170f1d:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@6f6df7170f1d:/home/user# clear
+[?2004l[H[J[?2004hroot@6f6df7170f1d:/home/user# cd /home/user/mobile-ci
+[?2004l[?2004hroot@6f6df7170f1d:/home/user/mobile-ci# ls -la
+[?2004ltotal 16
+drwxrwxrwx 1 root root 4096 May  5 07:32 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 07:32 [34;42m..[0m
+drwxrwxrwx 1 root root 4096 May  5 07:32 [34;42mconfig[0m
+drwxrwxrwx 1 root root 4096 May  5 07:32 [34;42mscripts[0m
+[?2004hroot@6f6df7170f1d:/home/user/mobile-ci# cat scripts/build.sh
+[?2004l#!/bin/bash
+set -e
+
+# Load environment
+set -a
+source /home/user/mobile-ci/config/base.env
+source /home/user/mobile-ci/config/ci.env
+set +a
+
+# Legacy compatibility shim
+export CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-}"
+export PROVISIONING_PROFILE_SPECIFIER="$PROFILE_SPEC"
+
+# Run build
+exec /home/user/mobile-ci/scripts/fastlane_stub.sh
+[?2004hroot@6f6df7170f1d:/home/user/mobile-ci# cat config/base.env
+[?2004lCODE_SIGN_IDENTITY="iPhone Distribution: ACME Corp (ABC123)"
+PROFILE_SPEC=ACME_AppStore_Profile
+TEAM_ID=ABC123XYZ
+BUNDLE_ID=com.acme.app
+[?2004hroot@6f6df7170f1d:/home/user/mobile-ci# cat config/ci.env
+[?2004l# CI-specific overrides
+PROFILE_SPEC=ACME_CI_Profile
+BUILD_NUMBER=${BUILD_NUMBER:-1}
+
+# Reset identity for CI cert selection
+CODE_SIGN_IDENTITY=
+[?2004hroot@6f6df7170f1d:/home/user/mobile-ci# cat scripts/fastlane_stub.sh
+[?2004l#!/bin/bash
+# Stub for fastlane gym
+if [ -z "$CODE_SIGN_IDENTITY" ]; then
+    echo "Error: Missing required signing identity" >&2
+    echo "Searched for identity matching: ''" >&2
+    exit 1
+fi
+
+if [ -z "$PROVISIONING_PROFILE_SPECIFIER" ]; then
+    echo "Error: Missing provisioning profile" >&2
+    exit 1
+fi
+
+echo "Build succeeded with identity: $CODE_SIGN_IDENTITY"
+echo "Using profile: $PROVISIONING_PROFILE_SPECIFIER"
+echo "Team: $TEAM_ID"
+echo "Bundle: $BUNDLE_ID"
+exit 0
+[?2004hroot@6f6df7170f1d:/home/user/mobile-ci# sed -i 's/^CODE_SIGN_IDENTITY=$/# CODE_SIGN_IDENTITY= # Removed: was blanking identity from base.env/' config/ci.env
+[?2004l[?2004hroot@6f6df7170f1d:/home/user/mobile-ci# cat config/ci.env
+[?2004l# CI-specific overrides
+PROFILE_SPEC=ACME_CI_Profile
+BUILD_NUMBER=${BUILD_NUMBER:-1}
+
+# Reset identity for CI cert selection
+# CODE_SIGN_IDENTITY= # Removed: was blanking identity from base.env
+[?2004hroot@6f6df7170f1d:/home/user/mobile-ci# bash scripts/build.sh
+[?2004lBuild succeeded with identity: iPhone Distribution: ACME Corp (ABC123)
+Using profile: ACME_CI_Profile
+Team: ABC123XYZ
+Bundle: com.acme.app
+[?2004hroot@6f6df7170f1d:/home/user/mobile-ci# echo 'Fix Summary: Commented out CODE_SIGN_IDENTITY= in config/ci.env that was blanking the identity from base.env'
+[?2004lFix Summary: Commented out CODE_SIGN_IDENTITY= in config/ci.env that was blanking the identity from base.env
+[?2004hroot@6f6df7170f1d:/home/user/mobile-ci# 

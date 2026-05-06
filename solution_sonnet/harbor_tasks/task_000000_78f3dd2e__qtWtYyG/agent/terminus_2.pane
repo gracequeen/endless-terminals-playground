@@ -1,0 +1,116 @@
+[?2004huser@87a351bd37b8:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004huser@87a351bd37b8:~$ clear
+[?2004l[H[J[?2004huser@87a351bd37b8:~$ cd /home/user/backup-check
+[?2004l[?2004huser@87a351bd37b8:~/backup-check$ ls -la
+[?2004ltotal 20
+drwxrwxrwx 1 user user 4096 May  5 04:53 .
+drwxrwxrwx 1 user user 4096 May  5 04:53 ..
+drwxrwxrwx 1 user user 4096 May  5 04:53 data
+-rwxrwxrwx 1 user user  689 May  5 04:53 manifest.txt
+-rwxrwxrwx 1 user user 1370 May  5 04:53 verify.sh
+[?2004huser@87a351bd37b8:~/backup-check$ cat verify.sh
+[?2004l#!/bin/bash
+
+# Backup verification script
+# Reads manifest.txt and verifies SHA256 checksums of files
+
+MANIFEST_FILE="/home/user/backup-check/manifest.txt"
+BASE_DIR="/home/user/backup-check"
+ERRORS=0
+
+echo "Starting backup verification..."
+echo "Reading manifest: $MANIFEST_FILE"
+echo ""
+
+while IFS= read -r line || [ -n "$line" ]; do
+    # Skip empty lines
+    if [ -z "$line" ]; then
+        continue
+    fi
+
+    # Extract expected hash (first 64 characters)
+    expected=$(echo "$line" | cut -c1-64)
+
+    # Extract file path (after two spaces following the hash)
+    filepath=$(echo "$line" | cut -c67-)
+
+    # Full path to file
+    fullpath="$BASE_DIR/$filepath"
+
+    # Check if file exists
+    if [ ! -f "$fullpath" ]; then
+        echo "MISSING: $filepath"
+        ERRORS=$((ERRORS + 1))
+        continue
+    fi
+
+    # Compute actual hash
+    computed=$(sha256sum "$fullpath" | awk '{print $1}')
+
+    # Compare hashes
+    if [ "$expected" != "$computed" ]; then
+        echo "MISMATCH: $filepath"
+        echo "  Expected: $expected"
+        echo "  Computed: $computed"
+        ERRORS=$((ERRORS + 1))
+    else
+        echo "OK: $filepath"
+    fi
+done < "$MANIFEST_FILE"
+
+echo ""
+echo "Verification complete."
+
+if [ $ERRORS -gt 0 ]; then
+    echo "FAILED: $ERRORS file(s) failed verification."
+    exit 1
+else
+    echo "SUCCESS: All files verified."
+    exit 0
+fi
+[?2004huser@87a351bd37b8:~/backup-check$ file manifest.txt
+[?2004lbash: file: command not found
+[?2004huser@87a351bd37b8:~/backup-check$ head -3 manifest.txt
+[?2004l945f85cadf9dbab38ade8da5182f8a12f0abd31d75380ea1de5ccfbf1ae32a0b  data/config.json
+fded444d160bfdf81d187560c77b7a60d26f61bca6c30993846db9ca62202555  data/database.sql
+71fdee5a7c9e32e6edaea288d1350cceeff8acc4654dcce614b70b67908f9f97  data/logs/app.log
+[?2004huser@87a351bd37b8:~/backup-check$ head -1 manifest.txt | od -c
+[?2004l0000000   9   4   5   f   8   5   c   a   d   f   9   d   b   a   b   3
+0000020   8   a   d   e   8   d   a   5   1   8   2   f   8   a   1   2
+0000040   f   0   a   b   d   3   1   d   7   5   3   8   0   e   a   1
+0000060   d   e   5   c   c   f   b   f   1   a   e   3   2   a   0   b
+0000100           d   a   t   a   /   c   o   n   f   i   g   .   j   s
+0000120   o   n  \r  \n
+0000124
+[?2004huser@87a351bd37b8:~/backup-check$ which dos2unix
+[?2004l/usr/bin/dos2unix
+[?2004huser@87a351bd37b8:~/backup-check$ dos2unix manifest.txt
+[?2004ldos2unix: converting file manifest.txt to Unix format...
+[?2004huser@87a351bd37b8:~/backup-check$ head -1 manifest.txt | od -c
+[?2004l0000000   9   4   5   f   8   5   c   a   d   f   9   d   b   a   b   3
+0000020   8   a   d   e   8   d   a   5   1   8   2   f   8   a   1   2
+0000040   f   0   a   b   d   3   1   d   7   5   3   8   0   e   a   1
+0000060   d   e   5   c   c   f   b   f   1   a   e   3   2   a   0   b
+0000100           d   a   t   a   /   c   o   n   f   i   g   .   j   s
+0000120   o   n  \n
+0000123
+[?2004huser@87a351bd37b8:~/backup-check$ ./verify.sh
+[?2004lStarting backup verification...
+Reading manifest: /home/user/backup-check/manifest.txt
+
+OK: data/config.json
+OK: data/database.sql
+OK: data/logs/app.log
+OK: data/logs/error.log
+OK: data/assets/logo.png
+OK: data/assets/style.css
+OK: data/readme.txt
+OK: data/backup_meta.xml
+
+Verification complete.
+SUCCESS: All files verified.
+[?2004huser@87a351bd37b8:~/backup-check$ echo $?
+[?2004l0
+[?2004huser@87a351bd37b8:~/backup-check$ 

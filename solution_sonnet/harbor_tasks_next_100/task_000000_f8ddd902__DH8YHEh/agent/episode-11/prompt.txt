@@ -1,0 +1,101 @@
+New Terminal Output:
+
+root@8893f7e9b939:/home/user/edge-gateway# cat > BUGFIX_SUMMARY.md << 'EOF'
+> # Edge Gateway Event Loop Bug Fix
+>
+> ## Problem
+> HTTP health endpoint at localhost:8080/health would hang indefinitely when mosquitto MQTT broker was running, but respond immediately when mosquitto was kille
+d.
+>
+> ## Root Cause
+> The original code had an event loop management bug:
+>
+> ```python
+> def main():
+>     loop = asyncio.new_event_loop()
+>     asyncio.set_event_loop(loop)
+>     loop.create_task(mqtt_loop())  # Task created in this loop
+>
+>     app = create_app()
+>     web.run_app(app, ...)  # Creates its OWN new event loop internally!
+> ```
+>
+> The MQTT client task was running in one event loop, while web.run_app() created a separate event loop for the HTTP server. This caused the HTTP handlers to ha
+ng when trying to check the MQTT client status across event loops.
+>
+> ## Solution
+> Use aiohttp's application lifecycle hooks (on_startup) to ensure both MQTT and HTTP run in the same event loop:
+>
+> ```python
+> async def start_mqtt(app):
+>     app['mqtt_task'] = asyncio.create_task(mqtt_loop())
+>
+> def main():
+>     app = create_app()
+>     app.on_startup.append(start_mqtt)  # MQTT task created in web.run_app's loop
+>     app.on_cleanup.append(cleanup_mqtt)
+>     web.run_app(app, host='0.0.0.0', port=8080, ...)
+> ```
+>
+> ## Verification
+> - Health endpoint responds instantly: ✓
+> - MQTT connection maintained: ✓
+> - Sensor data publishing works: ✓
+> - Ready for deployment to 200 gateway fleet
+>
+> ## Testing
+> ```bash
+> ./start.sh &
+> curl http://localhost:8080/health
+> curl -X POST http://localhost:8080/sensor -H 'Content-Type: application/json' -d '{"test": "data"}'
+> ```
+> EOF
+root@8893f7e9b939:/home/user/edge-gateway# cat BUGFIX_SUMMARY.md
+# Edge Gateway Event Loop Bug Fix
+
+## Problem
+HTTP health endpoint at localhost:8080/health would hang indefinitely when mosquitto MQTT broker was running, but respond immediately when mosquitto was killed.
+
+## Root Cause
+The original code had an event loop management bug:
+
+```python
+def main():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.create_task(mqtt_loop())  # Task created in this loop
+
+    app = create_app()
+    web.run_app(app, ...)  # Creates its OWN new event loop internally!
+```
+
+The MQTT client task was running in one event loop, while web.run_app() created a separate event loop for the HTTP server. This caused the HTTP handlers to hang
+ when trying to check the MQTT client status across event loops.
+
+## Solution
+Use aiohttp's application lifecycle hooks (on_startup) to ensure both MQTT and HTTP run in the same event loop:
+
+```python
+async def start_mqtt(app):
+    app['mqtt_task'] = asyncio.create_task(mqtt_loop())
+
+def main():
+    app = create_app()
+    app.on_startup.append(start_mqtt)  # MQTT task created in web.run_app's loop
+    app.on_cleanup.append(cleanup_mqtt)
+    web.run_app(app, host='0.0.0.0', port=8080, ...)
+```
+
+## Verification
+- Health endpoint responds instantly: ✓
+- MQTT connection maintained: ✓
+- Sensor data publishing works: ✓
+- Ready for deployment to 200 gateway fleet
+
+## Testing
+```bash
+./start.sh &
+curl http://localhost:8080/health
+curl -X POST http://localhost:8080/sensor -H 'Content-Type: application/json' -d '{"test": "data"}'
+```
+root@8893f7e9b939:/home/user/edge-gateway#

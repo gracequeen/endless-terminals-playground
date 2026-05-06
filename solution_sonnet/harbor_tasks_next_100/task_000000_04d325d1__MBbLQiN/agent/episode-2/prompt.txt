@@ -1,0 +1,97 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+root@eb0cd99bce13:/home/user/profilesvc# cat config.yaml
+port: 8080
+startup_timeout: 5s
+cache_warmup: true
+warmup_endpoint: "http://localhost:9999/warmup"
+db_pool_size: 10
+service_name: "profilesvc"
+root@eb0cd99bce13:/home/user/profilesvc# cat main.go
+package main
+
+import (
+        "fmt"
+        "log"
+        "net/http"
+        "os"
+        "time"
+
+        "gopkg.in/yaml.v3"
+
+        "profilesvc/internal/cache"
+        "profilesvc/internal/db"
+)
+
+type Config struct {
+        Port           int           `yaml:"port"`
+        StartupTimeout time.Duration `yaml:"startup_timeout"`
+        CacheWarmup    bool          `yaml:"cache_warmup"`
+        WarmupEndpoint string        `yaml:"warmup_endpoint"`
+        DBPoolSize     int           `yaml:"db_pool_size"`
+        ServiceName    string        `yaml:"service_name"`
+}
+
+func (c *Config) GetCacheWarmup() bool {
+        return c.CacheWarmup
+}
+
+func (c *Config) GetWarmupEndpoint() string {
+        return c.WarmupEndpoint
+}
+
+func (c *Config) GetStartupTimeout() time.Duration {
+        return c.StartupTimeout
+}
+
+func (c *Config) GetDBPoolSize() int {
+        return c.DBPoolSize
+}
+
+func loadConfig(path string) *Config {
+        data, err := os.ReadFile(path)
+        if err != nil {
+                log.Fatalf("failed to read config: %v", err)
+        }
+
+        var cfg Config
+        if err := yaml.Unmarshal(data, &cfg); err != nil {
+                log.Fatalf("failed to parse config: %v", err)
+        }
+
+        if cfg.Port == 0 {
+                cfg.Port = 8080
+        }
+
+        return &cfg
+}
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte("ok"))
+}
+
+func main() {
+        cfg := loadConfig("config.yaml")
+
+        log.Printf("starting %s initialization...", cfg.ServiceName)
+
+        if err := cache.Init(cfg); err != nil {
+                log.Printf("cache init failed: %v", err)
+        }
+
+        if err := db.Init(cfg); err != nil {
+                log.Fatalf("db init failed: %v", err)
+        }
+
+        http.HandleFunc("/health", healthHandler)
+
+        addr := fmt.Sprintf(":%d", cfg.Port)
+        log.Printf("starting server on %s", addr)
+        log.Fatal(http.ListenAndServe(addr, nil))
+}
+root@eb0cd99bce13:/home/user/profilesvc#

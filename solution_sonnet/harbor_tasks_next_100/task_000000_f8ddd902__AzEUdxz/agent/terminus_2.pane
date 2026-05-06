@@ -1,0 +1,162 @@
+[?2004hroot@6983e8e593e8:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@6983e8e593e8:/home/user# clear
+[?2004l[H[J[?2004hroot@6983e8e593e8:/home/user# cd /home/user/edge-gateway
+[?2004l[?2004hroot@6983e8e593e8:/home/user/edge-gateway# ls -la
+[?2004ltotal 20
+drwxrwxrwx 1 root root 4096 May  5 08:30 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 08:30 [34;42m..[0m
+-rwxrwxrwx 1 root root 1472 May  5 08:30 [01;32mgateway.py[0m
+drwxrwxrwx 2 root root 4096 May  5 08:30 [34;42mlogs[0m
+-rwxr-xr-x 1 root root  165 May  5 08:30 [01;32mstart.sh[0m
+[?2004hroot@6983e8e593e8:/home/user/edge-gateway# cat start.sh
+[?2004l#!/bin/bash
+cd /home/user/edge-gateway
+
+# Start mosquitto in background
+mosquitto -d
+
+# Wait for mosquitto to be ready
+sleep 1
+
+# Run the gateway
+python3 gateway.py
+[?2004hroot@6983e8e593e8:/home/user/edge-gateway# cat gateway.py
+[?2004limport asyncio
+from aiohttp import web
+import aiomqtt
+
+mqtt_client = None
+
+async def health_handler(request):
+    if mqtt_client and mqtt_client._client.is_connected():
+        return web.json_response({"status": "healthy", "mqtt": "connected"})
+    return web.json_response({"status": "degraded", "mqtt": "disconnected"}, status=503)
+
+async def sensor_handler(request):
+    data = await request.json()
+    if mqtt_client:
+        await mqtt_client.publish("sensors/data", str(data))
+    return web.json_response({"accepted": True})
+
+def create_app():
+    app = web.Application()
+    app.router.add_get('/health', health_handler)
+    app.router.add_post('/sensor', sensor_handler)
+    return app
+
+async def mqtt_loop():
+    global mqtt_client
+    async with aiomqtt.Client("localhost", 1883) as client:
+        mqtt_client = client
+        async for message in client.messages:
+            print(f"Received: {message.payload}")
+
+def main():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # Start MQTT in background
+    loop.create_task(mqtt_loop())
+
+    # Run HTTP server - THIS IS THE BUG
+    # web.run_app() creates its own event loop by default when called without loop=
+    # and blocks the current thread, never yielding to the mqtt_loop task
+    app = create_app()
+    web.run_app(app, host='0.0.0.0', port=8080, print=lambda x: open('/home/user/edge-gateway/logs/gateway.log', 'a').write(x + '\n'))
+
+if __name__ == '__main__':
+    main()
+[?2004hroot@6983e8e593e8:/home/user/edge-gateway# cat logs/gateway.log
+[?2004lcat: logs/gateway.log: No such file or directory
+[?2004hroot@6983e8e593e8:/home/user/edge-gateway# cat > gateway.py << 'EOF'
+[?2004l[?2004h> import asyncio
+[?2004l[?2004h> from aiohttp import web
+[?2004l[?2004h> import aiomqtt
+[?2004l[?2004h> 
+[?2004l[?2004h> mqtt_client = None
+[?2004l[?2004h> 
+[?2004l[?2004h> async def health_handler(request):
+[?2004l[?2004h>     if mqtt_client and mqtt_client._client.is_connected():
+[?2004l[?2004h>         return web.json_response({"status": "healthy", "mqtt": "connected"})
+[?2004l[?2004h>     return web.json_response({"status": "degraded", "mqtt": "disconnected"}, status=503)
+[?2004l[?2004h> 
+[?2004l[?2004h> async def sensor_handler(request):
+[?2004l[?2004h>     data = await request.json()
+[?2004l[?2004h>     if mqtt_client:
+[?2004l[?2004h>         await mqtt_client.publish("sensors/data", str(data))
+[?2004l[?2004h>     return web.json_response({"accepted": True})
+[?2004l[?2004h> 
+[?2004l[?2004h> def create_app():
+[?2004l[?2004h>     app = web.Application()
+[?2004l[?2004h>     app.router.add_get('/health', health_handler)
+[?2004l[?2004h>     app.router.add_post('/sensor', sensor_handler)
+[?2004l[?2004h>     return app
+[?2004l[?2004h> 
+[?2004l[?2004h> async def mqtt_loop():
+[?2004l[?2004h>     global mqtt_client
+[?2004l[?2004h>     async with aiomqtt.Client("localhost", 1883) as client:
+[?2004l[?2004h>         mqtt_client = client
+[?2004l[?2004h>         # Subscribe to a topic to keep the connection alive
+[?2004l[?2004h>         await client.subscribe("sensors/#")
+[?2004l[?2004h>         async for message in client.messages:
+[?2004l[?2004h>             print(f"Received: {message.payload}")
+[?2004l[?2004h> 
+[?2004l[?2004h> async def run_http_server(app):
+[?2004l[?2004h>     runner = web.AppRunner(app)
+[?2004l[?2004h>     await runner.setup()
+[?2004l[?2004h>     site = web.TCPSite(runner, '0.0.0.0', 8080)
+[?2004l[?2004h>     await site.start()
+[?2004l[?2004h>     print("HTTP server started on port 8080")
+[?2004l[?2004h>     # Keep running forever
+[?2004l[?2004h>     await asyncio.Event().wait()
+[?2004l[?2004h> 
+[?2004l[?2004h> async def main_async():
+[?2004l[?2004h>     app = create_app()
+[?2004l[?2004h>     # Run both HTTP server and MQTT loop concurrently
+[?2004l[?2004h>     await asyncio.gather(
+[?2004l[?2004h>         run_http_server(app),
+[?2004l[?2004h>         mqtt_loop()
+[?2004l[?2004h>     )
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     asyncio.run(main_async())
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == '__main__':
+[?2004l[?2004h>     main()
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@6983e8e593e8:/home/user/edge-gateway# ./start.sh &
+[?2004l[1] 513
+[?2004hroot@6983e8e593e8:/home/user/edge-gateway# HTTP server started on port 8080
+sleep 2
+[?2004l[?2004hroot@6983e8e593e8:/home/user/edge-gateway# curl -v localhost:8080/health
+[?2004l*   Trying 127.0.0.1:8080...
+* Connected to localhost (127.0.0.1) port 8080 (#0)
+> GET /health HTTP/1.1
+> Host: localhost:8080
+> User-Agent: curl/7.81.0
+> Accept: */*
+> 
+* Mark bundle as not supporting multiuse
+< HTTP/1.1 200 OK
+< Content-Type: application/json; charset=utf-8
+< Content-Length: 42
+< Date: Tue, 05 May 2026 08:31:31 GMT
+< Server: Python/3.10 aiohttp/3.13.5
+< 
+* Connection #0 to host localhost left intact
+{"status": "healthy", "mqtt": "connected"}[?2004hroot@6983e8e593e8:/home/user/edge-gateway# ps aux | grep mosquitto
+[?2004lmosquit+     515  0.0  0.0  15860  6072 ?        Ss   08:31   0:00 [01;31m[Kmosquitto[m[K -d
+root         552  0.0  0.0   3856  2156 pts/0    S+   08:31   0:00 grep --color=auto [01;31m[Kmosquitto[m[K
+[?2004hroot@6983e8e593e8:/home/user/edge-gateway# mosquitto_pub -h localhost -t sensors/test -m 'test message' &
+[?2004l[2] 560
+[?2004hroot@6983e8e593e8:/home/user/edge-gateway# Received: b'test message'
+curl -X POST localhost:8080/sensor -H 'Content-Type: application/json' -d '{"temperature": 22.5, "humidity": 45}'
+[?2004l{"accepted": true}Received: b"{'temperature': 22.5, 'humidity': 45}"
+[2]+  Done                    mosquitto_pub -h localhost -t sensors/test -m 'test message'
+[?2004hroot@6983e8e593e8:/home/user/edge-gateway# curl localhost:8080/health && echo ''
+[?2004l{"status": "healthy", "mqtt": "connected"}
+[?2004hroot@6983e8e593e8:/home/user/edge-gateway# echo 'Fix verified! The issue was that web.run_app() was creating its own event loop instead of using the one where mqtt_loop() was scheduled.'
+[?2004lFix verified! The issue was that web.run_app() was creating its own event loop instead of using the one where mqtt_loop() was scheduled.
+[?2004hroot@6983e8e593e8:/home/user/edge-gateway# Terminated

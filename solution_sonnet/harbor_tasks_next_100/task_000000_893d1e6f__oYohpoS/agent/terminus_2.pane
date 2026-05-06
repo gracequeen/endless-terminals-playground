@@ -1,0 +1,313 @@
+[?2004hroot@63cb3c0c3c07:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@63cb3c0c3c07:/home/user# clear
+[?2004l[H[J[?2004hroot@63cb3c0c3c07:/home/user# ls -la /home/user/
+[?2004ltotal 12
+drwxrwxrwx 1 root root 4096 May  5 19:01 [0m[34;42m.[0m
+drwxr-xr-x 1 root root 4096 May  5 19:01 [01;34m..[0m
+drwxrwxrwx 1 root root 4096 May  5 19:01 [34;42martifact-sync[0m
+[?2004hroot@63cb3c0c3c07:/home/user# ls -la /home/user/artifact-sync/
+[?2004ltotal 20
+drwxrwxrwx 1 root root 4096 May  5 19:01 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 19:01 [34;42m..[0m
+-rwxrwxrwx 1 root root  301 May  5 19:01 [01;32martifacts.txt[0m
+drwxrwxrwx 1 root root 4096 May  5 19:01 [34;42mcache[0m
+-rwxrwxrwx 1 root root 1599 May  5 19:01 [01;32msync.sh[0m
+[?2004hroot@63cb3c0c3c07:/home/user# ls -la /var/repo/maven/ | head -20
+[?2004ltotal 20
+drwxrwxrwx 1 root root 4096 May  5 19:01 .
+drwxrwxrwx 1 root root 4096 May  5 19:01 ..
+drwxrwxrwx 1 root root 4096 May  5 19:01 com
+drwxrwxrwx 1 root root 4096 May  5 19:01 net
+drwxrwxrwx 1 root root 4096 May  5 19:01 org
+[?2004hroot@63cb3c0c3c07:/home/user# cat /home/user/artifact-sync/sync.sh
+[?2004l#!/bin/bash
+#
+# Maven artifact sync script
+# Syncs artifacts from upstream to local repository
+#
+
+ARTIFACTS_FILE="/home/user/artifact-sync/artifacts.txt"
+CACHE_DIR="/home/user/artifact-sync/cache"
+REPO_DIR="/var/repo/maven"
+
+# Convert GAV coordinate to path
+# e.g., com.example:core:1.2.0 -> com/example/core/1.2.0/core-1.2.0.jar
+gav_to_path() {
+    local gav="$1"
+    local group=$(echo "$gav" | cut -d: -f1 | tr '.' '/')
+    local artifact=$(echo "$gav" | cut -d: -f2)
+    local version=$(echo "$gav" | cut -d: -f3)
+    echo "${group}/${artifact}/${version}/${artifact}-${version}.jar"
+}
+
+echo "Starting artifact sync at $(date)"
+echo "Reading artifacts from $ARTIFACTS_FILE"
+
+while IFS= read -r gav || [ -n "$gav" ]; do
+    # Skip empty lines and comments
+    [[ -z "$gav" || "$gav" =~ ^# ]] && continue
+
+    echo "Processing: $gav"
+
+    JAR_PATH=$(gav_to_path "$gav")
+    CACHED_FILE="${CACHE_DIR}/${JAR_PATH}"
+    REPO_FILE="${REPO_DIR}/${JAR_PATH}"
+    REPO_DIR_PATH=$(dirname "$REPO_FILE")
+
+    # Ensure repo directory exists
+    mkdir -p "$REPO_DIR_PATH"
+
+    # Check if cached file exists
+    if [ ! -f "$CACHED_FILE" ]; then
+        echo "  WARNING: Cache file not found: $CACHED_FILE"
+        continue
+    fi
+
+    # Compute SHA1 of cached file and write to repo
+    SHA1=$(sha1sum "$CACHED_FILE" | cut -d' ' -f1)
+    echo "$SHA1" > "${REPO_FILE}.sha1"
+    echo "  SHA1: $SHA1"
+
+    # Copy jar to repo (BUG: typo in variable name - CACHE_FILE vs CACHED_FILE)
+    cp "$CACHE_FILE" "$REPO_FILE"
+
+    echo "  Synced to: $REPO_FILE"
+
+done < "$ARTIFACTS_FILE"
+
+echo "Sync completed at $(date)"
+[?2004hroot@63cb3c0c3c07:/home/user# find /var/repo/maven -name '*.jar' -size 0 | head -20
+[?2004l/var/repo/maven/net/tools/parser/4.0.1/parser-4.0.1.jar
+/var/repo/maven/com/example/utils/3.1.0/utils-3.1.0.jar
+/var/repo/maven/com/example/core/1.2.0/core-1.2.0.jar
+/var/repo/maven/org/internal/config/1.5.2/config-1.5.2.jar
+/var/repo/maven/org/internal/logging/2.0.0/logging-2.0.0.jar
+[?2004hroot@63cb3c0c3c07:/home/user# find /var/repo/maven -name '*.jar' -size 0 | wc -l
+[?2004l5
+[?2004hroot@63cb3c0c3c07:/home/user# ls -lh /home/user/artifact-sync/cache/com/example/core/1.2.0/
+[?2004ltotal 76K
+-rwxrwxrwx 1 root root 75K May  5 19:01 [0m[01;32mcore-1.2.0.jar[0m
+[?2004hroot@63cb3c0c3c07:/home/user# find /var/repo/maven -name '*.jar' -size 0
+[?2004l/var/repo/maven/net/tools/parser/4.0.1/parser-4.0.1.jar
+/var/repo/maven/com/example/utils/3.1.0/utils-3.1.0.jar
+/var/repo/maven/com/example/core/1.2.0/core-1.2.0.jar
+/var/repo/maven/org/internal/config/1.5.2/config-1.5.2.jar
+/var/repo/maven/org/internal/logging/2.0.0/logging-2.0.0.jar
+[?2004hroot@63cb3c0c3c07:/home/user# cat /home/user/artifact-sync/artifacts.txt
+[?2004lcom.example:core:1.2.0
+com.example:utils:3.1.0
+com.example:web:2.0.0
+com.example:data:1.0.0
+org.internal:logging:2.0.0
+org.internal:config:1.5.2
+org.internal:security:3.0.0
+org.internal:metrics:1.1.0
+net.tools:parser:4.0.1
+net.tools:validator:2.2.0
+net.tools:formatter:1.3.0
+net.tools:converter:3.5.0
+[?2004hroot@63cb3c0c3c07:/home/user# cat > /tmp/fix_jars.sh << 'EOF'
+[?2004l[?2004h> #!/bin/bash
+[?2004l[?2004h> 
+[?2004l[?2004h> CACHE_DIR="/home/user/artifact-sync/cache"
+[?2004l[?2004h> REPO_DIR="/var/repo/maven"
+[?2004l[?2004h> 
+[?2004l[?2004h> echo "Finding and fixing zero-byte JAR files..."
+[?2004l[?2004h> echo ""
+[?2004l[?2004h> 
+[?2004l[?2004h> find "$REPO_DIR" -name '*.jar' -size 0 | while read -r jar_file; do
+[?2004l[?2004h>     echo "Processing: $jar_file"
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Get relative path from repo
+[?2004l[?2004h>     rel_path="${jar_file#$REPO_DIR/}"
+[?2004l[?2004h>     cache_file="${CACHE_DIR}/${rel_path}"
+[?2004l[?2004h>     sha1_file="${jar_file}.sha1"
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Check if cache file exists
+[?2004l[?2004h>     if [ ! -f "$cache_file" ]; then
+[?2004l[?2004h>         echo "  ERROR: Cache file not found: $cache_file"
+[?2004l[?2004h>         continue
+[?2004l[?2004h>     fi
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Check if sha1 file exists
+[?2004l[?2004h>     if [ ! -f "$sha1_file" ]; then
+[?2004l[?2004h>         echo "  ERROR: SHA1 file not found: $sha1_file"
+[?2004l[?2004h>         continue
+[?2004l[?2004h>     fi
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Copy from cache
+[?2004l[?2004h>     cp "$cache_file" "$jar_file"
+[?2004l[?2004h>     echo "  Copied from cache ($(stat -c%s "$jar_file") bytes)"
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Verify SHA1
+[?2004l[?2004h>     expected_sha1=$(cat "$sha1_file" | tr -d '[:space:]')
+[?2004l[?2004h>     actual_sha1=$(sha1sum "$jar_file" | cut -d' ' -f1)
+[?2004l[?2004h>     
+[?2004l[?2004h>     if [ "$expected_sha1" = "$actual_sha1" ]; then
+[?2004l[?2004h>         echo "  ✓ SHA1 verified: $actual_sha1"
+[?2004l[?2004h>     else
+[?2004l[?2004h>         echo "  ✗ SHA1 MISMATCH!"
+[?2004l[?2004h>         echo "    Expected: $expected_sha1"
+[?2004l[?2004h>         echo "    Actual:   $actual_sha1"
+[?2004l[?2004h>     fi
+[?2004l[?2004h>     echo ""
+[?2004l[?2004h> done
+[?2004l[?2004h> 
+[?2004l[?2004h> echo "Verification complete. Checking for remaining zero-byte JARs..."
+[?2004l[?2004h> zero_count=$(find "$REPO_DIR" -name '*.jar' -size 0 | wc -l)
+[?2004l[?2004h> echo "Zero-byte JARs remaining: $zero_count"
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@63cb3c0c3c07:/home/user# chmod +x /tmp/fix_jars.sh
+[?2004l[?2004hroot@63cb3c0c3c07:/home/user# /tmp/fix_jars.sh
+[?2004lFinding and fixing zero-byte JAR files...
+
+Processing: /var/repo/maven/net/tools/parser/4.0.1/parser-4.0.1.jar
+  Copied from cache (184320 bytes)
+  ✓ SHA1 verified: 224b918ebd008e2e90dd8c8df4cb8ba48680dfbc
+
+Processing: /var/repo/maven/com/example/utils/3.1.0/utils-3.1.0.jar
+  Copied from cache (122880 bytes)
+  ✓ SHA1 verified: f3d1630b0b79702e54a931ff43e6f2fd28cb115f
+
+Processing: /var/repo/maven/com/example/core/1.2.0/core-1.2.0.jar
+  Copied from cache (76800 bytes)
+  ✓ SHA1 verified: faf7dc7eb43c521f3d73578c729b048211f470af
+
+Processing: /var/repo/maven/org/internal/config/1.5.2/config-1.5.2.jar
+  Copied from cache (81920 bytes)
+  ✓ SHA1 verified: d05013c6dfe8f2e116a1b04c9e64b70d00e1e246
+
+Processing: /var/repo/maven/org/internal/logging/2.0.0/logging-2.0.0.jar
+  Copied from cache (153600 bytes)
+  ✓ SHA1 verified: 92bbcab45c7245de7db34cc1917e23ebbaeb5251
+
+Verification complete. Checking for remaining zero-byte JARs...
+Zero-byte JARs remaining: 0
+[?2004hroot@63cb3c0c3c07:/home/user# echo "=== Final Repository Verification ==="
+[?2004l=== Final Repository Verification ===
+[?2004hroot@63cb3c0c3c07:/home/user# echo "Total JAR files: $(find /var/repo/maven -name '*.jar' | wc -l)"
+[?2004lTotal JAR files: 12
+[?2004hroot@63cb3c0c3c07:/home/user# echo "Zero-byte JARs: $(find /var/repo/maven -name '*.jar' -size 0 | wc -l)"
+[?2004lZero-byte JARs: 0
+[?2004hroot@63cb3c0c3c07:/home/user# echo "JARs with SHA1 files: $(find /var/repo/maven -name '*.jar.sha1' | wc -l)"
+[?2004lJARs with SHA1 files: 12
+[?2004hroot@63cb3c0c3c07:/home/user# echo ""
+[?2004l
+[?2004hroot@63cb3c0c3c07:/home/user# echo "Verifying all JARs match their SHA1 checksums..."
+[?2004lVerifying all JARs match their SHA1 checksums...
+[?2004hroot@63cb3c0c3c07:/home/user# cat > /tmp/verify_all.sh << 'EOF'
+[?2004l[?2004h> #!/bin/bash
+[?2004l[?2004h> 
+[?2004l[?2004h> REPO_DIR="/var/repo/maven"
+[?2004l[?2004h> mismatch_count=0
+[?2004l[?2004h> verified_count=0
+[?2004l[?2004h> 
+[?2004l[?2004h> find "$REPO_DIR" -name '*.jar' | while read -r jar_file; do
+[?2004l[?2004h>     sha1_file="${jar_file}.sha1"
+[?2004l[?2004h>     
+[?2004l[?2004h>     if [ ! -f "$sha1_file" ]; then
+[?2004l[?2004h>         echo "ERROR: Missing SHA1 file for $jar_file"
+[?2004l[?2004h>         mismatch_count=$((mismatch_count + 1))
+[?2004l[?2004h>         continue
+[?2004l[?2004h>     fi
+[?2004l[?2004h>     
+[?2004l[?2004h>     expected_sha1=$(cat "$sha1_file" | tr -d '[:space:]')
+[?2004l[?2004h>     actual_sha1=$(sha1sum "$jar_file" | cut -d' ' -f1)
+[?2004l[?2004h>     
+[?2004l[?2004h>     if [ "$expected_sha1" = "$actual_sha1" ]; then
+[?2004l[?2004h>         verified_count=$((verified_count + 1))
+[?2004l[?2004h>     else
+[?2004l[?2004h>         echo "MISMATCH: $jar_file"
+[?2004l[?2004h>         echo "  Expected: $expected_sha1"
+[?2004l[?2004h>         echo "  Actual:   $actual_sha1"
+[?2004l[?2004h>         mismatch_count=$((mismatch_count + 1))
+[?2004l[?2004h>     fi
+[?2004l[?2004h> done
+[?2004l[?2004h> 
+[?2004l[?2004h> echo "Verification complete."
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@63cb3c0c3c07:/home/user# chmod +x /tmp/verify_all.sh && /tmp/verify_all.sh
+[?2004lVerification complete.
+[?2004hroot@63cb3c0c3c07:/home/user# find /var/repo/maven -name '*.jar' -exec bash -c 'expected=$(cat "$1.sha1" 2>/dev/null | tr -d "[:space:]"); actual=$(sha1sum "$1" 2>/dev/null | cut -d"" -f1); if [ "$expected" != "$actual" ]; then echo "MISMATCH: $1"; fi' _ {} \;
+[?2004lcut: the delimiter must be a single character
+Try 'cut --help' for more information.
+MISMATCH: /var/repo/maven/net/tools/converter/3.5.0/converter-3.5.0.jar
+cut: the delimiter must be a single character
+Try 'cut --help' for more information.
+MISMATCH: /var/repo/maven/net/tools/formatter/1.3.0/formatter-1.3.0.jar
+cut: the delimiter must be a single character
+Try 'cut --help' for more information.
+MISMATCH: /var/repo/maven/net/tools/validator/2.2.0/validator-2.2.0.jar
+cut: the delimiter must be a single character
+Try 'cut --help' for more information.
+MISMATCH: /var/repo/maven/net/tools/parser/4.0.1/parser-4.0.1.jar
+cut: the delimiter must be a single character
+Try 'cut --help' for more information.
+MISMATCH: /var/repo/maven/com/example/web/2.0.0/web-2.0.0.jar
+cut: the delimiter must be a single character
+Try 'cut --help' for more information.
+MISMATCH: /var/repo/maven/com/example/utils/3.1.0/utils-3.1.0.jar
+cut: the delimiter must be a single character
+Try 'cut --help' for more information.
+MISMATCH: /var/repo/maven/com/example/data/1.0.0/data-1.0.0.jar
+cut: the delimiter must be a single character
+Try 'cut --help' for more information.
+MISMATCH: /var/repo/maven/com/example/core/1.2.0/core-1.2.0.jar
+cut: the delimiter must be a single character
+Try 'cut --help' for more information.
+MISMATCH: /var/repo/maven/org/internal/config/1.5.2/config-1.5.2.jar
+cut: the delimiter must be a single character
+Try 'cut --help' for more information.
+MISMATCH: /var/repo/maven/org/internal/logging/2.0.0/logging-2.0.0.jar
+cut: the delimiter must be a single character
+Try 'cut --help' for more information.
+MISMATCH: /var/repo/maven/org/internal/metrics/1.1.0/metrics-1.1.0.jar
+cut: the delimiter must be a single character
+Try 'cut --help' for more information.
+MISMATCH: /var/repo/maven/org/internal/security/3.0.0/security-3.0.0.jar
+[?2004hroot@63cb3c0c3c07:/home/user# for jar in $(find /var/repo/maven -name '*.jar'); do expected=$(cat "${jar}.sha1" | tr -d '[:space:]'); actual=$(sha1sum "$jar" | cut -d' ' -f1); if [ "$expected" != "$actual" ]; then echo "MISMATCH: $jar"; fi; done
+[?2004l[?2004hroot@63cb3c0c3c07:/home/user# echo "All JARs verified successfully!"
+[?2004lAll JARs verified successfully!
+[?2004hroot@63cb3c0c3c07:/home/user# cp /home/user/artifact-sync/sync.sh /home/user/artifact-sync/sync.sh.backup
+[?2004l[?2004hroot@63cb3c0c3c07:/home/user# sed -i 's/cp "$CACHE_FILE"/cp "$CACHED_FILE"/' /home/user/artifact-sync/sync.sh
+[?2004l[?2004hroot@63cb3c0c3c07:/home/user# echo "=== Verifying the fix ==="
+[?2004l=== Verifying the fix ===
+[?2004hroot@63cb3c0c3c07:/home/user# grep -n 'cp "$CACHED_FILE"' /home/user/artifact-sync/sync.sh
+[?2004l[32m[K50[m[K[36m[K:[m[K    [01;31m[Kcp "$CACHED_FILE"[m[K "$REPO_FILE"
+[?2004hroot@63cb3c0c3c07:/home/user# echo ""
+[?2004l
+[?2004hroot@63cb3c0c3c07:/home/user# echo "=== Summary ==="
+[?2004l=== Summary ===
+[?2004hroot@63cb3c0c3c07:/home/user# echo "✓ Fixed 5 zero-byte JAR files by copying from cache"
+[?2004l✓ Fixed 5 zero-byte JAR files by copying from cache
+[?2004hroot@63cb3c0c3c07:/home/user# echo "✓ Verified all 12 JARs match their SHA1 checksums"
+[?2004l✓ Verified all 12 JARs match their SHA1 checksums
+[?2004hroot@63cb3c0c3c07:/home/user# echo "✓ Fixed bug in sync.sh (CACHE_FILE -> CACHED_FILE)"
+[?2004l✓ Fixed bug in sync.sh (CACHE_FILE -> CACHED_FILE)
+[?2004hroot@63cb3c0c3c07:/home/user# echo "✓ Repository is now in a consistent state"
+[?2004l✓ Repository is now in a consistent state
+[?2004hroot@63cb3c0c3c07:/home/user# echo "=== Final Status Check ==="
+[?2004l=== Final Status Check ===
+[?2004hroot@63cb3c0c3c07:/home/user# echo "Repository: /var/repo/maven"
+[?2004lRepository: /var/repo/maven
+[?2004hroot@63cb3c0c3c07:/home/user# echo "Total artifacts: $(find /var/repo/maven -name '*.jar' | wc -l)"
+[?2004lTotal artifacts: 12
+[?2004hroot@63cb3c0c3c07:/home/user# echo "Zero-byte artifacts: $(find /var/repo/maven -name '*.jar' -size 0 | wc -l)"
+[?2004lZero-byte artifacts: 0
+[?2004hroot@63cb3c0c3c07:/home/user# echo "SHA1 files: $(find /var/repo/maven -name '*.jar.sha1' | wc -l)"
+[?2004lSHA1 files: 12
+[?2004hroot@63cb3c0c3c07:/home/user# echo ""
+[?2004l
+[?2004hroot@63cb3c0c3c07:/home/user# echo "Sync script status:"
+[?2004lSync script status:
+[?2004hroot@63cb3c0c3c07:/home/user# echo "  Original backed up to: sync.sh.backup"
+[?2004l  Original backed up to: sync.sh.backup
+[?2004hroot@63cb3c0c3c07:/home/user# echo "  Bug fixed on line 50: cp \"\$CACHED_FILE\" -> cp \"\$CACHED_FILE\""
+[?2004l  Bug fixed on line 50: cp "$CACHED_FILE" -> cp "$CACHED_FILE"
+[?2004hroot@63cb3c0c3c07:/home/user# echo ""
+[?2004l
+[?2004hroot@63cb3c0c3c07:/home/user# echo "✅ Task complete: Maven repository is consistent and ready for use."
+[?2004l✅ Task complete: Maven repository is consistent and ready for use.
+[?2004hroot@63cb3c0c3c07:/home/user# 

@@ -1,0 +1,21 @@
+```json
+{
+  "analysis": "The check scripts look fine - they're simple and fast. The main culprit is definitely the 40-health.conf file with its 50 curl requests. I need to fix this by removing the pre-warming loop while keeping the health check configuration variables that might be used elsewhere.",
+  "plan": "I'll create a backup of the original 40-health.conf file, then edit it to remove the slow pre-warming loop. I'll keep the configuration variables (HEALTH_CHECK_ENABLED, HEALTH_TIMEOUT, HEALTH_ENDPOINTS, HEALTH_STATUS) but remove the for loop that makes 50 curl requests.",
+  "commands": [
+    {
+      "keystrokes": "cp conf.d/40-health.conf conf.d/40-health.conf.backup\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "cat > conf.d/40-health.conf << 'EOF'\n# Health check configuration - added last sprint\nHEALTH_CHECK_ENABLED=true\nHEALTH_TIMEOUT=2\n\n# Build list of health endpoints for all service ports\nHEALTH_ENDPOINTS=$(for i in $(seq 1 50); do echo \"http://localhost:808$i/health\"; done)\n\n# Pre-warming removed - was causing 90+ second delay during config load\n# Health checks should be performed during actual deployment if needed, not at config load time\n\nHEALTH_STATUS=\"initialized\"\nEOF\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "cat conf.d/40-health.conf\n",
+      "duration": 0.1
+    }
+  ],
+  "task_complete": false
+}
+```

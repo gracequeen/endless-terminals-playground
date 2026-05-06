@@ -1,0 +1,105 @@
+[?2004huser@a668cc300a05:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004huser@a668cc300a05:~$ clear
+[?2004l[H[J[?2004huser@a668cc300a05:~$ cd /home/user/pentest
+[?2004l[?2004huser@a668cc300a05:~/pentest$ ls -la
+[?2004ltotal 12
+drwxrwxrwx 1 user user 4096 May  5 05:03 .
+drwxrwxrwx 1 user user 4096 May  5 05:04 ..
+-rw-r--r-- 1 user user  468 May  5 05:03 target_iptables.txt
+[?2004huser@a668cc300a05:~/pentest$ cat target_iptables.txt
+[?2004l*filter
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -p tcp --dport 22 -j ACCEPT
+-A INPUT -p tcp --dport 80 -m string --string "Mozilla" --algo bm -j ACCEPT
+-A INPUT -p tcp --dport 443 -m string --string "Mozilla" --algo bm -j ACCEPT
+-A INPUT -p tcp --dport 80 -j DROP
+-A INPUT -p tcp --dport 443 -j DROP
+-A INPUT -p icmp --icmp-type echo-request -j ACCEPT
+COMMIT
+[?2004huser@a668cc300a05:~/pentest$ cat > finding.txt << 'EOF'
+[?2004lPT for all TCP traffic to port 22, regardless of packet content
+- HTTP/HTTPS (ports 80/443): Rules 4-7 implement conditional acceptance based on string matching, with explicit DROP rules as fallback
+
+ADDITIONAL ISSUES:
+1. String matching on packet payloads in iptables is unreliable - it only inspects the first packet and can miss data in subsequent packets
+2. This approach doesn't actually provide security - attackers can easily add "Mozilla" to their User-Agent
+3. The ESTABLISHED,RELATED rule (rule 2) won't help initial connections that fail the string match
+
+RECOMMENDATION:
+The string-matching rules should be removed entirely. If the goal is to restrict HTTP access, consider:
+- Using application-layer filtering (e.g., mod_security, WAF)
+- Implementing proper authentication at the application level
+- Using source IP whitelisting if only specific clients need access
+- If user-agent filtering is truly needed, implement it in the web server configuration, not iptables
+EOF
+[?2004h> FINDING: HTTP/HTTPS Traffic Blocked by Overly Restrictive iptables Rules
+[?2004l[?2004h> 
+[?2004l[?2004h> AFFECTED RULES:
+[?2004l[?2004h> - Rule 4: -A INPUT -p tcp --dport 80 -m string --string "Mozilla" --algo bm -j ACCEPT
+[?2004l[?2004h> - Rule 5: -A INPUT -p tcp --dport 443 -m string --string "Mozilla" --algo bm -j ACCEPT
+[?2004l[?2004h> - Rule 6: -A INPUT -p tcp --dport 80 -j DROP
+[?2004l[?2004h> - Rule 7: -A INPUT -p tcp --dport 443 -j DROP
+[?2004l[?2004h> 
+[?2004l[?2004h> ROOT CAUSE:
+[?2004l[?2004h> The firewall is configured to only accept HTTP/HTTPS traffic if the packet payload contains the string "Mozilla". This appears to be an attempt at user-agent filtering to block non-browser traffic. However, this blocks legitimate HTTP clients like curl, wget, and automated tools that don't use "Mozilla" in their User-Agent headers.
+[?2004l[?2004h> 
+[?2004l[?2004h> When curl attempts to connect from 10.0.0.5, it sends a User-Agent like "curl/7.x.x" which doesn't contain "Mozilla", so the traffic doesn't match rule 4 or 5, falls through to rules 6 or 7, and gets DROP
+[?2004l[?2004h> 
+[?2004l[?2004h> ped.
+[?2004l[?2004h> 
+[?2004l[?2004h> WHY SSH WORKS BUT HTTP DOESN'T:
+[?2004l[?2004h> - SSH (port 22): Rule 3 provides unconditional ACCEPT for all TCP traffic to port 22, regardless of packet content
+[?2004l[?2004h> - HTTP/HTTPS (ports 80/443): Rules 4-7 implement conditional acceptance based on string matching, with explicit DROP rules as fallback
+[?2004l[?2004h> 
+[?2004l[?2004h> ADDITIONAL ISSUES:
+[?2004l[?2004h> 1. String matching on packet payloads in iptables is unreliable - it only inspects the first packet and can miss data in subsequent packets
+[?2004l[?2004h> 2. This approach doesn't actually provide security - attackers can easily add "Mozilla" to their User-Agent
+[?2004l[?2004h> 3. The ESTABLISHED,RELATED rule (rule 2) won't help initial connections that fail the string match
+[?2004l[?2004h> 
+[?2004l[?2004h> RECOMMENDATION:
+[?2004l[?2004h> The string-matching rules should be removed entirely. If the goal is to restrict HTTP access, consider:
+[?2004l[?2004h> - Using application-layer filtering (e.g., mod_security, WAF)
+[?2004l[?2004h> - Implementing proper authentication at the application level
+[?2004l[?2004h> - Using source IP whitelisting if only specific clients need access
+[?2004l[?2004h> - If user-agent filtering is truly needed, implement it in the web server configuration, not iptables
+[?2004l[?2004h> EOF
+[?2004l[?2004huser@a668cc300a05:~/pentest$ cat finding.txt
+[?2004lFINDING: HTTP/HTTPS Traffic Blocked by Overly Restrictive iptables Rules
+
+AFFECTED RULES:
+- Rule 4: -A INPUT -p tcp --dport 80 -m string --string "Mozilla" --algo bm -j ACCEPT
+- Rule 5: -A INPUT -p tcp --dport 443 -m string --string "Mozilla" --algo bm -j ACCEPT
+- Rule 6: -A INPUT -p tcp --dport 80 -j DROP
+- Rule 7: -A INPUT -p tcp --dport 443 -j DROP
+
+ROOT CAUSE:
+The firewall is configured to only accept HTTP/HTTPS traffic if the packet payload contains the string "Mozilla". This appears to be an attempt at user-agent filtering to block non-browser traffic. However, this blocks legitimate HTTP clients like curl, wget, and automated tools that don't use "Mozilla" in their User-Agent headers.
+
+When curl attempts to connect from 10.0.0.5, it sends a User-Agent like "curl/7.x.x" which doesn't contain "Mozilla", so the traffic doesn't match rule 4 or 5, falls through to rules 6 or 7, and gets DROP
+
+ped.
+
+WHY SSH WORKS BUT HTTP DOESN'T:
+- SSH (port 22): Rule 3 provides unconditional ACCEPT for all TCP traffic to port 22, regardless of packet content
+- HTTP/HTTPS (ports 80/443): Rules 4-7 implement conditional acceptance based on string matching, with explicit DROP rules as fallback
+
+ADDITIONAL ISSUES:
+1. String matching on packet payloads in iptables is unreliable - it only inspects the first packet and can miss data in subsequent packets
+2. This approach doesn't actually provide security - attackers can easily add "Mozilla" to their User-Agent
+3. The ESTABLISHED,RELATED rule (rule 2) won't help initial connections that fail the string match
+
+RECOMMENDATION:
+The string-matching rules should be removed entirely. If the goal is to restrict HTTP access, consider:
+- Using application-layer filtering (e.g., mod_security, WAF)
+- Implementing proper authentication at the application level
+- Using source IP whitelisting if only specific clients need access
+- If user-agent filtering is truly needed, implement it in the web server configuration, not iptables
+[?2004huser@a668cc300a05:~/pentest$ ls -lh finding.txt
+[?2004l-rw-r--r-- 1 user user 2.0K May  5 05:05 finding.txt
+[?2004huser@a668cc300a05:~/pentest$ 

@@ -1,0 +1,70 @@
+New Terminal Output:
+
+user@1588c03b0353:~/perf$ cat > FIX_SUMMARY.txt << 'EOF'
+> BUG FIX SUMMARY - filter_logs.py
+> =================================
+>
+> Problem:
+> --------
+> The script was flagging ~4000 requests as slow when only ~200 were actually slow.
+>
+> Root Cause:
+> -----------
+> The regex pattern 'response_time=(\d+)ms' was matching 'upstream_response_time=XXXms'
+> because it didn't prevent substring matches. The pattern matched the substring
+> 'response_time=XXXms' within 'upstream_response_time=XXXms'.
+>
+> Additionally, the production logs use TWO formats:
+> 1. response_time=XXXms (with ms suffix)
+> 2. response_time_ms=XXX (without ms suffix)
+>
+> The original pattern only handled format #1.
+>
+> Solution:
+> ---------
+> Updated the regex patterns to:
+> 1. Use negative lookbehind: (?<!upstream_)response_time=(\d+)ms
+> 2. Handle both formats with two patterns
+> 3. This prevents matching upstream_response_time while catching both formats
+>
+> Results:
+> --------
+> Before: 1325 requests flagged (mostly false positives from upstream times)
+> After: 187 requests flagged (actual slow requests >500ms)
+>
+> Backup saved to: filter_logs.py.bak
+> EOF
+user@1588c03b0353:~/perf$ cat FIX_SUMMARY.txt
+BUG FIX SUMMARY - filter_logs.py
+=================================
+
+Problem:
+--------
+The script was flagging ~4000 requests as slow when only ~200 were actually slow.
+
+Root Cause:
+-----------
+The regex pattern 'response_time=(\d+)ms' was matching 'upstream_response_time=XXXms'
+because it didn't prevent substring matches. The pattern matched the substring
+'response_time=XXXms' within 'upstream_response_time=XXXms'.
+
+Additionally, the production logs use TWO formats:
+1. response_time=XXXms (with ms suffix)
+2. response_time_ms=XXX (without ms suffix)
+
+The original pattern only handled format #1.
+
+Solution:
+---------
+Updated the regex patterns to:
+1. Use negative lookbehind: (?<!upstream_)response_time=(\d+)ms
+2. Handle both formats with two patterns
+3. This prevents matching upstream_response_time while catching both formats
+
+Results:
+--------
+Before: 1325 requests flagged (mostly false positives from upstream times)
+After: 187 requests flagged (actual slow requests >500ms)
+
+Backup saved to: filter_logs.py.bak
+user@1588c03b0353:~/perf$

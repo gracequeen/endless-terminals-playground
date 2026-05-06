@@ -1,0 +1,291 @@
+[?2004hroot@19a0c3bd0a35:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@19a0c3bd0a35:/home/user# clear
+[?2004l[H[J[?2004hroot@19a0c3bd0a35:/home/user# cd /home/user/reports
+[?2004l[?2004hroot@19a0c3bd0a35:/home/user/reports# ls -la
+[?2004ltotal 28
+drwxrwxrwx 1 root root 4096 May  5 18:01 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 18:01 [34;42m..[0m
+-rwxrwxrwx 1 root root 1302 May  5 18:01 [01;32maggregate.py[0m
+-rwxrwxrwx 1 root root  768 May  5 18:01 [01;32mclean.py[0m
+drwxrwxrwx 1 root root 4096 May  5 18:01 [34;42mcleaned[0m
+drwxrwxrwx 1 root root 4096 May  5 18:01 [34;42mfinal[0m
+drwxrwxrwx 1 root root 4096 May  5 18:01 [34;42mraw[0m
+[?2004hroot@19a0c3bd0a35:/home/user/reports# ls -la raw/
+[?2004ltotal 20
+drwxrwxrwx 1 root root 4096 May  5 18:01 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 18:01 [34;42m..[0m
+-rwxrwxrwx 1 root root   84 May  5 18:01 [01;32minventory.csv[0m
+-rwxrwxrwx 1 root root   84 May  5 18:01 [01;32msales_q1.csv[0m
+-rwxrwxrwx 1 root root   84 May  5 18:01 [01;32msales_q2.csv[0m
+[?2004hroot@19a0c3bd0a35:/home/user/reports# cat clean.py
+[?2004l#!/usr/bin/env python3
+"""
+Clean a CSV file by stripping whitespace from headers.
+Usage: python clean.py <input_path> <output_path>
+"""
+import sys
+import csv
+
+def main():
+    if len(sys.argv) != 3:
+        print("Usage: python clean.py <input_path> <output_path>", file=sys.stderr)
+        sys.exit(1)
+
+    input_path = sys.argv[1]
+    output_path = sys.argv[2]
+
+    with open(input_path, 'r', newline='') as infile:
+        reader = csv.reader(infile)
+        rows = list(reader)
+
+    if rows:
+        # Strip whitespace from headers (first row)
+        rows[0] = [header.strip() for header in rows[0]]
+
+    with open(output_path, 'w', newline='') as outfile:
+        writer = csv.writer(outfile)
+        writer.writerows(rows)
+
+if __name__ == "__main__":
+    main()
+[?2004hroot@19a0c3bd0a35:/home/user/reports# cat aggregate.py
+[?2004l#!/usr/bin/env python3
+"""
+Aggregate all CSV files in cleaned/ directory and write to final/summary.csv.
+Usage: python aggregate.py
+"""
+import os
+import csv
+import glob
+
+def main():
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    cleaned_dir = os.path.join(script_dir, 'cleaned')
+    final_dir = os.path.join(script_dir, 'final')
+    output_path = os.path.join(final_dir, 'summary.csv')
+
+    csv_files = sorted(glob.glob(os.path.join(cleaned_dir, '*.csv')))
+
+    if not csv_files:
+        print("No CSV files found in cleaned/")
+        return
+
+    all_rows = []
+    headers = None
+
+    for csv_file in csv_files:
+        with open(csv_file, 'r', newline='') as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+            if rows:
+                if headers is None:
+                    headers = rows[0]
+                    all_rows.append(headers)
+                # Add data rows (skip header if we already have one)
+                for row in rows[1:]:
+                    all_rows.append(row)
+
+    os.makedirs(final_dir, exist_ok=True)
+
+    with open(output_path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerows(all_rows)
+
+    print(f"Aggregated {len(csv_files)} files into {output_path}")
+
+if __name__ == "__main__":
+    main()
+[?2004hroot@19a0c3bd0a35:/home/user/reports# cat > Makefile << 'EOF'
+[?2004l[?2004h> # Data pipeline Makefile
+[?2004l[?2004h> # Cleans CSV files from raw/ and aggregates them into final/summary.csv
+[?2004l[?2004h> 
+[?2004l[?2004h> # Source CSV files in raw/
+[?2004l[?2004h> RAW_CSVS := $(wildcard raw/*.csv)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Target cleaned CSV files in cleaned/
+[?2004l[?2004h> CLEANED_CSVS := $(patsubst raw/%.csv,cleaned/%.csv,$(RAW_CSVS))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Default target
+[?2004l[?2004h> all: final/summary.csv
+[?2004l[?2004h> 
+[?2004l[?2004h> # Rule to clean individual CSV files
+[?2004l[?2004h> cleaned/%.csv: raw/%.csv clean.py
+[?2004l[?2004h> @mkdir -p cleaned
+[?2004l[?2004h> python3 clean.py $< $@
+[?2004l[?2004h> @echo "Cleaned $< -> $@"
+[?2004l[?2004h> 
+[?2004l[?2004h> # Rule to aggregate all cleaned files
+[?2004l[?2004h> final/summary.csv: $(CLEANED_CSVS) aggregate.py
+[?2004l[?2004h> @mkdir -p final
+[?2004l[?2004h> python3 aggregate.py
+[?2004l[?2004h> 
+[?2004l[?2004h> # Clean up generated files
+[?2004l[?2004h> clean:
+[?2004l[?2004h> rm -f cleaned/*.csv final/summary.csv
+[?2004l[?2004h> @echo "Cleaned up generated files"
+[?2004l[?2004h> 
+[?2004l[?2004h> .PHONY: all clean
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@19a0c3bd0a35:/home/user/reports# cat Makefile
+[?2004l# Data pipeline Makefile
+# Cleans CSV files from raw/ and aggregates them into final/summary.csv
+
+# Source CSV files in raw/
+RAW_CSVS := $(wildcard raw/*.csv)
+
+# Target cleaned CSV files in cleaned/
+CLEANED_CSVS := $(patsubst raw/%.csv,cleaned/%.csv,$(RAW_CSVS))
+
+# Default target
+all: final/summary.csv
+
+# Rule to clean individual CSV files
+cleaned/%.csv: raw/%.csv clean.py
+@mkdir -p cleaned
+python3 clean.py $< $@
+@echo "Cleaned $< -> $@"
+
+# Rule to aggregate all cleaned files
+final/summary.csv: $(CLEANED_CSVS) aggregate.py
+@mkdir -p final
+python3 aggregate.py
+
+# Clean up generated files
+clean:
+rm -f cleaned/*.csv final/summary.csv
+@echo "Cleaned up generated files"
+
+.PHONY: all clean
+[?2004hroot@19a0c3bd0a35:/home/user/reports# make
+[?2004lMakefile:15: *** missing separator.  Stop.
+[?2004hroot@19a0c3bd0a35:/home/user/reports# ls -la cleaned/
+[?2004ltotal 8
+drwxrwxrwx 1 root root 4096 May  5 18:01 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 18:02 [34;42m..[0m
+[?2004hroot@19a0c3bd0a35:/home/user/reports# ls -la final/
+[?2004ltotal 8
+drwxrwxrwx 1 root root 4096 May  5 18:01 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 18:02 [34;42m..[0m
+[?2004hroot@19a0c3bd0a35:/home/user/reports# rm Makefile
+[?2004l[?2004hroot@19a0c3bd0a35:/home/user/reports# cat > Makefile << 'EOF'
+[?2004l[?2004h> # Data pipeline Makefile
+[?2004l[?2004h> # Cleans CSV files from raw/ and aggregates them into final/summary.csv
+[?2004l[?2004h> 
+[?2004l[?2004h> # Source CSV files in raw/
+[?2004l[?2004h> RAW_CSVS := $(wildcard raw/*.csv)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Target cleaned CSV files in cleaned/
+[?2004l[?2004h> CLEANED_CSVS := $(patsubst raw/%.csv,cleaned/%.csv,$(RAW_CSVS))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Default target
+[?2004l[?2004h> all: final/summary.csv
+[?2004l[?2004h> 
+[?2004l[?2004h> # Rule to clean individual CSV files
+[?2004l[?2004h> cleaned/%.csv: raw/%.csv clean.py
+[?2004l[?2004h> @mkdir -p cleaned
+[?2004l[?2004h> python3 clean.py $< $@
+[?2004l[?2004h> @echo "Cleaned $< -> $@"
+[?2004l[?2004h> 
+[?2004l[?2004h> # Rule to aggregate all cleaned files
+[?2004l[?2004h> final/summary.csv: $(CLEANED_CSVS) aggregate.py
+[?2004l[?2004h> @mkdir -p final
+[?2004l[?2004h> python3 aggregate.py
+[?2004l[?2004h> 
+[?2004l[?2004h> # Clean up generated files
+[?2004l[?2004h> clean:
+[?2004l[?2004h> rm -f cleaned/*.csv final/summary.csv
+[?2004l[?2004h> @echo "Cleaned up generated files"
+[?2004l[?2004h> 
+[?2004l[?2004h> .PHONY: all clean
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@19a0c3bd0a35:/home/user/reports# make
+[?2004lMakefile:15: *** missing separator.  Stop.
+[?2004hroot@19a0c3bd0a35:/home/user/reports# rm Makefile
+[?2004l[?2004hroot@19a0c3bd0a35:/home/user/reports# printf '# Data pipeline Makefile\n# Cleans CSV files from raw/ and aggregates them into final/summary.csv\n\n# Source CSV files in raw/\nRAW_CSVS := $(wildcard raw/*.csv)\n\n# Target cleaned CSV files in cleaned/\nCLEANED_CSVS := $(patsubst raw/%%.csv,cleaned/%%.csv,$(RAW_CSVS))\n\n# Default target\nall: final/summary.csv\n\n# Rule to clean individual CSV files\ncleaned/%%.csv: raw/%%.csv clean.py\n\t@mkdir -p cleaned\n\tpython3 clean.py $< $@\n\t@echo "Cleaned $< -> $@"\n\n# Rule to aggregate all cleaned files\nfinal/summary.csv: $(CLEANED_CSVS) aggregate.py\n\t@mkdir -p final\n\tpython3 aggregate.py\n\n# Clean up generated files\nclean:\n\trm -f cleaned/*.csv final/summary.csv\n\t@echo "Cleaned up generated files"\n\n.PHONY: all clean\n' > Makefile
+[?2004l[?2004hroot@19a0c3bd0a35:/home/user/reports# make
+[?2004lpython3 clean.py raw/inventory.csv cleaned/inventory.csv
+Cleaned raw/inventory.csv -> cleaned/inventory.csv
+python3 clean.py raw/sales_q1.csv cleaned/sales_q1.csv
+Cleaned raw/sales_q1.csv -> cleaned/sales_q1.csv
+python3 clean.py raw/sales_q2.csv cleaned/sales_q2.csv
+Cleaned raw/sales_q2.csv -> cleaned/sales_q2.csv
+python3 aggregate.py
+Aggregated 3 files into /home/user/reports/final/summary.csv
+[?2004hroot@19a0c3bd0a35:/home/user/reports# ls -la cleaned/
+[?2004ltotal 24
+drwxrwxrwx 1 root root 4096 May  5 18:02 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 18:02 [34;42m..[0m
+-rw-r--r-- 1 root root   82 May  5 18:02 inventory.csv
+-rw-r--r-- 1 root root   82 May  5 18:02 sales_q1.csv
+-rw-r--r-- 1 root root   82 May  5 18:02 sales_q2.csv
+[?2004hroot@19a0c3bd0a35:/home/user/reports# ls -la final/
+[?2004ltotal 16
+drwxrwxrwx 1 root root 4096 May  5 18:02 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 18:02 [34;42m..[0m
+-rw-r--r-- 1 root root  198 May  5 18:02 summary.csv
+[?2004hroot@19a0c3bd0a35:/home/user/reports# make
+[?2004lmake: Nothing to be done for 'all'.
+[?2004hroot@19a0c3bd0a35:/home/user/reports# cat final/summary.csv
+[?2004litem,stock,warehouse
+Widget A,500,North
+Widget B,300,South
+Gadget X,200,North
+Widget A,100,19.99
+Widget B,50,29.99
+Gadget X,75,49.99
+Widget A,120,19.99
+Widget C,80,39.99
+Gadget Y,60,59.99
+[?2004hroot@19a0c3bd0a35:/home/user/reports# make clean
+[?2004lrm -f cleaned/*.csv final/summary.csv
+Cleaned up generated files
+[?2004hroot@19a0c3bd0a35:/home/user/reports# ls cleaned/
+[?2004l[?2004hroot@19a0c3bd0a35:/home/user/reports# ls final/
+[?2004l[?2004hroot@19a0c3bd0a35:/home/user/reports# make
+[?2004lpython3 clean.py raw/inventory.csv cleaned/inventory.csv
+Cleaned raw/inventory.csv -> cleaned/inventory.csv
+python3 clean.py raw/sales_q1.csv cleaned/sales_q1.csv
+Cleaned raw/sales_q1.csv -> cleaned/sales_q1.csv
+python3 clean.py raw/sales_q2.csv cleaned/sales_q2.csv
+Cleaned raw/sales_q2.csv -> cleaned/sales_q2.csv
+python3 aggregate.py
+Aggregated 3 files into /home/user/reports/final/summary.csv
+[?2004hroot@19a0c3bd0a35:/home/user/reports# ls cleaned/ final/
+[?2004lcleaned/:
+inventory.csv  sales_q1.csv  sales_q2.csv
+
+final/:
+summary.csv
+[?2004hroot@19a0c3bd0a35:/home/user/reports# cat Makefile
+[?2004l# Data pipeline Makefile
+# Cleans CSV files from raw/ and aggregates them into final/summary.csv
+
+# Source CSV files in raw/
+RAW_CSVS := $(wildcard raw/*.csv)
+
+# Target cleaned CSV files in cleaned/
+CLEANED_CSVS := $(patsubst raw/%.csv,cleaned/%.csv,$(RAW_CSVS))
+
+# Default target
+all: final/summary.csv
+
+# Rule to clean individual CSV files
+cleaned/%.csv: raw/%.csv clean.py
+	@mkdir -p cleaned
+	python3 clean.py $< $@
+	@echo "Cleaned $< -> $@"
+
+# Rule to aggregate all cleaned files
+final/summary.csv: $(CLEANED_CSVS) aggregate.py
+	@mkdir -p final
+	python3 aggregate.py
+
+# Clean up generated files
+clean:
+	rm -f cleaned/*.csv final/summary.csv
+	@echo "Cleaned up generated files"
+
+.PHONY: all clean
+[?2004hroot@19a0c3bd0a35:/home/user/reports# 

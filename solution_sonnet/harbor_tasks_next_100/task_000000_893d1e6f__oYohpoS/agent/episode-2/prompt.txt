@@ -1,0 +1,68 @@
+New Terminal Output:
+
+root@63cb3c0c3c07:/home/user# cat /home/user/artifact-sync/sync.sh
+#!/bin/bash
+#
+# Maven artifact sync script
+# Syncs artifacts from upstream to local repository
+#
+
+ARTIFACTS_FILE="/home/user/artifact-sync/artifacts.txt"
+CACHE_DIR="/home/user/artifact-sync/cache"
+REPO_DIR="/var/repo/maven"
+
+# Convert GAV coordinate to path
+# e.g., com.example:core:1.2.0 -> com/example/core/1.2.0/core-1.2.0.jar
+gav_to_path() {
+    local gav="$1"
+    local group=$(echo "$gav" | cut -d: -f1 | tr '.' '/')
+    local artifact=$(echo "$gav" | cut -d: -f2)
+    local version=$(echo "$gav" | cut -d: -f3)
+    echo "${group}/${artifact}/${version}/${artifact}-${version}.jar"
+}
+
+echo "Starting artifact sync at $(date)"
+echo "Reading artifacts from $ARTIFACTS_FILE"
+
+while IFS= read -r gav || [ -n "$gav" ]; do
+    # Skip empty lines and comments
+    [[ -z "$gav" || "$gav" =~ ^# ]] && continue
+
+    echo "Processing: $gav"
+
+    JAR_PATH=$(gav_to_path "$gav")
+    CACHED_FILE="${CACHE_DIR}/${JAR_PATH}"
+    REPO_FILE="${REPO_DIR}/${JAR_PATH}"
+    REPO_DIR_PATH=$(dirname "$REPO_FILE")
+
+    # Ensure repo directory exists
+    mkdir -p "$REPO_DIR_PATH"
+
+    # Check if cached file exists
+    if [ ! -f "$CACHED_FILE" ]; then
+        echo "  WARNING: Cache file not found: $CACHED_FILE"
+        continue
+    fi
+
+    # Compute SHA1 of cached file and write to repo
+    SHA1=$(sha1sum "$CACHED_FILE" | cut -d' ' -f1)
+    echo "$SHA1" > "${REPO_FILE}.sha1"
+    echo "  SHA1: $SHA1"
+
+    # Copy jar to repo (BUG: typo in variable name - CACHE_FILE vs CACHED_FILE)
+    cp "$CACHE_FILE" "$REPO_FILE"
+
+    echo "  Synced to: $REPO_FILE"
+
+done < "$ARTIFACTS_FILE"
+
+echo "Sync completed at $(date)"
+root@63cb3c0c3c07:/home/user# find /var/repo/maven -name '*.jar' -size 0 | head -20
+/var/repo/maven/net/tools/parser/4.0.1/parser-4.0.1.jar
+/var/repo/maven/com/example/utils/3.1.0/utils-3.1.0.jar
+/var/repo/maven/com/example/core/1.2.0/core-1.2.0.jar
+/var/repo/maven/org/internal/config/1.5.2/config-1.5.2.jar
+/var/repo/maven/org/internal/logging/2.0.0/logging-2.0.0.jar
+root@63cb3c0c3c07:/home/user# find /var/repo/maven -name '*.jar' -size 0 | wc -l
+5
+root@63cb3c0c3c07:/home/user#

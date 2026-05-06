@@ -1,0 +1,313 @@
+[?2004hroot@f21c690d9b5e:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@f21c690d9b5e:/home/user# clear
+[?2004l[H[J[?2004hroot@f21c690d9b5e:/home/user# ls -la /home/user/
+[?2004ltotal 12
+drwxrwxrwx 1 root root 4096 May  5 05:23 [0m[34;42m.[0m
+drwxr-xr-x 1 root root 4096 May  5 05:23 [01;34m..[0m
+-rwxr-xr-x 1 root root 2028 May  5 05:23 [01;32mcorrelate.py[0m
+[?2004hroot@f21c690d9b5e:/home/user# cat /home/user/correlate.py
+[?2004l#!/usr/bin/env python3
+import json
+from collections import defaultdict
+from datetime import datetime, timedelta
+
+INTERNAL_PREFIX = "10."
+WINDOW_MINUTES = 5
+THRESHOLD = 3
+
+def is_internal(ip):
+    return ip.startswith(INTERNAL_PREFIX)
+
+def parse_timestamp(ts):
+    # Bug 1: Suricata timestamps have microseconds and timezone, this format string is wrong
+    return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S")
+
+def main():
+    connections = []
+    with open("/var/log/suricata/eve.json") as f:
+        for line in f:
+            event = json.loads(line)
+            # Bug 2: Only looks at event_type == "flow", but Suricata marks 
+            # completed flows as "flow" with flow.state == "closed" or "new".
+            # The script checks for "netflow" which doesn't exist in standard eve.json
+            if event.get("event_type") != "netflow":
+                continue
+            src = event.get("src_ip", "")
+            dst = event.get("dest_ip", "")  # Bug 3: Suricata uses "dest_ip", not "dst_ip" - this is actually correct but see below
+            # Bug 4: script uses "dst_ip" in the variable name but reads "dest_ip" - 
+            # Actually the real bug is the event_type check above means this never runs
+            if is_internal(src) and is_internal(dst) and src != dst:
+                ts = parse_timestamp(event.get("timestamp", ""))
+                connections.append((ts, src, dst))
+
+    # Window-based grouping
+    connections.sort()
+    flagged = set()
+    for i, (ts, src, dst) in enumerate(connections):
+        window_end = ts + timedelta(minutes=WINDOW_MINUTES)
+        dsts_in_window = set()
+        for j in range(i, len(connections)):
+            if connections[j][0] > window_end:
+                break
+            if connections[j][1] == src:
+                dsts_in_window.add(connections[j][2])
+        if len(dsts_in_window) > THRESHOLD:
+            flagged.add(src)
+
+    for host in sorted(flagged):
+        print(f"LATERAL_MOVEMENT_CANDIDATE: {host}")
+
+if __name__ == "__main__":
+    main()
+[?2004hroot@f21c690d9b5e:/home/user# head -20 /var/log/suricata/eve.json | jq -r '.event_type' | sort | uniq -c
+[?2004l      4 dns
+     16 flow
+[?2004hroot@f21c690d9b5e:/home/user# grep '"event_type":"flow"' /var/log/suricata/eve.json | head -1 | jq .
+[?2004l[?2004hroot@f21c690d9b5e:/home/user# jq 'select(.event_type == "flow")' /var/log/suricata/eve.json | head -50
+[?2004l{
+  "timestamp": "2024-01-10T00:00:13.316061+0000",
+  "flow_id": 2409274786,
+  "event_type": "flow",
+  "src_ip": "10.1.4.22",
+  "src_port": 33274,
+  "dest_ip": "216.70.130.75",
+  "dest_port": 8443,
+  "proto": "TCP",
+  "flow": {
+    "pkts_toserver": 100,
+    "pkts_toclient": 60,
+    "bytes_toserver": 12014,
+    "bytes_toclient": 68230,
+    "start": "2024-01-09T23:59:48.316061+0000",
+    "end": "2024-01-10T00:00:13.316061+0000",
+    "state": "closed"
+  }
+}
+{
+  "timestamp": "2024-01-10T00:00:16.685436+0000",
+  "flow_id": 5802739154,
+  "event_type": "flow",
+  "src_ip": "10.1.7.11",
+  "src_port": 52874,
+  "dest_ip": "203.120.31.171",
+  "dest_port": 443,
+  "proto": "TCP",
+  "flow": {
+    "pkts_toserver": 56,
+    "pkts_toclient": 92,
+    "bytes_toserver": 33433,
+    "bytes_toclient": 484473,
+    "start": "2024-01-09T23:59:18.685436+0000",
+    "end": "2024-01-10T00:00:16.685436+0000",
+    "state": "closed"
+  }
+}
+{
+  "timestamp": "2024-01-10T00:00:19.595551+0000",
+  "flow_id": 7546898241,
+  "event_type": "flow",
+  "src_ip": "10.1.2.26",
+  "src_port": 41562,
+  "dest_ip": "104.145.232.254",
+  "dest_port": 8443,
+  "proto": "TCP",
+  "flow": {
+    "pkts_toserver": 39,
+    "pkts_toclient": 29,
+Error: writing output failed: Broken pipe
+[?2004hroot@f21c690d9b5e:/home/user# jq 'select(.event_type == "flow" and (.src_ip | startswith("10.")) and (.dest_ip | startswith("10.")))' /var/log/suricata/eve.json | head -50
+[?2004l{
+  "timestamp": "2024-01-10T00:01:13.605445+0000",
+  "flow_id": 5936227006,
+  "event_type": "flow",
+  "src_ip": "10.1.6.25",
+  "src_port": 34810,
+  "dest_ip": "10.1.7.9",
+  "dest_port": 3389,
+  "proto": "TCP",
+  "flow": {
+    "pkts_toserver": 14,
+    "pkts_toclient": 19,
+    "bytes_toserver": 1459,
+    "bytes_toclient": 4777,
+    "start": "2024-01-10T00:00:53.605445+0000",
+    "end": "2024-01-10T00:01:13.605445+0000",
+    "state": "closed"
+  }
+}
+{
+  "timestamp": "2024-01-10T00:01:29.655843+0000",
+  "flow_id": 9585583837,
+  "event_type": "flow",
+  "src_ip": "10.1.3.3",
+  "src_port": 59902,
+  "dest_ip": "10.1.4.21",
+  "dest_port": 22,
+  "proto": "TCP",
+  "flow": {
+    "pkts_toserver": 12,
+    "pkts_toclient": 13,
+    "bytes_toserver": 4690,
+    "bytes_toclient": 1839,
+    "start": "2024-01-10T00:01:28.655843+0000",
+    "end": "2024-01-10T00:01:29.655843+0000",
+    "state": "closed"
+  }
+}
+{
+  "timestamp": "2024-01-10T00:02:59.857915+0000",
+  "flow_id": 8238562767,
+  "event_type": "flow",
+  "src_ip": "10.1.5.4",
+  "src_port": 42991,
+  "dest_ip": "10.1.4.16",
+  "dest_port": 22,
+  "proto": "TCP",
+  "flow": {
+    "pkts_toserver": 5,
+    "pkts_toclient": 3,
+Error: writing output failed: Broken pipe
+[?2004hroot@f21c690d9b5e:/home/user# cp /home/user/correlate.py /home/user/correlate.py.bak
+[?2004l[?2004hroot@f21c690d9b5e:/home/user# cat > /home/user/correlate.py << 'EOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> import json
+[?2004l[?2004h> from collections import defaultdict
+[?2004l[?2004h> from datetime import datetime, timedelta
+[?2004l[?2004h> 
+[?2004l[?2004h> INTERNAL_PREFIX = "10."
+[?2004l[?2004h> WINDOW_MINUTES = 5
+[?2004l[?2004h> THRESHOLD = 3
+[?2004l[?2004h> 
+[?2004l[?2004h> def is_internal(ip):
+[?2004l[?2004h>     return ip.startswith(INTERNAL_PREFIX)
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_timestamp(ts):
+[?2004l[?2004h>     # Fixed: Suricata timestamps have microseconds and timezone
+[?2004l[?2004h>     return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%f%z")
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     connections = []
+[?2004l[?2004h>     with open("/var/log/suricata/eve.json") as f:
+[?2004l[?2004h>         for line in f:
+[?2004l[?2004h>             event = json.loads(line)
+[?2004l[?2004h>             # Fixed: Suricata uses "flow" not "netflow"
+[?2004l[?2004h>             if event.get("event_type") != "flow":
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             src = event.get("src_ip", "")
+[?2004l[?2004h>             dst = event.get("dest_ip", "")
+[?2004l[?2004h>             if is_internal(src) and is_internal(dst) and src != dst:
+[?2004l[?2004h>                 ts = parse_timestamp(event.get("timestamp", ""))
+[?2004l[?2004h>                 connections.append((ts, src, dst))
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Window-based grouping
+[?2004l[?2004h>     connections.sort()
+[?2004l[?2004h>     flagged = set()
+[?2004l[?2004h>     for i, (ts, src, dst) in enumerate(connections):
+[?2004l[?2004h>         window_end = ts + timedelta(minutes=WINDOW_MINUTES)
+[?2004l[?2004h>         dsts_in_window = set()
+[?2004l[?2004h>         for j in range(i, len(connections)):
+[?2004l[?2004h>             if connections[j][0] > window_end:
+[?2004l[?2004h>                 break
+[?2004l[?2004h>             if connections[j][1] == src:
+[?2004l[?2004h>                 dsts_in_window.add(connections[j][2])
+[?2004l[?2004h>         if len(dsts_in_window) > THRESHOLD:
+[?2004l[?2004h>             flagged.add(src)
+[?2004l[?2004h> 
+[?2004l[?2004h>     for host in sorted(flagged):
+[?2004l[?2004h>         print(f"LATERAL_MOVEMENT_CANDIDATE: {host}")
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     main()
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@f21c690d9b5e:/home/user# chmod +x /home/user/correlate.py
+[?2004l[?2004hroot@f21c690d9b5e:/home/user# python3 /home/user/correlate.py
+[?2004lLATERAL_MOVEMENT_CANDIDATE: 10.1.5.23
+[?2004hroot@f21c690d9b5e:/home/user# jq -r 'select(.event_type == "flow" and .src_ip == "10.1.5.23" and (.dest_ip | startswith("10."))) | "\(.timestamp) -> \(.dest_ip):\(.dest_port)"' /var/log/suricata/eve.json | head -20
+[?2004l2024-01-10T00:03:18.210445+0000 -> 10.1.1.28:5985
+2024-01-10T00:22:35.333955+0000 -> 10.1.3.15:445
+2024-01-10T04:02:24.482357+0000 -> 10.1.1.18:3389
+2024-01-10T10:21:58.402200+0000 -> 10.1.3.6:5985
+2024-01-10T17:38:38.234370+0000 -> 10.1.3.6:3389
+2024-01-10T23:26:49.809734+0000 -> 10.1.3.7:5985
+2024-01-11T02:15:00.805408+0000 -> 10.1.1.3:3389
+2024-01-11T02:15:12.525381+0000 -> 10.1.3.7:135
+2024-01-11T02:15:20.769320+0000 -> 10.1.2.1:445
+2024-01-11T02:15:30.127986+0000 -> 10.1.1.15:445
+2024-01-11T02:15:45.242435+0000 -> 10.1.2.3:445
+2024-01-11T02:16:03.404670+0000 -> 10.1.1.7:22
+2024-01-11T02:16:18.375870+0000 -> 10.1.2.8:5985
+2024-01-11T02:16:45.686260+0000 -> 10.1.3.6:22
+2024-01-11T02:17:00.145625+0000 -> 10.1.2.13:135
+2024-01-11T02:17:10.526300+0000 -> 10.1.2.17:135
+2024-01-11T02:18:09.510626+0000 -> 10.1.1.8:135
+2024-01-11T02:19:35.029399+0000 -> 10.1.3.5:22
+2024-01-11T11:24:39.912806+0000 -> 10.1.8.23:445
+2024-01-11T11:25:13.785550+0000 -> 10.1.8.13:3389
+Error: writing output failed: Broken pipe
+[?2004hroot@f21c690d9b5e:/home/user# echo "Testing the old broken script for comparison:"
+[?2004lTesting the old broken script for comparison:
+[?2004hroot@f21c690d9b5e:/home/user# python3 /home/user/correlate.py.bak
+[?2004l[?2004hroot@f21c690d9b5e:/home/user# cat > /home/user/FIX_SUMMARY.txt << 'EOF'
+[?2004l[?2004h> === CORRELATION SCRIPT FIX SUMMARY ===
+[?2004l[?2004h> 
+[?2004l[?2004h> PROBLEM:
+[?2004l[?2004h> The correlate.py script was finding 0 lateral movement candidates (not 80% fewer, but 100% fewer)
+[?2004l[?2004h> from Suricata eve.json logs, while the same logic worked with Zeek logs.
+[?2004l[?2004h> 
+[?2004l[?2004h> ROOT CAUSE - TWO CRITICAL BUGS:
+[?2004l[?2004h> 
+[?2004l[?2004h> 1. WRONG EVENT TYPE (Primary Bug):
+[?2004l[?2004h>    - Script checked for event_type == "netflow"
+[?2004l[?2004h>    - Suricata uses event_type == "flow"
+[?2004l[?2004h>    - This caused the script to skip ALL flow events
+[?2004l[?2004h> 
+[?2004l[?2004h> 2. WRONG TIMESTAMP FORMAT:
+[?2004l[?2004h>    - Script used: "%Y-%m-%dT%H:%M:%S"
+[?2004l[?2004h>    - Suricata format: "%Y-%m-%dT%H:%M:%S.%f%z" (includes microseconds and timezone)
+[?2004l[?2004h>    - This would have caused parsing errors once bug #1 was fixed
+[?2004l[?2004h> 
+[?2004l[?2004h> FIXES APPLIED:
+[?2004l[?2004h> - Line 24: Changed event_type check from "netflow" to "flow"
+[?2004l[?2004h> - Line 15: Updated timestamp format to handle microseconds and timezone
+[?2004l[?2004h> 
+[?2004l[?2004h> RESULTS:
+[?2004l[?2004h> - Old script: 0 candidates detected
+[?2004l[?2004h> - Fixed script: 1+ candidates detected (including 10.1.5.23)
+[?2004l[?2004h> - Host 10.1.5.23 shows clear scanning behavior hitting multiple internal hosts
+[?2004l[?2004h>   on ports 445, 3389, 5985, 135, 22 within short time windows
+[?2004l[?2004h> 
+[?2004l[?2004h> The correlation logic itself was correct - it was just never processing any events.
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@f21c690d9b5e:/home/user# cat /home/user/FIX_SUMMARY.txt
+[?2004l=== CORRELATION SCRIPT FIX SUMMARY ===
+
+PROBLEM:
+The correlate.py script was finding 0 lateral movement candidates (not 80% fewer, but 100% fewer)
+from Suricata eve.json logs, while the same logic worked with Zeek logs.
+
+ROOT CAUSE - TWO CRITICAL BUGS:
+
+1. WRONG EVENT TYPE (Primary Bug):
+   - Script checked for event_type == "netflow"
+   - Suricata uses event_type == "flow"
+   - This caused the script to skip ALL flow events
+
+2. WRONG TIMESTAMP FORMAT:
+   - Script used: "%Y-%m-%dT%H:%M:%S"
+   - Suricata format: "%Y-%m-%dT%H:%M:%S.%f%z" (includes microseconds and timezone)
+   - This would have caused parsing errors once bug #1 was fixed
+
+FIXES APPLIED:
+- Line 24: Changed event_type check from "netflow" to "flow"
+- Line 15: Updated timestamp format to handle microseconds and timezone
+
+RESULTS:
+- Old script: 0 candidates detected
+- Fixed script: 1+ candidates detected (including 10.1.5.23)
+- Host 10.1.5.23 shows clear scanning behavior hitting multiple internal hosts
+  on ports 445, 3389, 5985, 135, 22 within short time windows
+
+The correlation logic itself was correct - it was just never processing any events.
+[?2004hroot@f21c690d9b5e:/home/user# 

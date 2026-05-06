@@ -1,0 +1,64 @@
+New Terminal Output:
+
+user@b7869e42860b:~/infra-configs$ chmod +x .git/hooks/pre-receive
+user@b7869e42860b:~/infra-configs$ cat > .git/hooks/post-commit << 'EOF'
+> #!/bin/bash
+> # Post-commit hook to validate no world-readable private keys were committed
+> # This runs after commit and cannot be bypassed with --no-verify
+>
+> echo "[Security Check] Validating committed files..."
+>
+> # Get the commit that was just made
+> commit_hash=$(git rev-parse HEAD)
+>
+> # Get list of files in the commit
+> files=$(git diff-tree --no-commit-id --name-only -r "$commit_hash")
+>
+> exit_code=0
+>
+> for file in $files; do
+>     # Check if file matches *.pem or *.key
+>     if [[ "$file" == *.pem ]] || [[ "$file" == *.key ]]; then
+>         # Get file mode from git object
+>         mode=$(git ls-tree "$commit_hash" "$file" | awk '{print $1}')
+>         # Extract permission bits (last 3 digits)
+>         perms=${mode: -3}
+>
+>         # Check if world-readable (644 or looser)
+>         if [ "$perms" -ge 644 ]; then
+>             other_read=$((perms % 10))
+>
+>             if [ $((other_read & 4)) -ne 0 ]; then
+>                 echo "" >&2
+>                 echo "========================================" >&2
+>                 echo "SECURITY ERROR DETECTED!" >&2
+>                 echo "========================================" >&2
+>                 echo "File: $file" >&2
+>                 echo "Permissions: $perms (world-readable)" >&2
+>                 echo "Commit: $commit_hash" >&2
+>                 echo "" >&2
+>                 echo "Private keys must NOT be world-readable!" >&2
+>                 echo "This commit contains a security violation." >&2
+>                 echo "" >&2
+>                 echo "To fix this issue:" >&2
+>                 echo "  1. Reset the commit: git reset --soft HEAD~1" >&2
+>                 echo "  2. Fix permissions: chmod 600 $file" >&2
+>                 echo "  3. Re-stage: git add $file" >&2
+>                 echo "  4. Commit again: git commit" >&2
+>                 echo "========================================" >&2
+>                 exit_code=1
+>             fi
+>         fi
+>     fi
+> done
+>
+> if [ $exit_code -ne 0 ]; then
+>     echo "" >&2
+>     echo "WARNING: Commit completed but contains security violations!" >&2
+>     echo "Please fix immediately before pushing." >&2
+>     exit 1
+> fi
+>
+> exit 0
+> EOF
+user@b7869e42860b:~/infra-configs$

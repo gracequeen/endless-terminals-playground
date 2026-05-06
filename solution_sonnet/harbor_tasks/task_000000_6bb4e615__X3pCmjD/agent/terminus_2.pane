@@ -1,0 +1,420 @@
+[?2004hroot@dc16f7d76fd8:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@dc16f7d76fd8:/home/user# clear
+[?2004l[H[J[?2004hroot@dc16f7d76fd8:/home/user# cd /home/user/audit
+[?2004l[?2004hroot@dc16f7d76fd8:/home/user/audit# ls -la
+[?2004ltotal 20
+drwxrwxrwx 1 root root 4096 May  5 06:59 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 06:59 [34;42m..[0m
+-rw-rw-rw- 1 root root 2563 May  5 06:59 check_integrity.py
+drwxrwxrwx 1 root root 4096 May  5 06:59 [34;42mdata[0m
+-rw-rw-rw- 1 root root 3115 May  5 06:59 manifest.sha256
+[?2004hroot@dc16f7d76fd8:/home/user/audit# cat check_integrity.py
+[?2004l#!/usr/bin/env python3
+"""
+Integrity checker script for audit verification.
+Reads manifest.sha256 and verifies each file's hash.
+"""
+
+import hashlib
+import os
+import sys
+
+MANIFEST_FILE = "manifest.sha256"
+
+def compute_hash(filepath):
+    """Compute SHA256 hash of a file. 
+    # handles encoding properly
+    """
+    hasher = hashlib.sha256()
+    with open(filepath, 'r') as f:
+        content = f.read()
+        hasher.update(content.encode('utf-8'))
+    return hasher.hexdigest()
+
+def load_manifest(manifest_path):
+    """Load the manifest file and return a dict of path -> expected_hash."""
+    manifest = {}
+    with open(manifest_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            # Format: <hash>  <path> (two spaces)
+            parts = line.split('  ', 1)
+            if len(parts) == 2:
+                expected_hash, filepath = parts
+                manifest[filepath] = expected_hash.lower()
+    return manifest
+
+def verify_integrity():
+    """Main verification routine."""
+    if not os.path.exists(MANIFEST_FILE):
+        print(f"ERROR: Manifest file '{MANIFEST_FILE}' not found")
+        return False
+
+    manifest = load_manifest(MANIFEST_FILE)
+
+    if not manifest:
+        print("ERROR: Manifest is empty")
+        return False
+
+    print(f"Verifying {len(manifest)} files...")
+    print("-" * 50)
+
+    failures = []
+    successes = 0
+
+    for filepath, expected_hash in sorted(manifest.items()):
+        if not os.path.exists(filepath):
+            print(f"FAIL: {filepath} - file not found")
+            failures.append(filepath)
+            continue
+
+        try:
+            actual_hash = compute_hash(filepath)
+            if actual_hash == expected_hash:
+                print(f"OK: {filepath}")
+                successes += 1
+            else:
+                print(f"FAIL: {filepath} - hash mismatch")
+                print(f"      expected: {expected_hash}")
+                print(f"      actual:   {actual_hash}")
+                failures.append(filepath)
+        except Exception as e:
+            print(f"FAIL: {filepath} - error: {e}")
+            failures.append(filepath)
+
+    print("-" * 50)
+    print(f"Results: {successes} passed, {len(failures)} failed")
+
+    if failures:
+        print("\nFailed files:")
+        for f in failures:
+            print(f"  - {f}")
+        return False
+
+    print("\nAll files verified successfully!")
+    return True
+
+if __name__ == "__main__":
+    success = verify_integrity()
+    sys.exit(0 if success else 1)
+[?2004hroot@dc16f7d76fd8:/home/user/audit# cat manifest.sha256
+[?2004l1ac6c4dc5b7487aec7456efb96d37f74a101f030e37ac8944636d600088378e5  data/app.json
+5cab9c26c0dc82b3c67940598021d791e43148167ea4e1c35cd6556edc23809f  data/archive.txt
+33c75f906f2468dce181fc7726bb765b0c8390e36cf2ae474d14d3a5b856b423  data/blob.bin
+7a085a2aa29f345df0bd63996ee7becff79867014c0066460df456695739be21  data/chunk1.bin
+62d1769478997dd4dd091bdb83dbde88bd35343b273d525c3748b108473b38bb  data/chunk2.bin
+c059b528cda78d2f13e611c057a58b7c4f1665c5a7b2d0709417948376bea968  data/config.json
+4d6537f48d2967725bfcc7a9f0d5094ce4088e0975fcd3f1a361f15f46e49f83  data/coords.csv
+f21f000bf5bcbb6b074fed2db1521683a415d9185e37e14bd9ae5910dd165824  data/data.bin
+726796a27caa86c2819cadf9f9fb7333e6643392c37148e193538512f22e093f  data/data1.csv
+c69253af8adc46f38af451c959cbc28d53bc77718b835353685ee04e1b195152  data/docs.txt
+866172c9fcec28b3317e0cd9347291e7c3a6d176c690d13db882dd6803684ed7  data/events.csv
+337c3a3019d68b3d92c488d2226602c9f05378ba01ae8c44f3ae71503a70cc94  data/extra.bin
+3f3b696c3ed1d8e648461d55695690a4f12b5aa255cf37891e2eef7a014de6df  data/file1.txt
+07e4bd2767159c0682adb2d5e0396d3f78b5d80f48e556a48d86973853a4f329  data/file2.bin
+b3861cff2034b6c048e4a35b94e4d3256995019ebfd28060fd24ff7f1fd33f92  data/final.txt
+957a681d695c034f7f870f9f4ded68af54d29cb1dbef84e188c51fce7b0b5175  data/flags.json
+f33daaa1d9b84d30a7604701019e06f71a80a46900fd3f9ed25fc4e0c48fa87e  data/footer.txt
+a4b855138a88479b5434bca45cce2800eb03452424bcefc348cbfa73866a3f61  data/header.txt
+b557ac0f63bbe5cdd2bd21e16d12c4373e5356ce2ab5ee519547b7441f62da50  data/info.json
+99671d4f64d9108c9560e7d4e80778b9ea77b88f79a857a36c8582232b8eab18  data/list.json
+44b698f4e30d577391656a7a57e92b260c535db44b599af1598ac2fff19b37f7  data/log1.txt
+1db894ae1e9cb3063af835edffb2ba9c369b96401f1462ded1cedb31dd36eeb6  data/matrix.csv
+e0e77b70ca77d0be8f321590c0deb449d364cc3c4edaeaa6eef40636d56a298e  data/meta.json
+e8c43fae4ce73ea4b29415a542fb90b4db98a14272845f936795b0f371dc8b71  data/misc.txt
+ade0e43dd253b84ca678b723b6cbb357fe2bea45065436c351a8813d7bec6adc  data/notes.txt
+9bde5fc7018a4fd99e1173422757f6dae3a5b609dcc1394b0c9a5f7a4975e066  data/pairs.csv
+aea0c79d29b1ba80c5789fc616913e66693dcb29ea1aebc626bbc097cec5adb5  data/payload.bin
+7c28f1b52b065cfedaf483e936294f31b302c7dc3d98c9cf92ebdf359fcdedb2  data/project_notes.txt
+e95f52ff1074add3a8235e5bcc156ff7f0aa2c6f3905561278671e951e89d2cc  data/random1.bin
+6ecb31951cada951cdf4193964982b4429f83e65b70ab2b6cb7ba8fbe975481f  data/random2.bin
+f97a2680fdc1d2665be3a986be8c169c868d0a1e489e1ba7b819c5db9b936fef  data/readme.txt
+e495a41674fcfd7a10f443cd8b70c400062f4244f5956d4d1cd784384f79bd39  data/report_2024q1.csv
+32ba5688fa326c22174fd09f30f93434f0c098a2ec90b38613324729114e87e5  data/sample.txt
+e738178f7d138c4537b677a0d9585fe5feae6d28dee3454984bd0fe27d1361cb  data/scores.csv
+01ba322f9b40177dc996a1e6b317db16883784d6ce278e2231bcc44faf699f7b  data/settings.json
+a26d1b9262c02cb8dc452916907337e0a25909a3370e94b14866eb5374563849  data/small.bin
+280720a791d8a75bf2b16a471af6ee3b9ecda12c5851c4fbbb4b2db5217d89e8  data/status.json
+98f2b39548b4bbba3185149aa3d14844de0bf6cf6bae9df62acdcf62c5246290  data/table.csv
+[?2004hroot@dc16f7d76fd8:/home/user/audit# python3 check_integrity.py
+[?2004lVerifying 38 files...
+--------------------------------------------------
+OK: data/app.json
+OK: data/archive.txt
+FAIL: data/blob.bin - error: 'utf-8' codec can't decode byte 0xf8 in position 0: invalid start byte
+FAIL: data/chunk1.bin - error: 'utf-8' codec can't decode byte 0x9f in position 6: invalid start byte
+FAIL: data/chunk2.bin - error: 'utf-8' codec can't decode byte 0xfb in position 0: invalid start byte
+FAIL: data/config.json - hash mismatch
+      expected: c059b528cda78d2f13e611c057a58b7c4f1665c5a7b2d0709417948376bea968
+      actual:   be4571c40889018922e4fa44b2ca299348c094c72797f5d2befaee3f2ef29549
+OK: data/coords.csv
+FAIL: data/data.bin - error: 'utf-8' codec can't decode byte 0xbb in position 0: invalid start byte
+OK: data/data1.csv
+OK: data/docs.txt
+OK: data/events.csv
+FAIL: data/extra.bin - error: 'utf-8' codec can't decode byte 0xd8 in position 2: invalid continuation byte
+OK: data/file1.txt
+FAIL: data/file2.bin - error: 'utf-8' codec can't decode byte 0xc0 in position 23: invalid start byte
+OK: data/final.txt
+OK: data/flags.json
+OK: data/footer.txt
+OK: data/header.txt
+OK: data/info.json
+OK: data/list.json
+OK: data/log1.txt
+OK: data/matrix.csv
+OK: data/meta.json
+OK: data/misc.txt
+FAIL: data/notes.txt - hash mismatch
+      expected: ade0e43dd253b84ca678b723b6cbb357fe2bea45065436c351a8813d7bec6adc
+      actual:   fdb9a33caff820eb5cd0f7c3af1c4ad93adba44046aba4730f701dabae7608a7
+OK: data/pairs.csv
+FAIL: data/payload.bin - error: 'utf-8' codec can't decode byte 0xa4 in position 1: invalid start byte
+OK: data/project_notes.txt
+FAIL: data/random1.bin - error: 'utf-8' codec can't decode byte 0x95 in position 0: invalid start byte
+FAIL: data/random2.bin - error: 'utf-8' codec can't decode byte 0xb6 in position 2: invalid start byte
+OK: data/readme.txt
+FAIL: data/report_2024q1.csv - hash mismatch
+      expected: e495a41674fcfd7a10f443cd8b70c400062f4244f5956d4d1cd784384f79bd39
+      actual:   2e0338a4b8dca24d36f2e89f1a70db595666dff2bf94420797fc0e7a7dd9d1ac
+OK: data/sample.txt
+OK: data/scores.csv
+OK: data/settings.json
+FAIL: data/small.bin - error: 'utf-8' codec can't decode byte 0xd8 in position 5: invalid continuation byte
+OK: data/status.json
+OK: data/table.csv
+--------------------------------------------------
+Results: 25 passed, 13 failed
+
+Failed files:
+  - data/blob.bin
+  - data/chunk1.bin
+  - data/chunk2.bin
+  - data/config.json
+  - data/data.bin
+  - data/extra.bin
+  - data/file2.bin
+  - data/notes.txt
+  - data/payload.bin
+  - data/random1.bin
+  - data/random2.bin
+  - data/report_2024q1.csv
+  - data/small.bin
+[?2004hroot@dc16f7d76fd8:/home/user/audit# sha256sum data/config.json
+[?2004lc059b528cda78d2f13e611c057a58b7c4f1665c5a7b2d0709417948376bea968  data/config.json
+[?2004hroot@dc16f7d76fd8:/home/user/audit# sha256sum data/notes.txt
+[?2004lade0e43dd253b84ca678b723b6cbb357fe2bea45065436c351a8813d7bec6adc  data/notes.txt
+[?2004hroot@dc16f7d76fd8:/home/user/audit# sha256sum data/report_2024q1.csv
+[?2004le495a41674fcfd7a10f443cd8b70c400062f4244f5956d4d1cd784384f79bd39  data/report_2024q1.csv
+[?2004hroot@dc16f7d76fd8:/home/user/audit# cp check_integrity.py check_integrity.py.backup
+[?2004l[?2004hroot@dc16f7d76fd8:/home/user/audit# cat > check_integrity.py << 'EOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """
+[?2004l[?2004h> Integrity checker script for audit verification.
+[?2004l[?2004h> Reads manifest.sha256 and verifies each file's hash.
+[?2004l[?2004h> """
+[?2004l[?2004h> 
+[?2004l[?2004h> import hashlib
+[?2004l[?2004h> import os
+[?2004l[?2004h> import sys
+[?2004l[?2004h> 
+[?2004l[?2004h> MANIFEST_FILE = "manifest.sha256"
+[?2004l[?2004h> 
+[?2004l[?2004h> def compute_hash(filepath):
+[?2004l[?2004h>     """Compute SHA256 hash of a file.
+[?2004l[?2004h>     # handles encoding properly
+[?2004l[?2004h>     """
+[?2004l[?2004h>     hasher = hashlib.sha256()
+[?2004l[?2004h>     with open(filepath, 'rb') as f:
+[?2004l[?2004h>         content = f.read()
+[?2004l[?2004h>         hasher.update(content)
+[?2004l[?2004h>     return hasher.hexdigest()
+[?2004l[?2004h> 
+[?2004l[?2004h> def load_manifest(manifest_path):
+[?2004l[?2004h>     """Load the manifest file and return a dict of path -> expected_hash."""
+[?2004l[?2004h>     manifest = {}
+[?2004l[?2004h>     with open(manifest_path, 'r') as f:
+[?2004l[?2004h>         for line in f:
+[?2004l[?2004h>             line = line.strip()
+[?2004l[?2004h>             if not line:
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             # Format: <hash>  <path> (two spaces)
+[?2004l[?2004h>             parts = line.split('  ', 1)
+[?2004l[?2004h>             if len(parts) == 2:
+[?2004l[?2004h>                 expected_hash, filepath = parts
+[?2004l[?2004h>                 manifest[filepath] = expected_hash.lower()
+[?2004l[?2004h>     return manifest
+[?2004l[?2004h> 
+[?2004l[?2004h> def verify_integrity():
+[?2004l[?2004h>     """Main verification routine."""
+[?2004l[?2004h>     if not os.path.exists(MANIFEST_FILE):
+[?2004l[?2004h>         print(f"ERROR: Manifest file '{MANIFEST_FILE}' not found")
+[?2004l[?2004h>         return False
+[?2004l[?2004h> 
+[?2004l[?2004h>     manifest = load_manifest(MANIFEST_FILE)
+[?2004l[?2004h> 
+[?2004l[?2004h>     if not manifest:
+[?2004l[?2004h>         print("ERROR: Manifest is empty")
+[?2004l[?2004h>         return False
+[?2004l[?2004h> 
+[?2004l[?2004h>     print(f"Verifying {len(manifest)} files...")
+[?2004l[?2004h>     print("-" * 50)
+[?2004l[?2004h> 
+[?2004l[?2004h>     failures = []
+[?2004l[?2004h>     successes = 0
+[?2004l[?2004h> 
+[?2004l[?2004h>     for filepath, expected_hash in sorted(manifest.items()):
+[?2004l[?2004h>         if not os.path.exists(filepath):
+[?2004l[?2004h>             print(f"FAIL: {filepath} - file not found")
+[?2004l[?2004h>             failures.append(filepath)
+[?2004l[?2004h>             continue
+[?2004l[?2004h> 
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             actual_hash = compute_hash(filepath)
+[?2004l[?2004h>             if actual_hash == expected_hash:
+[?2004l[?2004h>                 print(f"OK: {filepath}")
+[?2004l[?2004h>                 successes += 1
+[?2004l[?2004h>             else:
+[?2004l[?2004h>                 print(f"FAIL: {filepath} - hash mismatch")
+[?2004l[?2004h>                 print(f"      expected: {expected_hash}")
+[?2004l[?2004h>                 print(f"      actual:   {actual_hash}")
+[?2004l[?2004h>                 failures.append(filepath)
+[?2004l[?2004h>         except Exception as e:
+[?2004l[?2004h>             print(f"FAIL: {filepath} - error: {e}")
+[?2004l[?2004h>             failures.append(filepath)
+[?2004l[?2004h> 
+[?2004l[?2004h>     print("-" * 50)
+[?2004l[?2004h>     print(f"Results: {successes} passed, {len(failures)} failed")
+[?2004l[?2004h> 
+[?2004l[?2004h>     if failures:
+[?2004l[?2004h>         print("\nFailed files:")
+[?2004l[?2004h>         for f in failures:
+[?2004l[?2004h>             print(f"  - {f}")
+[?2004l[?2004h>         return False
+[?2004l[?2004h> 
+[?2004l[?2004h>     print("\nAll files verified successfully!")
+[?2004l[?2004h>     return True
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     success = verify_integrity()
+[?2004l[?2004h>     sys.exit(0 if success else 1)
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@dc16f7d76fd8:/home/user/audit# python3 check_integrity.py
+[?2004lVerifying 38 files...
+--------------------------------------------------
+OK: data/app.json
+OK: data/archive.txt
+OK: data/blob.bin
+OK: data/chunk1.bin
+OK: data/chunk2.bin
+OK: data/config.json
+OK: data/coords.csv
+OK: data/data.bin
+OK: data/data1.csv
+OK: data/docs.txt
+OK: data/events.csv
+OK: data/extra.bin
+OK: data/file1.txt
+OK: data/file2.bin
+OK: data/final.txt
+OK: data/flags.json
+OK: data/footer.txt
+OK: data/header.txt
+OK: data/info.json
+OK: data/list.json
+OK: data/log1.txt
+OK: data/matrix.csv
+OK: data/meta.json
+OK: data/misc.txt
+OK: data/notes.txt
+OK: data/pairs.csv
+OK: data/payload.bin
+OK: data/project_notes.txt
+OK: data/random1.bin
+OK: data/random2.bin
+OK: data/readme.txt
+OK: data/report_2024q1.csv
+OK: data/sample.txt
+OK: data/scores.csv
+OK: data/settings.json
+OK: data/small.bin
+OK: data/status.json
+OK: data/table.csv
+--------------------------------------------------
+Results: 38 passed, 0 failed
+
+All files verified successfully!
+[?2004hroot@dc16f7d76fd8:/home/user/audit# echo $?
+[?2004l0
+[?2004hroot@dc16f7d76fd8:/home/user/audit# cat > AUDIT_RESOLUTION.txt << 'EOF'
+[?2004l[?2004h> QUARTERLY INTEGRITY AUDIT RESOLUTION
+[?2004l[?2004h> =====================================
+[?2004l[?2004h> 
+[?2004l[?2004h> Status: RESOLVED - Clean audit achieved (all files verified, exit code 0)
+[?2004l[?2004h> 
+[?2004l[?2004h> Problem Summary:
+[?2004l[?2004h> - check_integrity.py was reporting 13 failures (not 3 as initially thought)
+[?2004l[?2004h> - 10 binary files failed with UTF-8 decoding errors
+[?2004l[?2004h> - 3 text files showed hash mismatches
+[?2004l[?2004h> - Manual sha256sum checks on the same files passed correctly
+[?2004l[?2004h> 
+[?2004l[?2004h> Root Cause:
+[?2004l[?2004h> - The check_integrity.py script was opening files in TEXT mode ('r')
+[?2004l[?2004h> - Text mode attempts to decode file contents as UTF-8, which fails for binary files
+[?2004l[?2004h> - Text mode may also apply platform-specific line-ending conversions
+[?2004l[?2004h> - The standard sha256sum command uses BINARY mode, which is why manual checks worked
+[?2004l[?2004h> 
+[?2004l[?2004h> Solution Applied:
+[?2004l[?2004h> - Modified compute_hash() function in check_integrity.py
+[?2004l[?2004h> - Changed: open(filepath, 'r') → open(filepath, 'rb')
+[?2004l[?2004h> - Removed: .encode('utf-8') step (no longer needed for binary data)
+[?2004l[?2004h> - This makes the script behave identically to sha256sum
+[?2004l[?2004h> 
+[?2004l[?2004h> Verification Results:
+[?2004l[?2004h> - All 38 files now pass integrity verification
+[?2004l[?2004h> - Script exits with status 0 (success)
+[?2004l[?2004h> - No files were corrupted
+[?2004l[?2004h> - Manifest was correct
+[?2004l[?2004h> - Ops team was correct that nothing was modified
+[?2004l[?2004h> 
+[?2004l[?2004h> Backup:
+[?2004l[?2004h> - Original script saved as check_integrity.py.backup
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@dc16f7d76fd8:/home/user/audit# cat AUDIT_RESOLUTION.txt
+[?2004lQUARTERLY INTEGRITY AUDIT RESOLUTION
+=====================================
+
+Status: RESOLVED - Clean audit achieved (all files verified, exit code 0)
+
+Problem Summary:
+- check_integrity.py was reporting 13 failures (not 3 as initially thought)
+- 10 binary files failed with UTF-8 decoding errors
+- 3 text files showed hash mismatches
+- Manual sha256sum checks on the same files passed correctly
+
+Root Cause:
+- The check_integrity.py script was opening files in TEXT mode ('r')
+- Text mode attempts to decode file contents as UTF-8, which fails for binary files
+- Text mode may also apply platform-specific line-ending conversions
+- The standard sha256sum command uses BINARY mode, which is why manual checks worked
+
+Solution Applied:
+- Modified compute_hash() function in check_integrity.py
+- Changed: open(filepath, 'r') → open(filepath, 'rb')
+- Removed: .encode('utf-8') step (no longer needed for binary data)
+- This makes the script behave identically to sha256sum
+
+Verification Results:
+- All 38 files now pass integrity verification
+- Script exits with status 0 (success)
+- No files were corrupted
+- Manifest was correct
+- Ops team was correct that nothing was modified
+
+Backup:
+- Original script saved as check_integrity.py.backup
+[?2004hroot@dc16f7d76fd8:/home/user/audit# 

@@ -1,4 +1,5 @@
 FROM ubuntu:22.04
+RUN sed -i "s|archive.ubuntu.com|us-west-1.ec2.archive.ubuntu.com|g; s|security.ubuntu.com|us-west-1.ec2.archive.ubuntu.com|g" /etc/apt/sources.list 2>/dev/null || true
 
 RUN apt-get update && apt-get install -y \
     git \

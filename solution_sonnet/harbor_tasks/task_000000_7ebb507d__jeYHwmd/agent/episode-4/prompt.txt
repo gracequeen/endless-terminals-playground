@@ -1,0 +1,75 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+root@a4748dcb7254:/home/user/netcheck# ps aux | grep -i flask
+root           7  0.3  0.0 108120 28692 ?        S    21:20   0:00 python3 -c  from flask import Flask, jsonify app = Flask('auth-service') @app.route('/health'
+) def health():     return jsonify({'status': 'ok', 'service': 'auth-service'}) app.run(host='127.0.0.1', port=5001, debug=False)
+root           8  0.3  0.0 108120 28728 ?        S    21:20   0:00 python3 -c  from flask import Flask, jsonify app = Flask('data-service') @app.route('/health'
+) def health():     return jsonify({'status': 'ok', 'service': 'data-service'}) app.run(host='127.0.0.1', port=5002, debug=False)
+root           9  0.3  0.0 108116 28820 ?        S    21:20   0:00 python3 -c  from flask import Flask, jsonify app = Flask('cache-service') @app.route('/health
+') def health():     return jsonify({'status': 'ok', 'service': 'cache-service'}) app.run(host='127.0.0.1', port=5003, debug=False)
+root         505  0.0  0.0   3856  2104 pts/0    S+   21:21   0:00 grep --color=auto -i flask
+root@a4748dcb7254:/home/user/netcheck# cat mock_services.py
+#!/usr/bin/env python3
+"""
+Mock Flask services for testing the health checker.
+Runs three simple health endpoints on ports 5001, 5002, 5003.
+"""
+
+import multiprocessing
+import time
+from flask import Flask, jsonify
+
+
+def create_app(service_name):
+    """Create a Flask app for a mock service."""
+    app = Flask(service_name)
+
+    @app.route('/health')
+    def health():
+        return jsonify({'status': 'ok', 'service': service_name})
+
+    @app.route('/')
+    def index():
+        return jsonify({'service': service_name, 'endpoints': ['/health']})
+
+    return app
+
+
+def run_service(name, port):
+    """Run a Flask service on the specified port."""
+    app = create_app(name)
+    app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
+
+
+def start_all_services():
+    """Start all mock services as separate processes."""
+    services = [
+        ('auth-service', 5001),
+        ('data-service', 5002),
+        ('cache-service', 5003),
+    ]
+
+    processes = []
+    for name, port in services:
+        p = multiprocessing.Process(target=run_service, args=(name, port))
+        p.daemon = True
+        p.start()
+        processes.append(p)
+        print(f"Started {name} on port {port}")
+
+    return processes
+
+
+if __name__ == '__main__':
+    processes = start_all_services()
+    print("All services started. Press Ctrl+C to stop.")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nStopping services...")
+root@a4748dcb7254:/home/user/netcheck#

@@ -1,0 +1,42 @@
+New Terminal Output:
+
+I have no name!@8d9b8d08258a:~$ cat /home/user/pipeline/single.py
+#!/usr/bin/env python3
+"""
+Single-threaded reference implementation for tf-idf feature extraction.
+This produces correct output but is slow.
+"""
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+def main():
+    # Load data
+    df = pd.read_parquet("/home/user/data/raw.parquet")
+    print(f"Loaded {len(df)} rows")
+
+    # Compute tf-idf on all data with single vocabulary
+    vectorizer = TfidfVectorizer(max_features=100)
+    texts = df["text"].tolist()
+    tfidf_matrix = vectorizer.fit_transform(texts)
+
+    # Convert to DataFrame
+    feature_names = vectorizer.get_feature_names_out()
+    result_df = pd.DataFrame(
+        tfidf_matrix.toarray(),
+        columns=feature_names
+    )
+
+    # Save
+    result_df.to_parquet("/home/user/data/features_reference.parquet")
+    print(f"Saved {len(result_df)} rows to features_reference.parquet")
+
+    # Verify values are in valid range
+    max_val = result_df.values.max()
+    min_val = result_df.values.min()
+    print(f"Value range: [{min_val}, {max_val}]")
+    assert min_val >= 0.0, "Negative tf-idf values!"
+    assert max_val <= 1.0, "tf-idf values > 1!"
+
+if __name__ == "__main__":
+    main()
+I have no name!@8d9b8d08258a:~$

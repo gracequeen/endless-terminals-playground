@@ -1,0 +1,298 @@
+[?2004hroot@b6b6275cc19d:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@b6b6275cc19d:/home/user# clear
+[?2004l[H[J[?2004hroot@b6b6275cc19d:/home/user# cd /home/user/monitoring
+[?2004l[?2004hroot@b6b6275cc19d:/home/user/monitoring# ls -la
+[?2004ltotal 36496
+drwxrwxrwx 1 root root     4096 May  5 07:48 [0m[34;42m.[0m
+drwxrwxrwx 1 root root     4096 May  5 07:48 [34;42m..[0m
+-rwxrwxrwx 1 root root 37345962 May  5 07:48 [01;32malertmanager[0m
+-rwxrwxrwx 1 root root     1190 May  5 07:48 [01;32malertmanager.yml[0m
+-rwxrwxrwx 1 root root      267 May  5 07:48 [01;32mreceivers.yml[0m
+drwxrwxrwx 1 root root     4096 May  5 07:48 [34;42mrules[0m
+drwxrwxrwx 1 root root     4096 May  5 07:48 [34;42mtemplates[0m
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# cat -n alertmanager.yml
+[?2004l     1	global:
+     2	  resolve_timeout: 5m
+     3	  slack_api_url: 'https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXX'
+     4	
+     5	templates:
+     6	  - 'templates/*.tmpl'
+     7	
+     8	route:
+     9	  receiver: 'default-receiver'
+    10	  group_by: ['alertname', 'cluster']
+    11	  group_wait: 30s
+    12	  group_interval: 5m
+    13	  repeat_interval: 4h
+    14	  routes:
+    15	    - match:
+    16	        severity: critical
+    17	      receiver: 'pagerduty-critical'
+    18	    - match:
+    19	        severity: warning
+    20	      receiver: 'slack-warnings'
+    21	    - match_re:
+    22	        service: ^(foo|bar)$
+    23	      receiver: 'team-backend'
+    24	
+    25	receivers:
+    26	  - name: 'default-receiver'
+    27	    slack_configs:
+    28	      - channel: '#alerts-general'
+    29	        send_resolved: true
+    30	
+    31	  - name: 'pagerduty-critical'
+    32	    pagerduty_configs:
+    33	      - service_key: 'fake-pagerduty-key-12345'
+    34	        severity: critical
+    35	
+    36	  - name: 'slack-warnings'
+    37	    slack_configs:
+    38	      - channel: '#alerts-warnings'
+    39	        send_resolved: true
+    40	
+    41	  - name: 'team-backend'
+    42	    slack_configs:
+    43	      - channel: '#team-backend-alerts'
+    44	        send_resolved:  true
+    45	        title: '{{ template "slack.title" . }}'
+    46	        text: '{{ template "slack.text" . }}'
+    47	
+    48	  - name: 'db-team'
+    49	    slack_configs:
+    50	      - channel: '#db-alerts'
+    51	        	send_resolved: false
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# cat receivers.yml
+[?2004l# Additional receivers configuration
+# This file is not properly included in the main config
+
+extra_receivers:
+  - name: 'email-team'
+    email_configs:
+      - to: 'team@example.com'
+        from: 'alertmanager@example.com'
+        smarthost: 'smtp.example.com:587'
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# ls -la templates/
+[?2004ltotal 16
+drwxrwxrwx 1 root root 4096 May  5 07:48 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 07:48 [34;42m..[0m
+-rwxrwxrwx 1 root root  354 May  5 07:48 [01;32mpagerduty.tmpl[0m
+-rwxrwxrwx 1 root root  368 May  5 07:48 [01;32mslack.tmpl[0m
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# cat templates/slack.tmpl
+[?2004l{{ define "slack.title" }}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}
+{{ end }}
+
+{{ define "slack.text" }}
+{{ range .Alerts }}
+*Alert:* {{ .Annotations.summary }}
+*Description:* {{ .Annotations.description }}
+*Severity:* {{ .Labels.severity }}
+*Started:* {{ .StartsAt }}
+{{ end }}
+{{ end }}
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# ./alertmanager --config.file=alertmanager.yml
+[?2004lts=2026-05-05T07:49:22.205Z caller=main.go:181 level=info msg="Starting Alertmanager" version="(version=0.27.0, branch=HEAD, revision=0aa3c2aad14cff039931923ab16b26b7481783b5)"
+ts=2026-05-05T07:49:22.205Z caller=main.go:182 level=info build_context="(go=go1.21.7, platform=linux/amd64, user=root@22cd11f671e9, date=20240228-11:51:20, tags=netgo)"
+ts=2026-05-05T07:49:22.209Z caller=cluster.go:186 level=info component=cluster msg="setting advertise address explicitly" addr=172.18.0.2 port=9094
+ts=2026-05-05T07:49:22.210Z caller=cluster.go:683 level=info component=cluster msg="Waiting for gossip to settle..." interval=2s
+ts=2026-05-05T07:49:22.235Z caller=coordinator.go:113 level=info component=configuration msg="Loading configuration file" file=alertmanager.yml
+ts=2026-05-05T07:49:22.235Z caller=coordinator.go:118 level=error component=configuration msg="Loading configuration file failed" file=alertmanager.yml err="yaml: line 51: found character that cannot start any token"
+ts=2026-05-05T07:49:22.235Z caller=cluster.go:692 level=info component=cluster msg="gossip not settled but continuing anyway" polls=0 elapsed=25.315233ms
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# cp alertmanager.yml alertmanager.yml.backup
+[?2004l[?2004hroot@b6b6275cc19d:/home/user/monitoring# sed -i '51s/^[ \t]*/          /' alertmanager.yml
+[?2004l[?2004hroot@b6b6275cc19d:/home/user/monitoring# sed -i '44s/send_resolved:  true/send_resolved: true/' alertmanager.yml
+[?2004l[?2004hroot@b6b6275cc19d:/home/user/monitoring# cat -n alertmanager.yml | tail -n 15
+[?2004l    37	    slack_configs:
+    38	      - channel: '#alerts-warnings'
+    39	        send_resolved: true
+    40	
+    41	  - name: 'team-backend'
+    42	    slack_configs:
+    43	      - channel: '#team-backend-alerts'
+    44	        send_resolved: true
+    45	        title: '{{ template "slack.title" . }}'
+    46	        text: '{{ template "slack.text" . }}'
+    47	
+    48	  - name: 'db-team'
+    49	    slack_configs:
+    50	      - channel: '#db-alerts'
+    51	          send_resolved: false
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# sed -i '51s/^[ \t]*/          /' alertmanager.yml
+[?2004l[?2004hroot@b6b6275cc19d:/home/user/monitoring# cat -n alertmanager.yml | sed -n '48,51p' | cat -A
+[?2004l    48^I  - name: 'db-team'$
+    49^I    slack_configs:$
+    50^I      - channel: '#db-alerts'$
+    51^I          send_resolved: false$
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# sed -i '51s/^[ \t]*/\t        /' alertmanager.yml
+[?2004l[?2004hroot@b6b6275cc19d:/home/user/monitoring# cat -n alertmanager.yml | sed -n '48,51p' | cat -A
+[?2004l    48^I  - name: 'db-team'$
+    49^I    slack_configs:$
+    50^I      - channel: '#db-alerts'$
+    51^I^I        send_resolved: false$
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# sed -i '51s/^[ \t]*/\t        /' alertmanager.yml
+[?2004l[?2004hroot@b6b6275cc19d:/home/user/monitoring# cat -n alertmanager.yml | sed -n '48,51p' | cat -A
+[?2004l    48^I  - name: 'db-team'$
+    49^I    slack_configs:$
+    50^I      - channel: '#db-alerts'$
+    51^I^I        send_resolved: false$
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# cat -n alertmanager.yml | sed -n '36,46p' | cat -A
+[?2004l    36^I  - name: 'slack-warnings'$
+    37^I    slack_configs:$
+    38^I      - channel: '#alerts-warnings'$
+    39^I        send_resolved: true$
+    40^I$
+    41^I  - name: 'team-backend'$
+    42^I    slack_configs:$
+    43^I      - channel: '#team-backend-alerts'$
+    44^I        send_resolved: true$
+    45^I        title: '{{ template "slack.title" . }}'$
+    46^I        text: '{{ template "slack.text" . }}'$
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# cp alertmanager.yml.backup alertmanager.yml
+[?2004l[?2004hroot@b6b6275cc19d:/home/user/monitoring# python3 << 'EOF'
+[?2004l[?2004h> with open('alertmanager.yml', 'r') as f:
+[?2004l[?2004h>     lines = f.readlines()
+[?2004l[?2004h> lines[50] = '\t        send_resolved: false\n'
+[?2004l[?2004h> with open('alertmanager.yml', 'w') as f:
+[?2004l[?2004h>     f.writelines(lines)
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@b6b6275cc19d:/home/user/monitoring# cat -n alertmanager.yml | sed -n '48,51p' | cat -A
+[?2004l    48^I  - name: 'db-team'$
+    49^I    slack_configs:$
+    50^I      - channel: '#db-alerts'$
+    51^I^I        send_resolved: false$
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# tail -5 alertmanager.yml | cat -A
+[?2004l$
+  - name: 'db-team'$
+    slack_configs:$
+      - channel: '#db-alerts'$
+^I        send_resolved: false$
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# ./alertmanager --config.file=alertmanager.yml
+[?2004lts=2026-05-05T07:50:16.501Z caller=main.go:181 level=info msg="Starting Alertmanager" version="(version=0.27.0, branch=HEAD, revision=0aa3c2aad14cff039931923ab16b26b7481783b5)"
+ts=2026-05-05T07:50:16.501Z caller=main.go:182 level=info build_context="(go=go1.21.7, platform=linux/amd64, user=root@22cd11f671e9, date=20240228-11:51:20, tags=netgo)"
+ts=2026-05-05T07:50:16.501Z caller=cluster.go:186 level=info component=cluster msg="setting advertise address explicitly" addr=172.18.0.2 port=9094
+ts=2026-05-05T07:50:16.502Z caller=cluster.go:683 level=info component=cluster msg="Waiting for gossip to settle..." interval=2s
+ts=2026-05-05T07:50:16.527Z caller=coordinator.go:113 level=info component=configuration msg="Loading configuration file" file=alertmanager.yml
+ts=2026-05-05T07:50:16.527Z caller=coordinator.go:118 level=error component=configuration msg="Loading configuration file failed" file=alertmanager.yml err="yaml: line 51: found character that cannot start any token"
+ts=2026-05-05T07:50:16.527Z caller=cluster.go:692 level=info component=cluster msg="gossip not settled but continuing anyway" polls=0 elapsed=25.225268ms
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# sed -n '48,51p' alertmanager.yml | od -c
+[?2004l0000000           -       n   a   m   e   :       '   d   b   -   t   e
+0000020   a   m   '  \n                   s   l   a   c   k   _   c   o
+0000040   n   f   i   g   s   :  \n                           -       c
+0000060   h   a   n   n   e   l   :       '   #   d   b   -   a   l   e
+0000100   r   t   s   '  \n  \t                                   s   e
+0000120   n   d   _   r   e   s   o   l   v   e   d   :       f   a   l
+0000140   s   e  \n
+0000143
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# python3 << 'EOF'
+[?2004l[?2004h> with open('alertmanager.yml', 'r') as f:
+[?2004l[?2004h>     lines = f.readlines()
+[?2004l[?2004h> lines[50] = '        send_resolved: false\n'
+[?2004l[?2004h> with open('alertmanager.yml', 'w') as f:
+[?2004l[?2004h>     f.writelines(lines)
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@b6b6275cc19d:/home/user/monitoring# sed -n '48,51p' alertmanager.yml | od -c
+[?2004l0000000           -       n   a   m   e   :       '   d   b   -   t   e
+0000020   a   m   '  \n                   s   l   a   c   k   _   c   o
+0000040   n   f   i   g   s   :  \n                           -       c
+0000060   h   a   n   n   e   l   :       '   #   d   b   -   a   l   e
+0000100   r   t   s   '  \n                                   s   e   n
+0000120   d   _   r   e   s   o   l   v   e   d   :       f   a   l   s
+0000140   e  \n
+0000142
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# ./alertmanager --config.file=alertmanager.yml &
+[?2004l[1] 831
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# ts=2026-05-05T07:50:41.073Z caller=main.go:181 level=info msg="Starting Alertmanager" version="(version=0.27.0, branch=HEAD, revision=0aa3c2aad14cff039931923ab16b26b7481783b5)"
+ts=2026-05-05T07:50:41.073Z caller=main.go:182 level=info build_context="(go=go1.21.7, platform=linux/amd64, user=root@22cd11f671e9, date=20240228-11:51:20, tags=netgo)"
+ts=2026-05-05T07:50:41.074Z caller=cluster.go:186 level=info component=cluster msg="setting advertise address explicitly" addr=172.18.0.2 port=9094
+ts=2026-05-05T07:50:41.074Z caller=cluster.go:683 level=info component=cluster msg="Waiting for gossip to settle..." interval=2s
+ts=2026-05-05T07:50:41.099Z caller=coordinator.go:113 level=info component=configuration msg="Loading configuration file" file=alertmanager.yml
+ts=2026-05-05T07:50:41.100Z caller=coordinator.go:126 level=info component=configuration msg="Completed loading of configuration file" file=alertmanager.yml
+ts=2026-05-05T07:50:41.102Z caller=main.go:394 level=info component=configuration msg="skipping creation of receiver not referenced by any route" receiver=db-team
+ts=2026-05-05T07:50:41.103Z caller=tls_config.go:313 level=info msg="Listening on" address=[::]:9093
+ts=2026-05-05T07:50:41.103Z caller=tls_config.go:316 level=info msg="TLS is disabled." http2=false address=[::]:9093
+sleep 2
+[?2004lts=2026-05-05T07:50:43.074Z caller=cluster.go:708 level=info component=cluster msg="gossip not settled" polls=0 before=0 now=1 elapsed=2.000025187s
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# ts=2026-05-05T07:50:51.077Z caller=cluster.go:700 level=info component=cluster msg="gossip settled; proceeding" elapsed=10.002416021s
+ps aux | grep alertmanager
+[?2004lroot         831  0.5  0.0 1259244 35812 pts/0   Sl   07:50   0:00 ./[01;31m[Kalertmanager[m[K --config.file=[01;31m[Kalertmanager[m[K.yml
+root         885  0.0  0.0   3856  2060 pts/0    S+   07:50   0:00 grep --color=auto [01;31m[Kalertmanager[m[K
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# netstat -tlnp | grep 9093
+[?2004lbash: netstat: command not found
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# ls -la rules/
+[?2004ltotal 16
+drwxrwxrwx 1 root root 4096 May  5 07:48 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 07:49 [34;42m..[0m
+-rwxrwxrwx 1 root root  897 May  5 07:48 [01;32malerts.yml[0m
+-rwxrwxrwx 1 root root  671 May  5 07:48 [01;32mdatabase.yml[0m
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# ss -tlnp | grep 9093
+[?2004lLISTEN 0      4096               *:[01;31m[K9093[m[K             *:*    users:(("alertmanager",pid=831,fd=8))
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# cat rules/alerts.yml
+[?2004lgroups:
+  - name: example-alerts
+    rules:
+      - alert: HighErrorRate
+        expr: job:request_errors:rate5m > 0.5
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }} for {{ $labels.job }}"
+
+      - alert: HighLatency
+        expr: job:request_latency_seconds:mean5m > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency detected"
+          description: "Latency is {{ $value }}s for {{ $labels.job }}"
+
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 1 minute."
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# cat rules/database.yml
+[?2004lgroups:
+  - name: database-alerts
+    rules:
+      - alert: DatabaseConnectionsHigh
+        expr: pg_stat_activity_count > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: database
+        annotations:
+          summary: "High number of database connections"
+          description: "Database has {{ $value }} active connections"
+
+      - alert: DatabaseReplicationLag
+        expr: pg_replication_lag > 300
+        for: 10m
+        labels:
+          severity: critical
+          service: database
+        annotations:
+          summary: "Database replication lag is high"
+          description: "Replication lag is {{ $value }} seconds"
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# curl -s http://localhost:9093/api/v2/status | head -20
+[?2004l{"cluster":{"name":"01KQVHW95JA8QZJH8FNYMV9QCW","peers":[{"address":"172.18.0.2:9094","name":"01KQVHW95JA8QZJH8FNYMV9QCW"}],"status":"ready"},"config":{"original":"global:\n  resolve_timeout: 5m\n  http_config:\n    follow_redirects: true\n    enable_http2: true\n  smtp_hello: localhost\n  smtp_require_tls: true\n  slack_api_url: <secret>\n  pagerduty_url: https://events.pagerduty.com/v2/enqueue\n  opsgenie_api_url: https://api.opsgenie.com/\n  wechat_api_url: https://qyapi.weixin.qq.com/cgi-bin/\n  victorops_api_url: https://alert.victorops.com/integrations/generic/20131114/alert/\n  telegram_api_url: https://api.telegram.org\n  webex_api_url: https://webexapis.com/v1/messages\nroute:\n  receiver: default-receiver\n  group_by:\n  - alertname\n  - cluster\n  continue: false\n  routes:\n  - receiver: pagerduty-critical\n    match:\n      severity: critical\n    continue: false\n  - receiver: slack-warnings\n    match:\n      severity: warning\n    continue: false\n  - receiver: team-backend\n    match_re:\n      service: ^(foo|bar)$\n    continue: false\n  group_wait: 30s\n  group_interval: 5m\n  repeat_interval: 4h\nreceivers:\n- name: default-receiver\n  slack_configs:\n  - send_resolved: true\n    http_config:\n      follow_redirects: true\n      enable_http2: true\n    api_url: <secret>\n    channel: '#alerts-general'\n    username: '{{ template \"slack.default.username\" . }}'\n    color: '{{ if eq .Status \"firing\" }}danger{{ else }}good{{ end }}'\n    title: '{{ template \"slack.default.title\" . }}'\n    title_link: '{{ template \"slack.default.titlelink\" . }}'\n    pretext: '{{ template \"slack.default.pretext\" . }}'\n    text: '{{ template \"slack.default.text\" . }}'\n    short_fields: false\n    footer: '{{ template \"slack.default.footer\" . }}'\n    fallback: '{{ template \"slack.default.fallback\" . }}'\n    callback_id: '{{ template \"slack.default.callbackid\" . }}'\n    icon_emoji: '{{ template \"slack.default.iconemoji\" . }}'\n    icon_url: '{{ template \"slack.default.iconurl\" . }}'\n    link_names: false\n- name: pagerduty-critical\n  pagerduty_configs:\n  - send_resolved: true\n    http_config:\n      follow_redirects: true\n      enable_http2: true\n    service_key: <secret>\n    url: https://events.pagerduty.com/v2/enqueue\n    client: '{{ template \"pagerduty.default.client\" . }}'\n    client_url: '{{ template \"pagerduty.default.clientURL\" . }}'\n    description: '{{ template \"pagerduty.default.description\" .}}'\n    details:\n      firing: '{{ template \"pagerduty.default.instances\" .Alerts.Firing }}'\n      num_firing: '{{ .Alerts.Firing | len }}'\n      num_resolved: '{{ .Alerts.Resolved | len }}'\n      resolved: '{{ template \"pagerduty.default.instances\" .Alerts.Resolved }}'\n    source: '{{ template \"pagerduty.default.client\" . }}'\n    severity: critical\n- name: slack-warnings\n  slack_configs:\n  - send_resolved: true\n    http_config:\n      follow_redirects: true\n      enable_http2: true\n    api_url: <secret>\n    channel: '#alerts-warnings'\n    username: '{{ template \"slack.default.username\" . }}'\n    color: '{{ if eq .Status \"firing\" }}danger{{ else }}good{{ end }}'\n    title: '{{ template \"slack.default.title\" . }}'\n    title_link: '{{ template \"slack.default.titlelink\" . }}'\n    pretext: '{{ template \"slack.default.pretext\" . }}'\n    text: '{{ template \"slack.default.text\" . }}'\n    short_fields: false\n    footer: '{{ template \"slack.default.footer\" . }}'\n    fallback: '{{ template \"slack.default.fallback\" . }}'\n    callback_id: '{{ template \"slack.default.callbackid\" . }}'\n    icon_emoji: '{{ template \"slack.default.iconemoji\" . }}'\n    icon_url: '{{ template \"slack.default.iconurl\" . }}'\n    link_names: false\n- name: team-backend\n  slack_configs:\n  - send_resolved: true\n    http_config:\n      follow_redirects: true\n      enable_http2: true\n    api_url: <secret>\n    channel: '#team-backend-alerts'\n    username: '{{ template \"slack.default.username\" . }}'\n    color: '{{ if eq .Status \"firing\" }}danger{{ else }}good{{ end }}'\n    title: '{{ template \"slack.title\" . }}'\n    title_link: '{{ template \"slack.default.titlelink\" . }}'\n    pretext: '{{ template \"slack.default.pretext\" . }}'\n    text: '{{ template \"slack.text\" . }}'\n    short_fields: false\n    footer: '{{ template \"slack.default.footer\" . }}'\n    fallback: '{{ template \"slack.default.fallback\" . }}'\n    callback_id: '{{ template \"slack.default.callbackid\" . }}'\n    icon_emoji: '{{ template \"slack.default.iconemoji\" . }}'\n    icon_url: '{{ template \"slack.default.iconurl\" . }}'\n    link_names: false\n- name: db-team\n  slack_configs:\n  - send_resolved: false\n    http_config:\n      follow_redirects: true\n      enable_http2: true\n    api_url: <secret>\n    channel: '#db-alerts'\n    username: '{{ template \"slack.default.username\" . }}'\n    color: '{{ if eq .Status \"firing\" }}danger{{ else }}good{{ end }}'\n    title: '{{ template \"slack.default.title\" . }}'\n    title_link: '{{ template \"slack.default.titlelink\" . }}'\n    pretext: '{{ template \"slack.default.pretext\" . }}'\n    text: '{{ template \"slack.default.text\" . }}'\n    short_fields: false\n    footer: '{{ template \"slack.default.footer\" . }}'\n    fallback: '{{ template \"slack.default.fallback\" . }}'\n    callback_id: '{{ template \"slack.default.callbackid\" . }}'\n    icon_emoji: '{{ template \"slack.default.iconemoji\" . }}'\n    icon_url: '{{ template \"slack.default.iconurl\" . }}'\n    link_names: false\ntemplates:\n- templates/*.tmpl\n"},"uptime":"2026-05-05T07:50:41.074Z","versionInfo":{"branch":"HEAD","buildDate":"20240228-11:51:20","buildUser":"root@22cd11f671e9","goVersion":"go1.21.7","revision":"0aa3c2aad14cff039931923ab16b26b7481783b5","version":"0.27.0"}}
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# curl -s http://localhost:9093/api/v2/receivers | grep -o '"name":"[^"]*"' | sort -u
+[?2004l"name":"db-team"
+"name":"default-receiver"
+"name":"pagerduty-critical"
+"name":"slack-warnings"
+"name":"team-backend"
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# curl -s http://localhost:9093/-/healthy
+[?2004lOK[?2004hroot@b6b6275cc19d:/home/user/monitoring# ps aux | grep '[a]lertmanager'
+[?2004lroot         831  0.2  0.0 1259244 36832 pts/0   Sl   07:50   0:00 ./[01;31m[Kalertmanager[m[K --config.file=[01;31m[Kalertmanager[m[K.yml
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# echo 'Alertmanager is running successfully on port 9093 with all required routes intact.'
+[?2004lAlertmanager is running successfully on port 9093 with all required routes intact.
+[?2004hroot@b6b6275cc19d:/home/user/monitoring# 

@@ -1,0 +1,141 @@
+Hit:1 http://us-west-1.ec2.archive.ubuntu.com/ubuntu jammy InRelease
+Hit:2 http://us-west-1.ec2.archive.ubuntu.com/ubuntu jammy-updates InRelease
+Hit:3 http://us-west-1.ec2.archive.ubuntu.com/ubuntu jammy-backports InRelease
+Hit:4 http://us-west-1.ec2.archive.ubuntu.com/ubuntu jammy-security InRelease
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+curl is already the newest version (7.81.0-1ubuntu1.24).
+0 upgraded, 0 newly installed, 0 to remove and 2 not upgraded.
+downloading uv 0.9.5 x86_64-unknown-linux-gnu
+no checksums to verify
+installing to /root/.local/bin
+  uv
+  uvx
+everything's installed!
+
+To add $HOME/.local/bin to your PATH, either restart your shell or run:
+
+    source $HOME/.local/bin/env (sh, bash, zsh)
+    source $HOME/.local/bin/env.fish (fish)
+Downloading cpython-3.12.12-linux-x86_64-gnu (download) (31.1MiB)
+ Downloading cpython-3.12.12-linux-x86_64-gnu (download)
+Downloading pygments (1.2MiB)
+ Downloading pygments
+Installed 5 packages in 13ms
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-8.4.1, pluggy-1.6.0 -- /root/.cache/uv/archive-v0/AFz-hRj5EAC7LjyEeKb4e/bin/python
+cachedir: .pytest_cache
+rootdir: /tests
+collecting ... collected 19 items
+
+../../tests/test_final_state.py::TestRedisRunning::test_redis_process_running PASSED [  5%]
+../../tests/test_final_state.py::TestRedisRunning::test_redis_port_listening PASSED [ 10%]
+../../tests/test_final_state.py::TestPostgresRunning::test_postgres_process_running PASSED [ 15%]
+../../tests/test_final_state.py::TestPostgresRunning::test_postgres_port_listening PASSED [ 21%]
+../../tests/test_final_state.py::TestFlaskAPIRunning::test_api_port_listening PASSED [ 26%]
+../../tests/test_final_state.py::TestFlaskAPIRunning::test_api_process_running PASSED [ 31%]
+../../tests/test_final_state.py::TestAPIHealthEndpoint::test_health_endpoint_returns_200 FAILED [ 36%]
+../../tests/test_final_state.py::TestAPIHealthEndpoint::test_health_endpoint_contains_ok FAILED [ 42%]
+../../tests/test_final_state.py::TestAPIHealthEndpoint::test_health_endpoint_not_error FAILED [ 47%]
+../../tests/test_final_state.py::TestAPISourceUnchanged::test_api_py_exists PASSED [ 52%]
+../../tests/test_final_state.py::TestAPISourceUnchanged::test_api_py_contains_health_check_logic PASSED [ 57%]
+../../tests/test_final_state.py::TestAPISourceUnchanged::test_api_py_has_health_route PASSED [ 63%]
+../../tests/test_final_state.py::TestServicesConnectivity::test_can_connect_to_redis_port PASSED [ 68%]
+../../tests/test_final_state.py::TestServicesConnectivity::test_can_connect_to_api_port PASSED [ 73%]
+../../tests/test_final_state.py::TestConfigurationFixed::test_redis_conf_has_valid_daemonize PASSED [ 78%]
+../../tests/test_final_state.py::TestConfigurationFixed::test_port_configuration_consistent PASSED [ 84%]
+../../tests/test_final_state.py::TestDevstackStructureIntact::test_devstack_directory_exists PASSED [ 89%]
+../../tests/test_final_state.py::TestDevstackStructureIntact::test_start_sh_exists PASSED [ 94%]
+../../tests/test_final_state.py::TestDevstackStructureIntact::test_logs_directory_exists PASSED [100%]
+
+=================================== FAILURES ===================================
+____________ TestAPIHealthEndpoint.test_health_endpoint_returns_200 ____________
+
+self = <test_final_state.TestAPIHealthEndpoint object at 0x73481e814fb0>
+
+    def test_health_endpoint_returns_200(self):
+        """curl to /health should return HTTP 200."""
+        result = subprocess.run(
+            ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+             f"http://{API_HOST}:{API_PORT}/health"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        http_code = result.stdout.strip()
+>       assert http_code == "200", (
+            f"Health endpoint returned HTTP {http_code}, expected 200. "
+            "This likely means either Redis or PostgreSQL is not properly "
+            "connected. The /health endpoint checks both backends. "
+            f"stderr: {result.stderr}"
+        )
+E       AssertionError: Health endpoint returned HTTP 500, expected 200. This likely means either Redis or PostgreSQL is not properly connected. The /health endpoint checks both backends. stderr: 
+E       assert '500' == '200'
+E         
+E         - 200
+E         + 500
+
+/tests/test_final_state.py:148: AssertionError
+____________ TestAPIHealthEndpoint.test_health_endpoint_contains_ok ____________
+
+self = <test_final_state.TestAPIHealthEndpoint object at 0x73481e816720>
+
+    def test_health_endpoint_contains_ok(self):
+        """Health endpoint response body should contain 'ok'."""
+        result = subprocess.run(
+            ["curl", "-s", f"http://{API_HOST}:{API_PORT}/health"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        assert result.returncode == 0, (
+            f"curl to health endpoint failed: {result.stderr}"
+        )
+        response_body = result.stdout.lower()
+>       assert "ok" in response_body, (
+            f"Health endpoint response does not contain 'ok'. "
+            f"Response body: {result.stdout}. "
+            "The health check must pass, indicating both Redis and "
+            "PostgreSQL are reachable."
+        )
+E       AssertionError: Health endpoint response does not contain 'ok'. Response body: {"message":"connection to server at \"localhost\" (::1), port 5432 failed: Connection refused\n\tIs the server running on that host and accepting TCP/IP connections?\nconnection to server at \"localhost\" (127.0.0.1), port 5432 failed: Connection refused\n\tIs the server running on that host and accepting TCP/IP connections?\n","status":"error"}
+E         . The health check must pass, indicating both Redis and PostgreSQL are reachable.
+E       assert 'ok' in '{"message":"connection to server at \\"localhost\\" (::1), port 5432 failed: connection refused\\n\\tis the server running on that host and accepting tcp/ip connections?\\nconnection to server at \\"localhost\\" (127.0.0.1), port 5432 failed: connection refused\\n\\tis the server running on that host and accepting tcp/ip connections?\\n","status":"error"}\n'
+
+/tests/test_final_state.py:167: AssertionError
+_____________ TestAPIHealthEndpoint.test_health_endpoint_not_error _____________
+
+self = <test_final_state.TestAPIHealthEndpoint object at 0x73481e96a930>
+
+    def test_health_endpoint_not_error(self):
+        """Health endpoint should not return error status."""
+        result = subprocess.run(
+            ["curl", "-s", f"http://{API_HOST}:{API_PORT}/health"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        response_body = result.stdout.lower()
+        # Should not contain error indicators
+>       assert "error" not in response_body or "ok" in response_body, (
+            f"Health endpoint indicates an error: {result.stdout}. "
+            "Both Redis and PostgreSQL must be properly connected."
+        )
+E       AssertionError: Health endpoint indicates an error: {"message":"connection to server at \"localhost\" (::1), port 5432 failed: Connection refused\n\tIs the server running on that host and accepting TCP/IP connections?\nconnection to server at \"localhost\" (127.0.0.1), port 5432 failed: Connection refused\n\tIs the server running on that host and accepting TCP/IP connections?\n","status":"error"}
+E         . Both Redis and PostgreSQL must be properly connected.
+E       assert ('error' not in '{"message":...":"error"}\n'
+E         
+E         'error' is contained here:
+E           {"message":"connection to server at \"localhost\" (::1), port 5432 failed: connection refused\n\tis the server running on that host and accepting tcp/ip connections?\nconnection to server at \"localhost\" (127.0.0.1), port 5432 failed: connection refused\n\tis the server running on that host and accepting tcp/ip connections?\n","status":"error"}
+E         ?                                                                                                                                                                                                                             ...
+E         
+E         ...Full output truncated (1 line hidden), use '-vv' to show or 'ok' in '{"message":"connection to server at \\"localhost\\" (::1), port 5432 failed: connection refused\\n\\tis the server running on that host and accepting tcp/ip connections?\\nconnection to server at \\"localhost\\" (127.0.0.1), port 5432 failed: connection refused\\n\\tis the server running on that host and accepting tcp/ip connections?\\n","status":"error"}\n')
+
+/tests/test_final_state.py:184: AssertionError
+=========================== short test summary info ============================
+FAILED ../../tests/test_final_state.py::TestAPIHealthEndpoint::test_health_endpoint_returns_200
+FAILED ../../tests/test_final_state.py::TestAPIHealthEndpoint::test_health_endpoint_contains_ok
+FAILED ../../tests/test_final_state.py::TestAPIHealthEndpoint::test_health_endpoint_not_error
+========================= 3 failed, 16 passed in 0.17s =========================

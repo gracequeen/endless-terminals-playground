@@ -1,0 +1,64 @@
+New Terminal Output:
+
+user@b01184b52a1a:~/wal_recovery$ pg_waldump --help 2>&1 | grep -A 5 -i 'option\|usage'
+Usage:
+  pg_waldump [OPTION]... [STARTSEG [ENDSEG]]
+
+Options:
+  -b, --bkp-details      output detailed information about backup blocks
+  -B, --block=N          with --relation, only show records that modify block N
+  -e, --end=RECPTR       stop reading at WAL location RECPTR
+  -f, --follow           keep retrying after reaching end of WAL
+  -F, --fork=FORK        only show records that modify blocks in fork FORK;
+--
+                         (optionally, show per-record statistics)
+  -?, --help             show this help, then exit
+
+Report bugs to <pgsql-bugs@lists.postgresql.org>.
+PostgreSQL home page: <https://www.postgresql.org/>
+user@b01184b52a1a:~/wal_recovery$ python3 << 'EOF'
+XOR {xor_val:#06x} = {xor_magic:#06x} (MATCH!)")
+                break
+
+check_wal_pages('primary_wal/000000010000000000000003', 5)
+check_wal_pages('primary_wal/000000010000000000000004', 5)
+EOF
+> # Maybe the corruption is in specific bytes
+> # Let's check if the files have any valid PostgreSQL WAL page headers
+> # WAL pages are 8KB each, so check every 8192 bytes
+>
+> import struct
+>
+> def check_wal_pages(filename, max_pages=10):
+>     with open(filename, 'rb') as f:
+>         data = f.read()
+>
+>     page_size = 8192
+>     print(f"\nChecking {filename}:")
+>     print(f"  File size: {len(data)} bytes ({len(data)//page_size} pages)")
+>
+>     for page_num in range(min(max_pages, len(data)//page_size)):
+>         offset = page_num * page_size
+>         page_data = data[offset:offset+page_size]
+>
+>         # Check magic number (should be 0xF003 for PG15 or similar)
+>         magic = struct.unpack('<H', page_data[0:2])[0]
+>
+>         # Check various XOR possibilities
+>         for xor_val in [0x0000, 0xFFFF, 0xAAAA, 0x5555]:
+>             xor_magic = magic ^ xor_val
+>             if xor_magic in [0xF003, 0xD110, 0xD113]:  # Known PG magic numbers
+>                 print(f"  Page {page_num}: magic={magic:#06x}, XOR {xor_val:#06x} = {xor_magic:#06x} (MATCH!)")
+>                 break
+>
+> check_wal_pages('primary_wal/000000010000000000000003', 5)
+> check_wal_pages('primary_wal/000000010000000000000004', 5)
+> EOF
+
+Checking primary_wal/000000010000000000000003:
+  File size: 16777216 bytes (2048 pages)
+  Page 0: magic=0x0ffc, XOR 0xffff = 0xf003 (MATCH!)
+
+Checking primary_wal/000000010000000000000004:
+  File size: 16777216 bytes (2048 pages)
+user@b01184b52a1a:~/wal_recovery$

@@ -1,0 +1,75 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@c9da50e81b0b:~/infra-configs$ cat > .git/hooks/pre-push << 'EOF'
+> #!/bin/bash
+> # Pre-push hook to block pushing commits with world-readable private keys
+> # This provides a second line of defense if pre-commit was bypassed with --no-verify
+>
+> echo "[pre-push] Scanning commits for world-readable private keys..."
+>
+> remote="$1"
+> url="$2"
+>
+> z40=0000000000000000000000000000000000000000
+>
+> while read local_ref local_sha remote_ref remote_sha
+> do
+>     if [ "$local_sha" = $z40 ]; then
+>         # Handle delete - nothing to check
+>         continue
+>     else
+>         if [ "$remote_sha" = $z40 ]; then
+>             # New branch, examine all commits
+>             range="$local_sha"
+>         else
+>             # Update to existing branch, examine new commits
+>             range="$remote_sha..$local_sha"
+>         fi
+>
+>         # Check each commit in the range
+>         for commit in $(git rev-list $range); do
+>             # Get files added or modified in this commit
+>             files=$(git diff-tree --no-commit-id --name-only --diff-filter=AM -r $commit)
+>
+>             for file in $files; do
+>                 # Check if file matches *.pem or *.key
+>                 if [[ "$file" == *.pem ]] || [[ "$file" == *.key ]]; then
+>                     # Check file mode from git
+>                     mode=$(git ls-tree $commit "$file" | awk '{print $1}')
+>
+>                     if [ -n "$mode" ]; then
+>                         # Extract last 3 digits of mode (e.g., 100644 -> 644)
+>                         perms=${mode: -3}
+>
+>                         # Check if permissions are 600 or 400 (secure)
+>                         if [ "$perms" != "600" ] && [ "$perms" != "400" ]; then
+>                             echo ""
+>                             echo "ERROR: Commit $commit contains insecure key file: $file"
+>                             echo "       File mode in git: $mode (permissions: $perms)"
+>                             echo "       Private keys must have permissions 0600 or 0400."
+>                             echo ""
+>                             echo "To fix this:"
+>                             echo "  1. chmod 600 $file"
+>                             echo "  2. git add $file"
+>                             echo "  3. git commit --amend --no-edit"
+>                             echo "  4. git push"
+>                             echo ""
+>                             echo "PUSH REJECTED for security reasons."
+>                             exit 1
+>                         fi
+>                     fi
+>                 fi
+>             done
+>         done
+>     fi
+> done
+>
+> echo "[pre-push] All commits passed security checks."
+> exit 0
+> EOF
+user@c9da50e81b0b:~/infra-configs$ chmod +x .git/hooks/pre-push
+user@c9da50e81b0b:~/infra-configs$

@@ -42,7 +42,7 @@ Real engineering requests come in several shapes. Rotate across them deliberatel
 - **Investigation.** "The numbers in the report don't match the source. Figure out which is right."
 - **Optimization / tightening.** "This loop is fine but it's 40x slower than it should be."
 
-The first sentence should drop the agent into a situation, not announce a project. Past tense and present continuous both work ("started failing", "is silently dropping rows"). Cold openings ("Need a Python client for…") are also fine for non-debug task types.
+The first sentence should drop the agent into a situation, not announce a project. Past tense and present continuous both work ("started failing", "is silently dropping rows"). Cold openings ("I need a Python client for…") are also fine for non-debug task types.
 
 # Voice
 
@@ -51,8 +51,17 @@ The narrator is an engineer mid-stream. Casual, possibly tired, possibly wrong.
 - **First-person, mid-flow.** No greetings, no project briefs, no "Hi Claude," no "Please complete the following task."
 - **Specific about *where*, vague about *why*.** Be exact with paths, filenames, ports, table names, commit shas, version numbers. Be loose, hedging, or even mistaken about diagnosis. The user's guess can be wrong — that's realistic and forces real diagnosis.
 - **Hedges welcome.** "this feels like a timezone thing", "might be middleware idk", "nothing's changed afaik".
-- **Register cues for messiness.** Dropped articles ("server keeps OOMing"), abbreviations ("repo", "k8s", "tf", "ngl", "afaict"), trailing parentheticals ("(or maybe not)"), incomplete memory ("didn't save the exact error"), tangents, sentence fragments. Don't make every task this informal — vary it — but most should have at least one such tell. Maintain proper capitalization and punctuation — the messiness comes from tone and content, not from breaking grammar rules. Keep the subject pronoun "I" — write "I've been trying to…", "I have a tarball at…", "I'm getting…", not the pronoun-dropped forms "Been trying to…", "Got a tarball at…", "Trying to get…". Dropping "I" reads like a log entry, not a person talking.
+- **Register cues for messiness.** Dropped articles ("server keeps OOMing"), abbreviations ("repo", "k8s", "tf", "ngl", "afaict"), trailing parentheticals ("(or maybe not)"), incomplete memory ("didn't save the exact error"), tangents, sentence fragments. Don't make every task this informal — vary it — but most should have at least one such tell. Maintain proper capitalization and punctuation — the messiness comes from tone and content, not from breaking grammar rules.
 - **One imperfection minimum.** Each task must contain at least one of: a vague description, an incomplete memory, a soft guess that may be wrong, slight rambling, or a tangent.
+
+# Subject pronoun rule
+
+Every sentence that has the user as its subject MUST include "I" (or "we"). Never drop the pronoun. Pronoun-dropped openings read like log entries or ticket titles, not a person talking.
+
+Write: "I've been trying to…", "I got a tarball at…", "I need to decrypt…", "I'm getting 403s."
+NOT: "Been trying to…", "Got a tarball at…", "Need to decrypt…", "Trying to get…", "Running a permissions audit…"
+
+This applies everywhere in the task, but especially to the first sentence. If your draft opens with a bare verb phrase (gerund or infinitive) where "I" is the implied subject, add the pronoun.
 
 # What real users don't do
 
@@ -82,7 +91,7 @@ The task is one or two paragraphs of prose, not a list of requirements. A constr
 Bad: "It should output a JSON with fields timestamp, services, and overall status."
     — banned phrasing ("should output"), spec voice, reads like API docs.
 
-Good: "throw it into a json report — timestamp, services, overall status, the usual."
+Good: "I throw it into a json report — timestamp, services, overall status, the usual."
     — same information, casual register, sounds like Slack.
 
 If you find yourself listing requirements, you've stopped writing as a user and started writing as a PM. Rewrite as one breath of prose instead. The fix is almost always voice, not deletion — keep the concrete observables (paths, counts, error fragments, ports), kill the spec register around them.
@@ -94,7 +103,7 @@ Do NOT express requirements as multiple consecutive sentences. If you have three
 Bad: "It should write a report. It should include timestamps. It should include results."
     — three requirement sentences in a row. Spec rhythm.
 
-Good: "need a quick report dumped somewhere — timestamps, results, that kind of thing."
+Good: "I need a quick report dumped somewhere — timestamps, results, that kind of thing."
     — same info, single breath, conversational.
 
 ## Structural red flags
@@ -188,7 +197,7 @@ Why this works: trigger event (dropping rows), specific observables (5 vs 11), a
 
 <example>
 <task>
-    Bumped vite 4.5 -> 5 in /home/user/dashboard last night (and the react plugin with it) and now `npm run build` falls over partway — something about "default" not being exported, then later some `@/` imports can't be resolved. Weird thing is `npm run dev` still works fine. Haven't touched vite.config.ts in months.
+    I bumped vite 4.5 -> 5 in /home/user/dashboard last night (and the react plugin with it) and now `npm run build` falls over partway — something about "default" not being exported, then later some `@/` imports can't be resolved. Weird thing is `npm run dev` still works fine. I haven't touched vite.config.ts in months.
     Just need the prod build green again — usual dist output, working index.html.
 </task>
 

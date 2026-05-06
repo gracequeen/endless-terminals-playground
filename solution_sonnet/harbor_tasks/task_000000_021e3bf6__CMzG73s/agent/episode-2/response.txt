@@ -1,0 +1,19 @@
+{
+  "analysis": "Perfect! I can see that host03.txt is indeed truncated - it only has MemTotal and a partial 'MemAvai' line without the MemAvailable value. The other hosts have complete data. From the samples: host01 has 8192000/16384000 = 50% available, host02 has 4915200/32768000 = 15% available (this should be in the report), and host05 has 4096000/8192000 = 50% available. I need to process all files and identify those with <20% available memory.",
+  "plan": "I'll create a bash script that: 1) Loops through all host files, 2) Extracts MemTotal and MemAvailable using grep, 3) Handles missing values gracefully (like host03), 4) Calculates percentage available, 5) Filters for <20%, 6) Sorts by percentage (ascending = worst first), and 7) Outputs hostname and percentage tab-separated to the report file.",
+  "commands": [
+    {
+      "keystrokes": "cat > process_memory.sh << 'EOF'\n#!/bin/bash\n\n# Output file\nOUTPUT=\"/home/user/low_memory_report.txt\"\n\n# Temporary file for collecting results\nTEMP_FILE=$(mktemp)\n\n# Process each host file\nfor hostfile in /home/user/memstats/host*.txt; do\n    hostname=$(basename \"$hostfile\" .txt)\n    \n    # Extract MemTotal and MemAvailable, handling missing values\n    mem_total=$(grep -E '^MemTotal:' \"$hostfile\" 2>/dev/null | awk '{print $2}')\n    mem_available=$(grep -E '^MemAvailable:' \"$hostfile\" 2>/dev/null | awk '{print $2}')\n    \n    # Skip if either value is missing or empty\n    if [[ -z \"$mem_total\" ]] || [[ -z \"$mem_available\" ]]; then\n        continue\n    fi\n    \n    # Calculate percentage available (using bc for floating point)\n    percentage=$(echo \"scale=2; ($mem_available * 100) / $mem_total\" | bc)\n    \n    # Check if less than 20%\n    is_low=$(echo \"$percentage < 20\" | bc)\n    \n    if [[ $is_low -eq 1 ]]; then\n        # Store for sorting: percentage, hostname, percentage (for output)\n        echo \"$percentage\t$hostname\t$percentage\" >> \"$TEMP_FILE\"\n    fi\ndone\n\n# Sort by percentage (ascending = worst first) and output hostname + percentage\nif [[ -f \"$TEMP_FILE\" ]] && [[ -s \"$TEMP_FILE\" ]]; then\n    sort -n \"$TEMP_FILE\" | awk -F'\\t' '{print $2 \"\\t\" $3}' > \"$OUTPUT\"\nelse\n    # Create empty file if no hosts meet criteria\n    touch \"$OUTPUT\"\nfi\n\n# Cleanup\nrm -f \"$TEMP_FILE\"\nEOF\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "chmod +x process_memory.sh\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "./process_memory.sh\n",
+      "duration": 1.0
+    }
+  ],
+  "task_complete": false
+}

@@ -1,0 +1,41 @@
+New Terminal Output:
+
+root@d4cb15a447b8:/home/user/infra# cat .env
+DB_HOST=postgres.internal
+REDIS_URL=redis://cache:6379
+VAULT_ADDR=https://vault.internal:8200
+API_SECRET=sk-prod-29f8a3e1
+DEPLOY_KEY=dk-7721-beta
+root@d4cb15a447b8:/home/user/infra# cat provision.sh
+#!/bin/bash
+set -euo pipefail
+
+source /home/user/infra/.env
+
+echo "Loaded DB_HOST=$DB_HOST"
+echo "Loaded REDIS_URL=$REDIS_URL"
+
+# Sensitive vars handled separately for security
+unset VAULT_ADDR API_SECRET DEPLOY_KEY
+
+if [[ -f /home/user/infra/.env.secrets ]]; then
+    source /home/user/infra/.env.secrets
+fi
+
+# Validate
+echo "Checking vault connectivity..."
+curl -sf "${VAULT_ADDR}/v1/sys/health" > /dev/null || echo "Vault check skipped"
+
+# Generate config
+cat > /home/user/infra/output/config.json <<EOF
+{
+    "database": "${DB_HOST}",
+    "cache": "${REDIS_URL}",
+    "vault": "${VAULT_ADDR}",
+    "api_key": "${API_SECRET}",
+    "deploy": "${DEPLOY_KEY}"
+}
+EOF
+
+echo "Provisioning complete"
+root@d4cb15a447b8:/home/user/infra#

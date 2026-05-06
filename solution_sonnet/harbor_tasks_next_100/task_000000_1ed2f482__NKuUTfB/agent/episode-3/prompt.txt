@@ -1,0 +1,132 @@
+New Terminal Output:
+
+root@727c8eb10987:/home/user/batch# cat runner.py
+#!/usr/bin/env python3
+"""Batch processor runner script."""
+
+import json
+import os
+import sys
+import time
+import requests
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(SCRIPT_DIR, "config", "credentials.json")
+CACHE_PATH = os.path.join(SCRIPT_DIR, ".cache", "auth_token")
+LOG_PATH = os.path.join(SCRIPT_DIR, "logs", "runner.log")
+API_BASE = "http://localhost:9100"
+
+CACHE_MAX_AGE_HOURS = 24
+
+def log(level, message):
+    """Write a log message."""
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{timestamp}] [{level}] {message}\n"
+    with open(LOG_PATH, "a") as f:
+        f.write(line)
+    print(line.strip())
+
+def load_credentials():
+    """Load credentials from config file."""
+    with open(CONFIG_PATH, "r") as f:
+        creds = json.load(f)
+    log("INFO", "Loaded credentials from config")
+    return creds
+
+def get_cached_token():
+    """Check for and return cached auth token if valid."""
+    if not os.path.exists(CACHE_PATH):
+        return None
+
+    # Check cache age by mtime
+    mtime = os.path.getmtime(CACHE_PATH)
+    age_hours = (time.time() - mtime) / 3600
+
+    if age_hours >= CACHE_MAX_AGE_HOURS:
+        log("DEBUG", f"Cache file age: {age_hours:.1f} hours (expired)")
+        return None
+
+    log("DEBUG", "Found cached auth token, skipping credential exchange")
+    log("DEBUG", f"Cache file age: {age_hours:.1f} hours (valid)")
+
+    with open(CACHE_PATH, "r") as f:
+        cached = json.load(f)
+
+    return cached.get("token")
+
+def authenticate(credentials):
+    """Exchange credentials for a token."""
+    log("INFO", "Exchanging credentials for new token")
+    resp = requests.post(
+        f"{API_BASE}/api/auth",
+        json={"key_id": credentials["key_id"], "secret": credentials["secret"]},
+        timeout=10
+    )
+
+    if resp.status_code != 200:
+        log("ERROR", f"Authentication failed: {resp.status_code} {resp.text}")
+        return None
+
+    data = resp.json()
+    token = data.get("token")
+
+    # Cache the new token
+    os.makedirs(os.path.dirname(CACHE_PATH), exist_ok=True)
+    with open(CACHE_PATH, "w") as f:
+        json.dump({
+            "key_id": credentials["key_id"],
+            "token": token,
+            "cached_at": time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        }, f)
+
+    log("INFO", "New token cached successfully")
+    return token
+
+def process_batch(token):
+    """Call the batch processing API."""
+    log("INFO", "Calling batch processing API")
+    resp = requests.get(
+        f"{API_BASE}/api/process",
+        headers={"Authorization": token},
+        timeout=10
+    )
+
+    if resp.status_code != 200:
+        log("ERROR", f"API request failed: {resp.status_code} Forbidden (request_id: req-{os.urandom(3).hex()})")
+        return False
+
+    log("INFO", f"API request successful: {resp.status_code} {resp.json()}")
+    return True
+
+def main():
+    """Main entry point."""
+    log("INFO", "Starting batch processor")
+
+    # Always load credentials first (for logging/validation)
+    credentials = load_credentials()
+
+    # Check for cached token
+    token = get_cached_token()
+
+    if token:
+        log("INFO", "Using cached token for authentication")
+    else:
+        # No valid cache, authenticate with credentials
+        token = authenticate(credentials)
+        if not token:
+            log("ERROR", "Failed to obtain authentication token")
+            sys.exit(1)
+
+    # Process the batch
+    success = process_batch(token)
+
+    if success:
+        log("INFO", "Batch processing completed successfully")
+        sys.exit(0)
+    else:
+        log("ERROR", "Batch processing failed")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+root@727c8eb10987:/home/user/batch#

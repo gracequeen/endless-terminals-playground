@@ -1,0 +1,52 @@
+New Terminal Output:
+
+I have no name!@0c0cabce7086:~$ cat /home/user/etl/test_ssh.sh
+#!/bin/bash
+/usr/local/bin/ssh-permission-check
+I have no name!@0c0cabce7086:~$ ls -la /home/user/etl/staging/
+total 20
+drwxr-xr-x 1 1000 1000 4096 May  5 18:34 .
+drwxr-xr-x 1 1000 1000 4096 May  5 18:34 ..
+-rwxr-xr-x 1 1000 1000   89 May  5 18:34 orders_20240115.csv
+-rwxr-xr-x 1 1000 1000   88 May  5 18:34 orders_20240116.csv
+-rwxr-xr-x 1 1000 1000   89 May  5 18:34 orders_20240117.csv
+I have no name!@0c0cabce7086:~$ cat > /tmp/fix_etl_issue.sh << 'EOF'
+> #!/bin/bash
+> # Fix script for ETL sync issue
+> # This script must be run with root privileges
+>
+> echo "=== ETL Sync Issue Fix ==="
+> echo ""
+> echo "ISSUE 1: Missing user account in /etc/passwd"
+> echo "The container is running as UID 1000 but no user exists for this UID."
+> echo "SSH requires a valid user account to function."
+> echo ""
+> echo "Checking current state..."
+> grep -q '^user:' /etc/passwd
+> if [ $? -ne 0 ]; then
+>     echo "User 'user' not found in /etc/passwd. Adding now..."
+>     echo 'user:x:1000:1000:ETL User:/home/user:/bin/bash' >> /etc/passwd
+>     echo "User added successfully."
+> else
+>     echo "User already exists in /etc/passwd."
+> fi
+> echo ""
+> echo "Verifying fix..."
+> whoami
+> id
+> echo ""
+> echo "ISSUE 2: SSH key permissions (FIXED)"
+> echo "Private key permissions have been corrected to 600."
+> ls -la /home/user/.ssh/etl_warehouse
+> echo ""
+> echo "ISSUE 3: New SSH public key needs to be added to warehouse server"
+> echo "The public key was regenerated this morning. The warehouse team needs to add this key:"
+> echo ""
+> cat /home/user/.ssh/etl_warehouse.pub
+> echo ""
+> echo "This key must be added to: etl_service@10.0.50.12:~/.ssh/authorized_keys"
+> echo ""
+> echo "Testing SSH connection..."
+> ssh -v warehouse echo 'Connection successful' 2>&1 | grep -E '(No user exists|Connection successful|Permission denied)'
+> EOF
+I have no name!@0c0cabce7086:~$

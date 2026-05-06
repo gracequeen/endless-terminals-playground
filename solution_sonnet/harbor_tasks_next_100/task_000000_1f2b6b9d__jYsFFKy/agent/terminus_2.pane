@@ -1,0 +1,289 @@
+[?2004hroot@00f6388ba7f6:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@00f6388ba7f6:/home/user# clear
+[?2004l[H[J[?2004hroot@00f6388ba7f6:/home/user# ls -la /home/user/
+[?2004ltotal 24
+drwxrwxrwx 1 root root 4096 May  5 06:49 [0m[34;42m.[0m
+drwxr-xr-x 1 root root 4096 May  5 06:49 [01;34m..[0m
+drwxrwxrwx 1 root root 4096 May  5 06:49 [34;42mapi[0m
+drwxrwxrwx 1 root root 4096 May  5 06:49 [34;42mextracted[0m
+drwxrwxrwx 1 root root 4096 May  5 06:49 [34;42mincoming[0m
+drwxrwxrwx 1 root root 4096 May  5 06:49 [34;42mlogs[0m
+[?2004hroot@00f6388ba7f6:/home/user# file /home/user/incoming/delivery_0422.bin
+[?2004l/home/user/incoming/delivery_0422.bin: 7-zip archive data, version 0.4
+[?2004hroot@00f6388ba7f6:/home/user# cat /home/user/logs/intake.log
+[?2004l2024-04-22T10:15:33 delivery_0422.bin unknown format - skipped
+[?2004hroot@00f6388ba7f6:/home/user# cat /home/user/api/extract_handler.sh
+[?2004l#!/bin/bash
+
+# Extract handler script for processing uploaded archives
+# Detects archive format and extracts contents
+
+INPUT_FILE="$1"
+OUTPUT_DIR="${2:-/home/user/extracted}"
+LOG_FILE="/home/user/logs/intake.log"
+
+if [ -z "$INPUT_FILE" ]; then
+    echo "Usage: $0 <input_file> [output_dir]"
+    exit 1
+fi
+
+if [ ! -f "$INPUT_FILE" ]; then
+    echo "Error: File not found: $INPUT_FILE"
+    exit 1
+fi
+
+FILENAME=$(basename "$INPUT_FILE")
+TIMESTAMP=$(date -Iseconds)
+
+# Detect mime type
+MIME_TYPE=$(file --mime-type -b "$INPUT_FILE")
+
+# Extract based on detected type
+case "$MIME_TYPE" in
+    application/zip)
+        unzip -o "$INPUT_FILE" -d "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+    application/x-tar)
+        tar -xf "$INPUT_FILE" -C "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+    application/gzip|application/x-gzip)
+        # Assume it's a tar.gz
+        tar -xzf "$INPUT_FILE" -C "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+    application/x-bzip2)
+        tar -xjf "$INPUT_FILE" -C "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+    application/x-xz)
+        tar -xJf "$INPUT_FILE" -C "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+    *)
+        echo "$TIMESTAMP $FILENAME unknown format - skipped" >> "$LOG_FILE"
+        echo "Unknown format: $MIME_TYPE"
+        exit 1
+        ;;
+esac
+
+echo "Extraction complete for $FILENAME"
+[?2004hroot@00f6388ba7f6:/home/user# file --mime-type -b /home/user/incoming/delivery_0422.bin
+[?2004lapplication/x-7z-compressed
+[?2004hroot@00f6388ba7f6:/home/user# which 7z 7za p7zip
+[?2004l[?2004hroot@00f6388ba7f6:/home/user# 7z --help 2>&1 | head -5
+[?2004lbash: 7z: command not found
+[?2004hroot@00f6388ba7f6:/home/user# apt-get update -qq && apt-get install -y p7zip-full
+[?2004lReading package lists... 0%Reading package lists... 0%Reading package lists... 0%Reading package lists... 3%Reading package lists... 3%Reading package lists... 3%Reading package lists... 3%Reading package lists... 37%Reading package lists... 37%Reading package lists... 37%Reading package lists... 37%Reading package lists... 47%Reading package lists... 47%Reading package lists... 49%Reading package lists... 65%Reading package lists... 65%Reading package lists... 69%Reading package lists... 69%Reading package lists... 69%Reading package lists... 69%Reading package lists... 69%Reading package lists... 69%Reading package lists... 69%Reading package lists... 69%Reading package lists... 79%Reading package lists... 79%Reading package lists... 96%Reading package lists... 96%Reading package lists... 99%Reading package lists... 99%Reading package lists... 99%Reading package lists... 99%Reading package lists... Done
+Building dependency tree... 0%Building dependency tree... 0%Building dependency tree... 50%Building dependency tree... 50%Building dependency tree... Done
+Reading state information... 0% Reading state information... 0%Reading state information... Done
+The following additional packages will be installed:
+  p7zip
+Suggested packages:
+  p7zip-rar
+The following NEW packages will be installed:
+  p7zip p7zip-full
+0 upgraded, 2 newly installed, 0 to remove and 2 not upgraded.
+Need to get 1549 kB of archives.
+After this operation, 5847 kB of additional disk space will be used.
+0% [Working]            Get:1 http://us-west-1.ec2.archive.ubuntu.com/ubuntu jammy/universe amd64 p7zip amd64 16.02+dfsg-8 [363 kB]
+0% [1 p7zip 5177 B/363 kB 1%]19% [1 p7zip 359 kB/363 kB 99%]                               29% [Working]             Get:2 http://us-west-1.ec2.archive.ubuntu.com/ubuntu jammy/universe amd64 p7zip-full amd64 16.02+dfsg-8 [1186 kB]
+29% [2 p7zip-full 2280 B/1186 kB 0%]42% [2 p7zip-full 260 kB/1186 kB 22%]80% [2 p7zip-full 997 kB/1186 kB 84%]                                     100% [Working]              Fetched 1549 kB in 2s (856 kB/s)
+debconf: delaying package configuration, since apt-utils is not installed
+Selecting previously unselected package p7zip.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 16279 files and directories currently installed.)
+Preparing to unpack .../p7zip_16.02+dfsg-8_amd64.deb ...
+Unpacking p7zip (16.02+dfsg-8) ...
+Selecting previously unselected package p7zip-full.
+Preparing to unpack .../p7zip-full_16.02+dfsg-8_amd64.deb ...
+Unpacking p7zip-full (16.02+dfsg-8) ...
+Setting up p7zip (16.02+dfsg-8) ...
+Setting up p7zip-full (16.02+dfsg-8) ...
+[?2004hroot@00f6388ba7f6:/home/user# 7z --help | head -3
+[?2004l
+7-Zip [64] 16.02 : Copyright (c) 1999-2016 Igor Pavlov : 2016-05-21
+p7zip Version 16.02 (locale=C.UTF-8,Utf16=on,HugeFiles=on,64 bits,48 CPUs Intel(R) Xeon(R) Platinum 8259CL CPU @ 2.50GHz (50657),ASM,AES-NI)
+[?2004hroot@00f6388ba7f6:/home/user# cp /home/user/api/extract_handler.sh /home/user/api/extract_handler.sh.backup
+[?2004l[?2004hroot@00f6388ba7f6:/home/user# sed -i '/application\/x-xz)/a\    application/x-7z-compressed)\n        7z x "$INPUT_FILE" -o"$OUTPUT_DIR" -y\n        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"\n        ;;' /home/user/api/extract_handler.sh
+[?2004l[?2004hroot@00f6388ba7f6:/home/user# cat /home/user/api/extract_handler.sh
+[?2004l#!/bin/bash
+
+# Extract handler script for processing uploaded archives
+# Detects archive format and extracts contents
+
+INPUT_FILE="$1"
+OUTPUT_DIR="${2:-/home/user/extracted}"
+LOG_FILE="/home/user/logs/intake.log"
+
+if [ -z "$INPUT_FILE" ]; then
+    echo "Usage: $0 <input_file> [output_dir]"
+    exit 1
+fi
+
+if [ ! -f "$INPUT_FILE" ]; then
+    echo "Error: File not found: $INPUT_FILE"
+    exit 1
+fi
+
+FILENAME=$(basename "$INPUT_FILE")
+TIMESTAMP=$(date -Iseconds)
+
+# Detect mime type
+MIME_TYPE=$(file --mime-type -b "$INPUT_FILE")
+
+# Extract based on detected type
+case "$MIME_TYPE" in
+    application/zip)
+        unzip -o "$INPUT_FILE" -d "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+    application/x-tar)
+        tar -xf "$INPUT_FILE" -C "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+    application/gzip|application/x-gzip)
+        # Assume it's a tar.gz
+        tar -xzf "$INPUT_FILE" -C "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+    application/x-bzip2)
+        tar -xjf "$INPUT_FILE" -C "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+    application/x-xz)
+    application/x-7z-compressed)
+        7z x "$INPUT_FILE" -o"$OUTPUT_DIR" -y
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+        tar -xJf "$INPUT_FILE" -C "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+    *)
+        echo "$TIMESTAMP $FILENAME unknown format - skipped" >> "$LOG_FILE"
+        echo "Unknown format: $MIME_TYPE"
+        exit 1
+        ;;
+esac
+
+echo "Extraction complete for $FILENAME"
+[?2004hroot@00f6388ba7f6:/home/user# cp /home/user/api/extract_handler.sh.backup /home/user/api/extract_handler.sh
+[?2004l[?2004hroot@00f6388ba7f6:/home/user# sed -i '/application\/x-xz)/,/;;/{ /;;/a\    application/x-7z-compressed)\n        7z x "$INPUT_FILE" -o"$OUTPUT_DIR" -y\n        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"\n        ;;' -e '}' /home/user/api/extract_handler.sh
+[?2004lsed: -e expression #1, char 1: unexpected `}'
+[?2004hroot@00f6388ba7f6:/home/user# cat /home/user/api/extract_handler.sh | grep -A 3 'x-xz\|x-7z'
+[?2004l    application/[01;31m[Kx-xz[m[K)
+        tar -xJf "$INPUT_FILE" -C "$OUTPUT_DIR"
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+[?2004hroot@00f6388ba7f6:/home/user# cat > /home/user/api/extract_handler.sh << 'EOF'
+[?2004l[?2004h> #!/bin/bash
+[?2004l[?2004h> 
+[?2004l[?2004h> # Extract handler script for processing uploaded archives
+[?2004l[?2004h> # Detects archive format and extracts contents
+[?2004l[?2004h> 
+[?2004l[?2004h> INPUT_FILE="$1"
+[?2004l[?2004h> OUTPUT_DIR="${2:-/home/user/extracted}"
+[?2004l[?2004h> LOG_FILE="/home/user/logs/intake.log"
+[?2004l[?2004h> 
+[?2004l[?2004h> if [ -z "$INPUT_FILE" ]; then
+[?2004l[?2004h>     echo "Usage: $0 <input_file> [output_dir]"
+[?2004l[?2004h>     exit 1
+[?2004l[?2004h> fi
+[?2004l[?2004h> 
+[?2004l[?2004h> if [ ! -f "$INPUT_FILE" ]; then
+[?2004l[?2004h>     echo "Error: File not found: $INPUT_FILE"
+[?2004l[?2004h>     exit 1
+[?2004l[?2004h> fi
+[?2004l[?2004h> 
+[?2004l[?2004h> FILENAME=$(basename "$INPUT_FILE")
+[?2004l[?2004h> TIMESTAMP=$(date -Iseconds)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Detect mime type
+[?2004l[?2004h> MIME_TYPE=$(file --mime-type -b "$INPUT_FILE")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Extract based on detected type
+[?2004l[?2004h> case "$MIME_TYPE" in
+[?2004l[?2004h>     application/zip)
+[?2004l[?2004h>         unzip -o "$INPUT_FILE" -d "$OUTPUT_DIR"
+[?2004l[?2004h>         echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+[?2004l[?2004h>         ;;
+[?2004l[?2004h>     application/x-tar)
+[?2004l[?2004h>         tar -xf "$INPUT_FILE" -C "$OUTPUT_DIR"
+[?2004l[?2004h>         echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+[?2004l[?2004h>         ;;
+[?2004l[?2004h>     application/gzip|application/x-gzip)
+[?2004l[?2004h>         # Assume it's a tar.gz
+[?2004l[?2004h>         tar -xzf "$INPUT_FILE" -C "$OUTPUT_DIR"
+[?2004l[?2004h>         echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+[?2004l[?2004h>         ;;
+[?2004l[?2004h>     application/x-bzip2)
+[?2004l[?2004h>         tar -xjf "$INPUT_FILE" -C "$OUTPUT_DIR"
+[?2004l[?2004h>         echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+[?2004l[?2004h>         ;;
+[?2004l[?2004h>     application/x-xz)
+[?2004l[?2004h>         tar -xJf "$INPUT_FILE" -C "$OUTPUT_DIR"
+[?2004l[?2004h>         echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+[?2004l[?2004h>         ;;
+[?2004l[?2004h>     application/x-7z-compressed)
+[?2004l[?2004h>         7z x "$INPUT_FILE" -o"$OUTPUT_DIR" -y
+[?2004l[?2004h>         echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+[?2004l[?2004h>         ;;
+[?2004l[?2004h>     *)
+[?2004l[?2004h>         echo "$TIMESTAMP $FILENAME unknown format - skipped" >> "$LOG_FILE"
+[?2004l[?2004h>         echo "Unknown format: $MIME_TYPE"
+[?2004l[?2004h>         exit 1
+[?2004l[?2004h>         ;;
+[?2004l[?2004h> esac
+[?2004l[?2004h> 
+[?2004l[?2004h> echo "Extraction complete for $FILENAME"
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@00f6388ba7f6:/home/user# chmod +x /home/user/api/extract_handler.sh
+[?2004l[?2004hroot@00f6388ba7f6:/home/user# cat /home/user/api/extract_handler.sh | grep -A 3 'x-7z'
+[?2004l    application/[01;31m[Kx-7z[m[K-compressed)
+        7z x "$INPUT_FILE" -o"$OUTPUT_DIR" -y
+        echo "$TIMESTAMP $FILENAME $MIME_TYPE - extracted" >> "$LOG_FILE"
+        ;;
+[?2004hroot@00f6388ba7f6:/home/user# /home/user/api/extract_handler.sh /home/user/incoming/delivery_0422.bin
+[?2004l
+7-Zip [64] 16.02 : Copyright (c) 1999-2016 Igor Pavlov : 2016-05-21
+p7zip Version 16.02 (locale=C.UTF-8,Utf16=on,HugeFiles=on,64 bits,48 CPUs Intel(R) Xeon(R) Platinum 8259CL CPU @ 2.50GHz (50657),ASM,AES-NI)
+
+Scanning the drive for archives:
+  0M Scan /home/user/incoming/                              1 file, 578 bytes (1 KiB)
+
+Extracting archive: /home/user/incoming/delivery_0422.bin
+--
+Path = /home/user/incoming/delivery_0422.bin
+Type = 7z
+Physical Size = 578
+Headers Size = 181
+Method = LZMA2:12
+Solid = +
+Blocks = 1
+
+  0%    Everything is Ok
+
+Files: 2
+Size:       1963
+Compressed: 578
+Extraction complete for delivery_0422.bin
+[?2004hroot@00f6388ba7f6:/home/user# ls -la /home/user/extracted/
+[?2004ltotal 20
+drwxrwxrwx 1 root root 4096 May  5 06:51 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 06:49 [34;42m..[0m
+-rw-r--r-- 1 root root   79 May  5 06:49 metadata.json
+-rw-r--r-- 1 root root 1884 May  5 06:49 report.csv
+[?2004hroot@00f6388ba7f6:/home/user# cat /home/user/logs/intake.log
+[?2004l2024-04-22T10:15:33 delivery_0422.bin unknown format - skipped
+2026-05-05T06:51:39+00:00 delivery_0422.bin application/x-7z-compressed - extracted
+[?2004hroot@00f6388ba7f6:/home/user# cat /home/user/extracted/metadata.json
+[?2004l{"customer_id": 4422, "batch": "Q2-2024", "submitted": "2024-04-22T10:15:00Z"}
+[?2004hroot@00f6388ba7f6:/home/user# head -5 /home/user/extracted/report.csv
+[?2004ldate,product,region,sales,quarter
+2024-04-2,Product_2,Region_2,1017,Q2
+2024-04-3,Product_3,Region_3,1034,Q2
+2024-04-4,Product_4,Region_4,1051,Q2
+2024-04-5,Product_5,Region_5,1068,Q2
+[?2004hroot@00f6388ba7f6:/home/user# 

@@ -1,0 +1,85 @@
+New Terminal Output:
+
+user@8b27a7ef7665:~/webhooks$ cat validate.sh
+#!/bin/bash
+python3 /home/user/webhooks/validator.py "$1"
+exit $?
+user@8b27a7ef7665:~/webhooks$ cat validator.py
+#!/usr/bin/env python3
+import json
+import sys
+import jsonschema
+from jsonschema import validate, ValidationError
+
+def main():
+    if len(sys.argv) != 2:
+        print("Usage: validator.py <json_file>", file=sys.stderr)
+        sys.exit(1)
+
+    json_file = sys.argv[1]
+    schema_file = "/home/user/webhooks/schema.json"
+
+    try:
+        with open(schema_file, 'r') as f:
+            schema = json.load(f)
+    except Exception as e:
+        print(f"Error loading schema: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        with open(json_file, 'r') as f:
+            data = json.load(f)
+    except Exception as e:
+        print(f"Error loading JSON file: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        validate(instance=data, schema=schema)
+        print("Validation successful")
+        sys.exit(0)
+    except ValidationError as e:
+        print(f"Validation failed: {e.message}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+user@8b27a7ef7665:~/webhooks$ cat schema.json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["event_type", "timestamp", "data"],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "pattern": "^[a-z]+\\.[a-z]+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}$"
+    },
+    "data": {
+      "type": "object",
+      "required": ["user_id", "email", "metadata"],
+      "properties": {
+        "user_id": {
+          "type": "integer"
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "metadata": {
+          "type": "object",
+          "required": ["source"],
+          "properties": {
+            "source": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}
+user@8b27a7ef7665:~/webhooks$

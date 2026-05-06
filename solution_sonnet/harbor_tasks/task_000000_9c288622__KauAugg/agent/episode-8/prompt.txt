@@ -1,0 +1,68 @@
+New Terminal Output:
+
+user@27e1f8e94251:~/scheduler$ cat > verification_test.py << 'EOF'
+> #!/usr/bin/env python3
+> """Verification test for the timezone bug fix."""
+>
+> import pytz
+> from datetime import datetime
+>
+> def test_dst_transition():
+>     """Test the specific DST transition case that was causing issues."""
+>     berlin = pytz.timezone('Europe/Berlin')
+>     utc = pytz.utc
+>
+>     # The problematic meeting: 2024-03-31T01:30:00 UTC
+>     # This is during the DST transition in Europe/Berlin
+>     utc_time_str = '2024-03-31T01:30:00'
+>     utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%dT%H:%M:%S')
+>
+>     print("Testing DST transition handling:")
+>     print("=" * 60)
+>     print(f"UTC Time: {utc_time_str}")
+>     print()
+>
+>     # Old buggy method
+>     print("OLD (BUGGY) METHOD:")
+>     buggy_result = berlin.localize(utc_dt)
+>     print(f"  Result: {buggy_result}")
+>     print(f"  Time: {buggy_result.strftime('%H:%M:%S')}")
+>     print(f"  This would send reminder at 01:30 - WRONG!")
+>     print()
+>
+>     # New correct method
+>     print("NEW (CORRECT) METHOD:")
+>     correct_result = utc.localize(utc_dt).astimezone(berlin)
+>     print(f"  Result: {correct_result}")
+>     print(f"  Time: {correct_result.strftime('%H:%M:%S')}")
+>     print(f"  This sends reminder at 03:30 - CORRECT!")
+>     print()
+>
+>     # Calculate the difference
+>     time_diff = (correct_result.hour * 60 + correct_result.minute) - (buggy_result.hour * 60 + buggy_result.minute)
+>     print(f"Time difference: {time_diff} minutes ({time_diff // 60} hours)")
+>     print()
+>     print("✓ Fix verified: Proper UTC to Berlin conversion with DST handling")
+>
+> if __name__ == '__main__':
+>     test_dst_transition()
+> EOF
+user@27e1f8e94251:~/scheduler$ python3 verification_test.py
+Testing DST transition handling:
+============================================================
+UTC Time: 2024-03-31T01:30:00
+
+OLD (BUGGY) METHOD:
+  Result: 2024-03-31 01:30:00+01:00
+  Time: 01:30:00
+  This would send reminder at 01:30 - WRONG!
+
+NEW (CORRECT) METHOD:
+  Result: 2024-03-31 03:30:00+02:00
+  Time: 03:30:00
+  This sends reminder at 03:30 - CORRECT!
+
+Time difference: 120 minutes (2 hours)
+
+✓ Fix verified: Proper UTC to Berlin conversion with DST handling
+user@27e1f8e94251:~/scheduler$

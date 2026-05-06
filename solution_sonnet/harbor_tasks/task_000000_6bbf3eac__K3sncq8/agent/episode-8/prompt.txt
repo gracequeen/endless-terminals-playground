@@ -1,0 +1,53 @@
+New Terminal Output:
+
+root@606f0d4ad24f:/home/user/etl# cat > Makefile << 'ENDOFFILE'
+ig/params.yaml as dependency since summarize.py reads it
+summary.csv: joined.csv config/params.yaml
+        python3 scripts/summarize.py joined.csv summary.csv
+
+clean:
+        rm -rf clean/*.csv clean/manifest.txt joined.csv summary.csv
+ENDOFFILE
+> # ETL Pipeline Makefile
+> # Cleans CSVs, joins them, and generates summary
+>
+> SHELL := /bin/bash
+>
+> # Source files
+> SOURCES := $(wildcard data/*.csv)
+> # Derive clean targets from sources
+> CLEAN_TARGETS := $(patsubst data/%.csv,clean/%.csv,$(SOURCES))
+>
+> .PHONY: all clean
+>
+> # FIX #1: Add .SECONDEXPANSION directive to enable $$@ in prerequisites
+> .SECONDEXPANSION:
+>
+> all: summary.csv
+>
+> # FIX #1: Pattern rule for cleaning - now uses $@ correctly with .SECONDEXPANSION
+> clean/%.csv: data/%.csv
+> @mkdir -p clean
+> python3 scripts/clean.py $< $@
+>
+> # FIX #3: manifest depends on all clean files to avoid race conditions
+> clean/manifest.txt: $(CLEAN_TARGETS)
+> @mkdir -p clean
+> @ls clean/*.csv 2>/dev/null > clean/manifest.txt || touch clean/manifest.txt
+>
+> # FIX #2: Use $(CLEAN_TARGETS) instead of $(wildcard) for proper dependency tracking
+> # FIX #3: Add clean/manifest.txt as explicit dependency
+> joined.csv: $(CLEAN_TARGETS) clean/manifest.txt
+> python3 scripts/join.py clean/manifest.txt joined.csv
+>
+> # FIX #4: Add config/params.yaml as dependency since summarize.py reads it
+> summary.csv: joined.csv config/params.yaml
+> python3 scripts/summarize.py joined.csv summary.csv
+>
+> clean:
+> rm -rf clean/*.csv clean/manifest.txt joined.csv summary.csv
+> ENDOFFILE
+root@606f0d4ad24f:/home/user/etl# cat -A Makefile | grep -A1 'clean/%.csv: data'
+clean/%.csv: data/%.csv$
+@mkdir -p clean$
+root@606f0d4ad24f:/home/user/etl#

@@ -1,0 +1,106 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+
+New Terminal Output:
+
+root@3d54b7a72150:/home/user# df -h /data/experiments
+Filesystem      Size  Used Avail Use% Mounted on
+overlay          87G   74G   14G  85% /
+root@3d54b7a72150:/home/user# cat /home/user/ops/purge_old_runs.py
+#!/usr/bin/env python3
+"""
+Purge old experiment runs older than 30 days.
+Runs nightly via cron to clean up /data/experiments.
+"""
+
+import os
+import json
+import logging
+from datetime import datetime, timedelta
+from pathlib import Path
+
+# Configure logging
+LOG_FILE = "/home/user/ops/purge_old_runs.log"
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+EXPERIMENTS_DIR = Path("/data/experiments")
+RETENTION_DAYS = 30
+
+
+def get_run_created_at(run_path):
+    """Read the created_at timestamp from metadata.json."""
+    metadata_path = run_path / "metadata.json"
+    if not metadata_path.exists():
+        return None
+
+    try:
+        with open(metadata_path) as f:
+            data = json.load(f)
+        created_at_str = data.get("created_at")
+        if not created_at_str:
+            return None
+        # Parse ISO format timestamp
+        return datetime.fromisoformat(created_at_str)
+    except Exception as e:
+        logging.debug(f"Could not parse metadata for {run_path}: {e}")
+        return None
+
+
+def should_delete_run(run_path):
+    """Determine if a run should be deleted based on age."""
+    created_at = get_run_created_at(run_path)
+    if created_at is None:
+        return False
+
+    try:
+        cutoff = datetime.now() - timedelta(days=RETENTION_DAYS)
+        return created_at < cutoff
+    except Exception as e:
+        logging.debug(f"Could not compare dates for {run_path}: {e}")
+        return False
+
+
+def delete_run(run_path):
+    """Delete a run directory."""
+    try:
+        os.remove(run_path)
+        logging.info(f"Deleted: {run_path}")
+        return True
+    except Exception as e:
+        logging.info(f"skipped: {run_path}")
+        return False
+
+
+def main():
+    """Main entry point for the purge script."""
+    logging.info("Starting purge of old experiment runs")
+
+    deleted_count = 0
+    processed_count = 0
+
+    for project_dir in EXPERIMENTS_DIR.iterdir():
+        if not project_dir.is_dir():
+            continue
+
+        for run_dir in project_dir.iterdir():
+            if not run_dir.is_dir() or not run_dir.name.startswith("run_"):
+                continue
+
+            processed_count += 1
+            logging.info(f"Processing {run_dir}")
+
+            if should_delete_run(run_dir):
+                if delete_run(run_dir):
+                    deleted_count += 1
+
+    logging.info(f"Purge complete. Processed: {processed_count}, Deleted: {deleted_count}")
+    return 0
+
+
+if __name__ == "__main__":
+    exit(main())
+root@3d54b7a72150:/home/user#

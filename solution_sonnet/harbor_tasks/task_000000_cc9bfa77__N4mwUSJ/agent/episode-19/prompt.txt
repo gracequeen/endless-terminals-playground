@@ -1,0 +1,44 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+> import os
+>
+> xor_key = bytes.fromhex('8aaff67f29a1e9a413a2c8b2dd45d92d')
+>
+> print(f"XOR key: {xor_key.hex()}")
+> print(f"Key length: {len(xor_key)} bytes")
+>
+> # Create decrypted directory
+> os.makedirs('decrypted_wal', exist_ok=True)
+>
+> # Decrypt all primary WAL segments
+> for seg_file in ['000000010000000000000003', '000000010000000000000004',
+>                  '000000010000000000000005', '000000010000000000000006']:
+>     input_path = f'primary_wal/{seg_file}'
+>     output_path = f'decrypted_wal/{seg_file}'
+>
+>     if os.path.exists(input_path):
+>         with open(input_path, 'rb') as f:
+>             data = f.read()
+>
+>         decrypted = bytearray()
+>         for i, byte in enumerate(data):
+>             decrypted.append(byte ^ xor_key[i % len(xor_key)])
+>
+>         with open(output_path, 'wb') as f:
+>             f.write(decrypted)
+>
+>         print(f"Decrypted {seg_file}: {len(data)} bytes -> {output_path}")
+>
+> print("\nDecryption complete!")
+> EOF
+XOR key: 8aaff67f29a1e9a413a2c8b2dd45d92d
+Key length: 16 bytes
+ls -lh decrypted_wal/
+echo "=== Testing decrypted segment 3 with pg_waldump ==="
+pg_waldump decrypted_wal/000000010000000000000003 2>&1 | head -20
+

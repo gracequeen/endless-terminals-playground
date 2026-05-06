@@ -1,0 +1,1 @@
+I need to extract just the database dumps from /home/user/backup-2024-03-15.tar.gz — specifically everything under the `db/` folder in the archive. Don't need the rest (logs, uploads, etc). Put them in /home/user/restored_db/ preserving the subdirectory structure.

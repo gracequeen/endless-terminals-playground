@@ -1,0 +1,40 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+> import struct
+>
+> data = open('primary_wal/000000010000000000000003', 'rb').read(48)
+> print(f"First 48 bytes hex: {data.hex()}")
+>
+> # PostgreSQL WAL long page header structure:
+> # uint16 xlp_magic (0xD097 for PG 13+)
+> # uint16 xlp_info
+> # uint32 xlp_tli (timeline ID = 1)
+> # uint64 xlp_pageaddr (should be 0x3000000 for segment 3)
+>
+> # Try to find XOR key from known pageaddr
+> expected_pageaddr = 0x0000000003000000  # LSN 0/3000000 in big-endian format
+> actual_bytes = data[8:16]
+> print(f"Bytes at offset 8-16: {actual_bytes.hex()}")
+>
+> # Try different byte orders
+> for bo in ['little', 'big']:
+>     expected = expected_pageaddr.to_bytes(8, bo)
+>     print(f"Expected pageaddr ({bo}-endian): {expected.hex()}")
+>     xor_key = bytes([a ^ e for a, e in zip(actual_bytes, expected)])
+>     print(f"Derived XOR key: {xor_key.hex()}")
+>     if len(set(xor_key)) == 1:
+>         print(f"  -> Constant key found: 0x{xor_key[0]:02x}")
+>         break
+> EOF
+First 48 bytes hex: 4472c3072a4699225666a1ec3b14765d99ffef5a503a10cd13a2c8b3dd65d92db73a3c5ca47db52f7f6722d33b8d3ede
+Bytes at offset 8-16: 5666a1ec3b14765d
+Expected pageaddr (little-endian): 0000000300000000
+Derived XOR key: 5666a1ef3b14765d
+Expected pageaddr (big-endian): 0000000003000000
+Derived XOR key: 5666a1ec3814765d
+user@9365762ea513:~/wal_recovery$

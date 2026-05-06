@@ -1,0 +1,77 @@
+New Terminal Output:
+
+root@71640e3be473:/home/user/netcheck# cat config.py
+# Configuration module added during project reorganization
+# TODO: Integrate these constants into the main checker
+
+DEFAULT_TIMEOUT = 10
+MAX_RETRIES = 3
+RETRY_DELAY = 1.0
+
+# Service categories for future use
+SERVICE_CATEGORIES = {
+    'auth': ['auth-service'],
+    'data': ['data-service'],
+    'cache': ['cache-service'],
+}
+root@71640e3be473:/home/user/netcheck# cat mock_services.py
+#!/usr/bin/env python3
+"""
+Mock Flask services for testing the health checker.
+Runs three simple health endpoints on ports 5001, 5002, 5003.
+"""
+
+import multiprocessing
+import time
+from flask import Flask, jsonify
+
+
+def create_app(service_name):
+    """Create a Flask app for a mock service."""
+    app = Flask(service_name)
+
+    @app.route('/health')
+    def health():
+        return jsonify({'status': 'ok', 'service': service_name})
+
+    @app.route('/')
+    def index():
+        return jsonify({'service': service_name, 'endpoints': ['/health']})
+
+    return app
+
+
+def run_service(name, port):
+    """Run a Flask service on the specified port."""
+    app = create_app(name)
+    app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
+
+
+def start_all_services():
+    """Start all mock services as separate processes."""
+    services = [
+        ('auth-service', 5001),
+        ('data-service', 5002),
+        ('cache-service', 5003),
+    ]
+
+    processes = []
+    for name, port in services:
+        p = multiprocessing.Process(target=run_service, args=(name, port))
+        p.daemon = True
+        p.start()
+        processes.append(p)
+        print(f"Started {name} on port {port}")
+
+    return processes
+
+
+if __name__ == '__main__':
+    processes = start_all_services()
+    print("All services started. Press Ctrl+C to stop.")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nStopping services...")
+root@71640e3be473:/home/user/netcheck#

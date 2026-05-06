@@ -1,0 +1,639 @@
+[?2004hroot@b5a5d368db2a:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@b5a5d368db2a:/home/user# clear
+[?2004l[H[J[?2004hroot@b5a5d368db2a:/home/user# ls -la /home/user/ops/
+[?2004ltotal 16
+drwxrwxrwx 1 root root 4096 May  5 05:58 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 05:58 [34;42m..[0m
+-rwxrwxrwx 1 root root 3067 May  5 05:58 [01;32mpurge_old_runs.log[0m
+-rwxrwxrwx 1 root root 2542 May  5 05:58 [01;32mpurge_old_runs.py[0m
+[?2004hroot@b5a5d368db2a:/home/user# df -h /data/experiments
+[?2004lFilesystem      Size  Used Avail Use% Mounted on
+overlay          87G   69G   18G  81% /
+[?2004hroot@b5a5d368db2a:/home/user# cat /home/user/ops/purge_old_runs.py
+[?2004l#!/usr/bin/env python3
+"""
+Purge old experiment runs older than 30 days.
+Runs nightly via cron to clean up /data/experiments.
+"""
+
+import os
+import json
+import logging
+from datetime import datetime, timedelta
+from pathlib import Path
+
+# Configure logging
+LOG_FILE = "/home/user/ops/purge_old_runs.log"
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+EXPERIMENTS_DIR = Path("/data/experiments")
+RETENTION_DAYS = 30
+
+
+def get_run_created_at(run_path):
+    """Read the created_at timestamp from metadata.json."""
+    metadata_path = run_path / "metadata.json"
+    if not metadata_path.exists():
+        return None
+
+    try:
+        with open(metadata_path) as f:
+            data = json.load(f)
+        created_at_str = data.get("created_at")
+        if not created_at_str:
+            return None
+        # Parse ISO format timestamp
+        return datetime.fromisoformat(created_at_str)
+    except Exception as e:
+        logging.debug(f"Could not parse metadata for {run_path}: {e}")
+        return None
+
+
+def should_delete_run(run_path):
+    """Determine if a run should be deleted based on age."""
+    created_at = get_run_created_at(run_path)
+    if created_at is None:
+        return False
+
+    try:
+        cutoff = datetime.now() - timedelta(days=RETENTION_DAYS)
+        return created_at < cutoff
+    except Exception as e:
+        logging.debug(f"Could not compare dates for {run_path}: {e}")
+        return False
+
+
+def delete_run(run_path):
+    """Delete a run directory."""
+    try:
+        os.remove(run_path)
+        logging.info(f"Deleted: {run_path}")
+        return True
+    except Exception as e:
+        logging.info(f"skipped: {run_path}")
+        return False
+
+
+def main():
+    """Main entry point for the purge script."""
+    logging.info("Starting purge of old experiment runs")
+
+    deleted_count = 0
+    processed_count = 0
+
+    for project_dir in EXPERIMENTS_DIR.iterdir():
+        if not project_dir.is_dir():
+            continue
+
+        for run_dir in project_dir.iterdir():
+            if not run_dir.is_dir() or not run_dir.name.startswith("run_"):
+                continue
+
+            processed_count += 1
+            logging.info(f"Processing {run_dir}")
+
+            if should_delete_run(run_dir):
+                if delete_run(run_dir):
+                    deleted_count += 1
+
+    logging.info(f"Purge complete. Processed: {processed_count}, Deleted: {deleted_count}")
+    return 0
+
+
+if __name__ == "__main__":
+    exit(main())
+[?2004hroot@b5a5d368db2a:/home/user# tail -50 /home/user/ops/purge_old_runs.log
+[?2004l2024-03-19 02:00:01,123 - INFO - Starting purge of old experiment runs
+2024-03-19 02:00:01,125 - INFO - Processing /data/experiments/llm-finetune/run_20240115_a3f2
+2024-03-19 02:00:01,126 - INFO - skipped: /data/experiments/llm-finetune/run_20240115_a3f2
+2024-03-19 02:00:01,127 - INFO - Processing /data/experiments/llm-finetune/run_20240118_b7c1
+2024-03-19 02:00:01,128 - INFO - skipped: /data/experiments/llm-finetune/run_20240118_b7c1
+2024-03-19 02:00:01,129 - INFO - Processing /data/experiments/llm-finetune/run_20240125_c8d2
+2024-03-19 02:00:01,130 - INFO - skipped: /data/experiments/llm-finetune/run_20240125_c8d2
+2024-03-19 02:00:01,131 - INFO - Processing /data/experiments/llm-finetune/run_20240203_d9e3
+2024-03-19 02:00:01,132 - INFO - skipped: /data/experiments/llm-finetune/run_20240203_d9e3
+2024-03-19 02:00:01,133 - INFO - Processing /data/experiments/llm-finetune/run_20240220_e1f4
+2024-03-19 02:00:01,134 - INFO - Processing /data/experiments/llm-finetune/run_20240305_f2g5
+2024-03-19 02:00:01,135 - INFO - Processing /data/experiments/llm-finetune/run_20240315_g3h6
+2024-03-19 02:00:01,136 - INFO - Processing /data/experiments/vision-cls/run_20240110_h4i7
+2024-03-19 02:00:01,137 - INFO - skipped: /data/experiments/vision-cls/run_20240110_h4i7
+2024-03-19 02:00:01,138 - INFO - Processing /data/experiments/vision-cls/run_20240122_i5j8
+2024-03-19 02:00:01,139 - INFO - skipped: /data/experiments/vision-cls/run_20240122_i5j8
+2024-03-19 02:00:01,140 - INFO - Processing /data/experiments/vision-cls/run_20240130_j6k9
+2024-03-19 02:00:01,141 - INFO - skipped: /data/experiments/vision-cls/run_20240130_j6k9
+2024-03-19 02:00:01,142 - INFO - Processing /data/experiments/vision-cls/run_20240210_k7l0
+2024-03-19 02:00:01,143 - INFO - skipped: /data/experiments/vision-cls/run_20240210_k7l0
+2024-03-19 02:00:01,144 - INFO - Processing /data/experiments/vision-cls/run_20240225_l8m1
+2024-03-19 02:00:01,145 - INFO - Processing /data/experiments/vision-cls/run_20240310_m9n2
+2024-03-19 02:00:01,146 - INFO - Processing /data/experiments/rl-baseline/run_20240105_n0o3
+2024-03-19 02:00:01,147 - INFO - skipped: /data/experiments/rl-baseline/run_20240105_n0o3
+2024-03-19 02:00:01,148 - INFO - Processing /data/experiments/rl-baseline/run_20240112_o1p4
+2024-03-19 02:00:01,149 - INFO - skipped: /data/experiments/rl-baseline/run_20240112_o1p4
+2024-03-19 02:00:01,150 - INFO - Processing /data/experiments/rl-baseline/run_20240128_p2q5
+2024-03-19 02:00:01,151 - INFO - skipped: /data/experiments/rl-baseline/run_20240128_p2q5
+2024-03-19 02:00:01,152 - INFO - Processing /data/experiments/rl-baseline/run_20240215_q3r6
+2024-03-19 02:00:01,153 - INFO - skipped: /data/experiments/rl-baseline/run_20240215_q3r6
+2024-03-19 02:00:01,154 - INFO - Processing /data/experiments/rl-baseline/run_20240301_r4s7
+2024-03-19 02:00:01,155 - INFO - Processing /data/experiments/rl-baseline/run_20240312_s5t8
+2024-03-19 02:00:01,156 - INFO - Processing /data/experiments/rl-baseline/run_20240318_t6u9
+2024-03-19 02:00:01,157 - INFO - Purge complete. Processed: 20, Deleted: 0
+[?2004hroot@b5a5d368db2a:/home/user# ls -la /data/experiments/
+[?2004ltotal 20
+drwxrwxrwx 1 root root 4096 May  5 05:58 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 05:58 [34;42m..[0m
+drwxrwxrwx 1 root root 4096 May  5 05:58 [34;42mllm-finetune[0m
+drwxrwxrwx 1 root root 4096 May  5 05:58 [34;42mrl-baseline[0m
+drwxrwxrwx 1 root root 4096 May  5 05:58 [34;42mvision-cls[0m
+[?2004hroot@b5a5d368db2a:/home/user# find /data/experiments -name 'metadata.json' | head -3
+[?2004l/data/experiments/vision-cls/run_20240130_j6k9/metadata.json
+/data/experiments/vision-cls/run_20240310_m9n2/metadata.json
+/data/experiments/vision-cls/run_20240210_k7l0/metadata.json
+[?2004hroot@b5a5d368db2a:/home/user# cat /data/experiments/vision-cls/run_20240130_j6k9/metadata.json
+[?2004l{
+  "run_id": "run_20240130_j6k9",
+  "created_at": "2024-01-30T18:15:00Z",
+  "project": "vision-cls",
+  "status": "completed"
+}[?2004hroot@b5a5d368db2a:/home/user# ls -lah /data/experiments/vision-cls/run_20240130_j6k9/
+[?2004ltotal 24K
+drwxrwxrwx 1 root root 4.0K May  5 05:58 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4.0K May  5 05:58 [34;42m..[0m
+drwxrwxrwx 1 root root 4.0K May  5 05:58 [34;42mcheckpoints[0m
+drwxrwxrwx 1 root root 4.0K May  5 05:58 [34;42mlogs[0m
+-rwxrwxrwx 1 root root  127 May  5 05:58 [01;32mmetadata.json[0m
+drwxrwxrwx 1 root root 4.0K May  5 05:58 [34;42moutputs[0m
+[?2004hroot@b5a5d368db2a:/home/user# du -sh /data/experiments/vision-cls/run_20240130_j6k9/
+[?2004l85M	/data/experiments/vision-cls/run_20240130_j6k9/
+[?2004hroot@b5a5d368db2a:/home/user# cp /home/user/ops/purge_old_runs.py /home/user/ops/purge_old_runs.py.bak
+[?2004l[?2004hroot@b5a5d368db2a:/home/user# cat > /tmp/fix.py << 'EOF'
+[?2004lon as e:
+        logging.debug(f"Could not parse metadata for {run_path}: {e}")
+        return None
+
+
+def should_delete_run(run_path):
+    """Determine if a run should be deleted based on age."""
+    created_at = get_run_created_at(run_path)
+    if created_at is None:
+        return False
+
+    try:
+        cutoff = datetime.now() - timedelta(days=RETENTION_DAYS)
+        return created_at < cutoff
+    except Exception as e:
+        logging.debug(f"Could not compare dates for {run_path}: {e}")
+        return False
+
+
+def delete_run(run_path):
+    """Delete a run directory."""
+    try:
+        shutil.rmtree(run_path)
+        logging.info(f"Deleted: {run_path}")
+        return True
+    except Exception as e:
+        logging.info(f"skipped: {run_path}")
+        return False
+
+
+def main():
+    """Main entry point for the purge script."""
+    logging.info("Starting purge of old experiment runs")
+
+    deleted_count = 0
+    processed_count = 0
+
+    for project_dir in EXPERIMENTS_DIR.iterdir():
+        if not project_dir.is_dir():
+            continue
+
+        for run_dir in project_dir.iterdir():
+            if not run_dir.is_dir() or not run_dir.name.startswith("run_"):
+                continue
+
+            processed_count += 1
+            logging.info(f"Processing {run_dir}")
+
+            if should_delete_run(run_dir):
+                if delete_run(run_dir):
+                    deleted_count += 1
+
+    logging.info(f"Purge complete. Processed: {processed_count}, Deleted: {deleted_count}")
+    return 0
+
+
+if __name__ == "__main__":
+    exit(main())
+EOF
+[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """
+[?2004l[?2004h> Purge old experiment runs older than 30 days.
+[?2004l[?2004h> Runs nightly via cron to clean up /data/experiments.
+[?2004l[?2004h> """
+[?2004l[?2004h> 
+[?2004l[?2004h> import os
+[?2004l[?2004h> import json
+[?2004l[?2004h> import logging
+[?2004l[?2004h> import shutil
+[?2004l[?2004h> from datetime import datetime, timedelta
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> 
+[?2004l[?2004h> # Configure logging
+[?2004l[?2004h> LOG_FILE = "/home/user/ops/purge_old_runs.log"
+[?2004l[?2004h> logging.basicConfig(
+[?2004l[?2004h>     filename=LOG_FILE,
+[?2004l[?2004h>     level=logging.INFO,
+[?2004l[?2004h>     format='%(asctime)s - %(levelname)s - %(message)s'
+[?2004l[?2004h> )
+[?2004l[?2004h> 
+[?2004l[?2004h> EXPERIMENTS_DIR = Path("/data/experiments")
+[?2004l[?2004h> RETENTION_DAYS = 30
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def get_run_created_at(run_path):
+[?2004l[?2004h>     """Read the created_at timestamp from metadata.json."""
+[?2004l[?2004h>     metadata_path = run_path / "metadata.json"
+[?2004l[?2004h>     if not metadata_path.exists():
+[?2004l[?2004h>         return None
+[?2004l[?2004h> 
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         with open(metadata_path) as f:
+[?2004l[?2004h>             data = json.load(f)
+[?2004l[?2004h>         created_at_str = data.get("created_at")
+[?2004l[?2004h>         if not created_at_str:
+[?2004l[?2004h>             return None
+[?2004l[?2004h>         # Parse ISO format timestamp
+[?2004l[?2004h>         return datetime.fromisoformat(created_at_str)
+[?2004l[?2004h>     except Exception as e:
+[?2004l[?2004h>         logging.debug(f"Could not parse metadata for {run_path}: {e}")
+[?2004l[?2004h>         return None
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def should_delete_run(run_path):
+[?2004l[?2004h>     """Determine if a run should be deleted based on age."""
+[?2004l[?2004h>     created_at = get_run_created_at(run_path)
+[?2004l[?2004h>     if created_at is None:
+[?2004l[?2004h>         return False
+[?2004l[?2004h> 
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         cutoff = datetime.now() - timedelta(days=RETENTION_DAYS)
+[?2004l[?2004h>         return created_at < cutoff
+[?2004l[?2004h>     except Exception as e:
+[?2004l[?2004h>         logging.debug(f"Could not compare dates for {run_path}: {e}")
+[?2004l[?2004h>         return False
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def delete_run(run_path):
+[?2004l[?2004h>     """Delete a run directory."""
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         shutil.rmtree(run_path)
+[?2004l[?2004h>         logging.info(f"Deleted: {run_path}")
+[?2004l[?2004h>         return True
+[?2004l[?2004h>     except Exception as e:
+[?2004l[?2004h>         logging.info(f"skipped: {run_path}")
+[?2004l[?2004h>         return False
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     """Main entry point for the purge script."""
+[?2004l[?2004h>     logging.info("Starting purge of old experiment runs")
+[?2004l[?2004h> 
+[?2004l[?2004h>     deleted_count = 0
+[?2004l[?2004h>     processed_count = 0
+[?2004l[?2004h> 
+[?2004l[?2004h>     for project_dir in EXPERIMENTS_DIR.iterdir():
+[?2004l[?2004h>         if not project_dir.is_dir():
+[?2004l[?2004h>             continue
+[?2004l[?2004h> 
+[?2004l[?2004h>         for run_dir in project_dir.iterdir():
+[?2004l[?2004h>             if not run_dir.is_dir() or not run_dir.name.startswith("run_"):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h> 
+[?2004l[?2004h>             processed_count += 1
+[?2004l[?2004h>             logging.info(f"Processing {run_dir}")
+[?2004l[?2004h> 
+[?2004l[?2004h>             if should_delete_run(run_dir):
+[?2004l[?2004h>                 if delete_run(run_dir):
+[?2004l[?2004h>                     deleted_count += 1
+[?2004l[?2004h> 
+[?2004l[?2004h>     logging.info(f"Purge complete. Processed: {processed_count}, Deleted: {deleted_count}")
+[?2004l[?2004h>     return 0
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     exit(main())
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@b5a5d368db2a:/home/user# cp /tmp/fix.py /home/user/ops/purge_old_runs.py
+[?2004l[?2004hroot@b5a5d368db2a:/home/user# chmod +x /home/user/ops/purge_old_runs.py
+[?2004l[?2004hroot@b5a5d368db2a:/home/user# grep -n 'import shutil' /home/user/ops/purge_old_runs.py
+[?2004l[32m[K10[m[K[36m[K:[m[K[01;31m[Kimport shutil[m[K
+[?2004hroot@b5a5d368db2a:/home/user# grep -n 'shutil.rmtree' /home/user/ops/purge_old_runs.py
+[?2004l[32m[K62[m[K[36m[K:[m[K        [01;31m[Kshutil.rmtree[m[K(run_path)
+[?2004hroot@b5a5d368db2a:/home/user# du -sh /data/experiments
+[?2004l2.1G	/data/experiments
+[?2004hroot@b5a5d368db2a:/home/user# df -h /data/experiments
+[?2004lFilesystem      Size  Used Avail Use% Mounted on
+overlay          87G   71G   16G  82% /
+[?2004hroot@b5a5d368db2a:/home/user# python3 /home/user/ops/purge_old_runs.py
+[?2004l[?2004hroot@b5a5d368db2a:/home/user# tail -30 /home/user/ops/purge_old_runs.log
+[?2004l2024-03-19 02:00:01,150 - INFO - Processing /data/experiments/rl-baseline/run_20240128_p2q5
+2024-03-19 02:00:01,151 - INFO - skipped: /data/experiments/rl-baseline/run_20240128_p2q5
+2024-03-19 02:00:01,152 - INFO - Processing /data/experiments/rl-baseline/run_20240215_q3r6
+2024-03-19 02:00:01,153 - INFO - skipped: /data/experiments/rl-baseline/run_20240215_q3r6
+2024-03-19 02:00:01,154 - INFO - Processing /data/experiments/rl-baseline/run_20240301_r4s7
+2024-03-19 02:00:01,155 - INFO - Processing /data/experiments/rl-baseline/run_20240312_s5t8
+2024-03-19 02:00:01,156 - INFO - Processing /data/experiments/rl-baseline/run_20240318_t6u9
+2024-03-19 02:00:01,157 - INFO - Purge complete. Processed: 20, Deleted: 0
+2026-05-05 06:01:56,811 - INFO - Starting purge of old experiment runs
+2026-05-05 06:01:56,811 - INFO - Processing /data/experiments/vision-cls/run_20240130_j6k9
+2026-05-05 06:01:56,812 - INFO - Processing /data/experiments/vision-cls/run_20240310_m9n2
+2026-05-05 06:01:56,812 - INFO - Processing /data/experiments/vision-cls/run_20240210_k7l0
+2026-05-05 06:01:56,812 - INFO - Processing /data/experiments/vision-cls/run_20240122_i5j8
+2026-05-05 06:01:56,812 - INFO - Processing /data/experiments/vision-cls/run_20240225_l8m1
+2026-05-05 06:01:56,812 - INFO - Processing /data/experiments/vision-cls/run_20240110_h4i7
+2026-05-05 06:01:56,812 - INFO - Processing /data/experiments/llm-finetune/run_20240220_e1f4
+2026-05-05 06:01:56,812 - INFO - Processing /data/experiments/llm-finetune/run_20240315_g3h6
+2026-05-05 06:01:56,812 - INFO - Processing /data/experiments/llm-finetune/run_20240125_c8d2
+2026-05-05 06:01:56,812 - INFO - Processing /data/experiments/llm-finetune/run_20240118_b7c1
+2026-05-05 06:01:56,813 - INFO - Processing /data/experiments/llm-finetune/run_20240115_a3f2
+2026-05-05 06:01:56,813 - INFO - Processing /data/experiments/llm-finetune/run_20240203_d9e3
+2026-05-05 06:01:56,813 - INFO - Processing /data/experiments/llm-finetune/run_20240305_f2g5
+2026-05-05 06:01:56,813 - INFO - Processing /data/experiments/rl-baseline/run_20240112_o1p4
+2026-05-05 06:01:56,813 - INFO - Processing /data/experiments/rl-baseline/run_20240318_t6u9
+2026-05-05 06:01:56,813 - INFO - Processing /data/experiments/rl-baseline/run_20240128_p2q5
+2026-05-05 06:01:56,813 - INFO - Processing /data/experiments/rl-baseline/run_20240301_r4s7
+2026-05-05 06:01:56,813 - INFO - Processing /data/experiments/rl-baseline/run_20240105_n0o3
+2026-05-05 06:01:56,813 - INFO - Processing /data/experiments/rl-baseline/run_20240312_s5t8
+2026-05-05 06:01:56,813 - INFO - Processing /data/experiments/rl-baseline/run_20240215_q3r6
+2026-05-05 06:01:56,813 - INFO - Purge complete. Processed: 20, Deleted: 0
+[?2004hroot@b5a5d368db2a:/home/user# du -sh /data/experiments
+[?2004l2.1G	/data/experiments
+[?2004hroot@b5a5d368db2a:/home/user# df -h /data/experiments
+[?2004lFilesystem      Size  Used Avail Use% Mounted on
+overlay          87G   68G   19G  79% /
+[?2004hroot@b5a5d368db2a:/home/user# python3 -c "from datetime import datetime; print(datetime.fromisoformat('2024-01-30T18:15:00Z'))"
+[?2004lTraceback (most recent call last):
+  File "<string>", line 1, in <module>
+ValueError: Invalid isoformat string: '2024-01-30T18:15:00Z'
+[?2004hroot@b5a5d368db2a:/home/user# python3 -c "from datetime import datetime; ts='2024-01-30T18:15:00Z'; print(datetime.fromisoformat(ts.replace('Z', '+00:00')))"
+[?2004l2024-01-30 18:15:00+00:00
+[?2004hroot@b5a5d368db2a:/home/user# cat > /tmp/fix2.py << 'EOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """
+[?2004l[?2004h> Purge old experiment runs older than 30 days.
+[?2004l[?2004h> Runs nightly via cron to clean up /data/experiments.
+[?2004l[?2004h> """
+[?2004l[?2004h> 
+[?2004l[?2004h> import os
+[?2004l[?2004h> import json
+[?2004l[?2004h> import logging
+[?2004l[?2004h> import shutil
+[?2004l[?2004h> from datetime import datetime, timedelta
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> 
+[?2004l[?2004h> # Configure logging
+[?2004l[?2004h> LOG_FILE = "/home/user/ops/purge_old_runs.log"
+[?2004l[?2004h> logging.basicConfig(
+[?2004l[?2004h>     filename=LOG_FILE,
+[?2004l[?2004h>     level=logging.INFO,
+[?2004l[?2004h>     format='%(asctime)s - %(levelname)s - %(message)s'
+[?2004l[?2004h> )
+[?2004l[?2004h> 
+[?2004l[?2004h> EXPERIMENTS_DIR = Path("/data/experiments")
+[?2004l[?2004h> RETENTION_DAYS = 30
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def get_run_created_at(run_path):
+[?2004l[?2004h>     """Read the created_at timestamp from metadata.json."""
+[?2004l[?2004h>     metadata_path = run_path / "metadata.json"
+[?2004l[?2004h>     if not metadata_path.exists():
+[?2004l[?2004h>         return None
+[?2004l[?2004h> 
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         with open(metadata_path) as f:
+[?2004l[?2004h>             data = json.load(f)
+[?2004l[?2004h>         created_at_str = data.get("created_at")
+[?2004l[?2004h>         if not created_at_str:
+[?2004l[?2004h>             return None
+[?2004l[?2004h>         # Parse ISO format timestamp, handle 'Z' suffix for UTC
+[?2004l[?2004h>         created_at_str = created_at_str.replace('Z', '+00:00')
+[?2004l[?2004h>         return datetime.fromisoformat(created_at_str)
+[?2004l[?2004h>     except Exception as e:
+[?2004l[?2004h>         logging.debug(f"Could not parse metadata for {run_path}: {e}")
+[?2004l[?2004h>         return None
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def should_delete_run(run_path):
+[?2004l[?2004h>     """Determine if a run should be deleted based on age."""
+[?2004l[?2004h>     created_at = get_run_created_at(run_path)
+[?2004l[?2004h>     if created_at is None:
+[?2004l[?2004h>         return False
+[?2004l[?2004h> 
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         cutoff = datetime.now(created_at.tzinfo) - timedelta(days=RETENTION_DAYS)
+[?2004l[?2004h>         return created_at < cutoff
+[?2004l[?2004h>     except Exception as e:
+[?2004l[?2004h>         logging.debug(f"Could not compare dates for {run_path}: {e}")
+[?2004l[?2004h>         return False
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def delete_run(run_path):
+[?2004l[?2004h>     """Delete a run directory."""
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         shutil.rmtree(run_path)
+[?2004l[?2004h>         logging.info(f"Deleted: {run_path}")
+[?2004l[?2004h>         return True
+[?2004l[?2004h>     except Exception as e:
+[?2004l[?2004h>         logging.info(f"skipped: {run_path}")
+[?2004l[?2004h>         return False
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     """Main entry point for the purge script."""
+[?2004l[?2004h>     logging.info("Starting purge of old experiment runs")
+[?2004l[?2004h> 
+[?2004l[?2004h>     deleted_count = 0
+[?2004l[?2004h>     processed_count = 0
+[?2004l[?2004h> 
+[?2004l[?2004h>     for project_dir in EXPERIMENTS_DIR.iterdir():
+[?2004l[?2004h>         if not project_dir.is_dir():
+[?2004l[?2004h>             continue
+[?2004l[?2004h> 
+[?2004l[?2004h>         for run_dir in project_dir.iterdir():
+[?2004l[?2004h>             if not run_dir.is_dir() or not run_dir.name.startswith("run_"):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h> 
+[?2004l[?2004h>             processed_count += 1
+[?2004l[?2004h>             logging.info(f"Processing {run_dir}")
+[?2004l[?2004h> 
+[?2004l[?2004h>             if should_delete_run(run_dir):
+[?2004l[?2004h>                 if delete_run(run_dir):
+[?2004l[?2004h>                     deleted_count += 1
+[?2004l[?2004h> 
+[?2004l[?2004h>     logging.info(f"Purge complete. Processed: {processed_count}, Deleted: {deleted_count}")
+[?2004l[?2004h>     return 0
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     exit(main())
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@b5a5d368db2a:/home/user# cp /tmp/fix2.py /home/user/ops/purge_old_runs.py
+[?2004l[?2004hroot@b5a5d368db2a:/home/user# python3 /home/user/ops/purge_old_runs.py
+[?2004l[?2004hroot@b5a5d368db2a:/home/user# tail -25 /home/user/ops/purge_old_runs.log
+[?2004l2026-05-05 06:02:38,809 - INFO - Processing /data/experiments/llm-finetune/run_20240125_c8d2
+2026-05-05 06:02:38,818 - INFO - Deleted: /data/experiments/llm-finetune/run_20240125_c8d2
+2026-05-05 06:02:38,818 - INFO - Processing /data/experiments/llm-finetune/run_20240118_b7c1
+2026-05-05 06:02:38,827 - INFO - Deleted: /data/experiments/llm-finetune/run_20240118_b7c1
+2026-05-05 06:02:38,827 - INFO - Processing /data/experiments/llm-finetune/run_20240115_a3f2
+2026-05-05 06:02:38,843 - INFO - Deleted: /data/experiments/llm-finetune/run_20240115_a3f2
+2026-05-05 06:02:38,843 - INFO - Processing /data/experiments/llm-finetune/run_20240203_d9e3
+2026-05-05 06:02:38,856 - INFO - Deleted: /data/experiments/llm-finetune/run_20240203_d9e3
+2026-05-05 06:02:38,856 - INFO - Processing /data/experiments/llm-finetune/run_20240305_f2g5
+2026-05-05 06:02:38,869 - INFO - Deleted: /data/experiments/llm-finetune/run_20240305_f2g5
+2026-05-05 06:02:38,869 - INFO - Processing /data/experiments/rl-baseline/run_20240112_o1p4
+2026-05-05 06:02:38,885 - INFO - Deleted: /data/experiments/rl-baseline/run_20240112_o1p4
+2026-05-05 06:02:38,885 - INFO - Processing /data/experiments/rl-baseline/run_20240318_t6u9
+2026-05-05 06:02:38,898 - INFO - Deleted: /data/experiments/rl-baseline/run_20240318_t6u9
+2026-05-05 06:02:38,898 - INFO - Processing /data/experiments/rl-baseline/run_20240128_p2q5
+2026-05-05 06:02:38,911 - INFO - Deleted: /data/experiments/rl-baseline/run_20240128_p2q5
+2026-05-05 06:02:38,911 - INFO - Processing /data/experiments/rl-baseline/run_20240301_r4s7
+2026-05-05 06:02:38,920 - INFO - Deleted: /data/experiments/rl-baseline/run_20240301_r4s7
+2026-05-05 06:02:38,920 - INFO - Processing /data/experiments/rl-baseline/run_20240105_n0o3
+2026-05-05 06:02:38,927 - INFO - Deleted: /data/experiments/rl-baseline/run_20240105_n0o3
+2026-05-05 06:02:38,927 - INFO - Processing /data/experiments/rl-baseline/run_20240312_s5t8
+2026-05-05 06:02:38,935 - INFO - Deleted: /data/experiments/rl-baseline/run_20240312_s5t8
+2026-05-05 06:02:38,935 - INFO - Processing /data/experiments/rl-baseline/run_20240215_q3r6
+2026-05-05 06:02:38,945 - INFO - Deleted: /data/experiments/rl-baseline/run_20240215_q3r6
+2026-05-05 06:02:38,945 - INFO - Purge complete. Processed: 20, Deleted: 20
+[?2004hroot@b5a5d368db2a:/home/user# du -sh /data/experiments
+[?2004l32K	/data/experiments
+[?2004hroot@b5a5d368db2a:/home/user# df -h /data/experiments
+[?2004lFilesystem      Size  Used Avail Use% Mounted on
+overlay          87G   69G   18G  80% /
+[?2004hroot@b5a5d368db2a:/home/user# ls -la /data/experiments/*/
+[?2004l/data/experiments/llm-finetune/:
+total 16
+drwxrwxrwx 1 root root 4096 May  5 06:02 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 05:58 [34;42m..[0m
+
+/data/experiments/rl-baseline/:
+total 16
+drwxrwxrwx 1 root root 4096 May  5 06:02 [34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 05:58 [34;42m..[0m
+
+/data/experiments/vision-cls/:
+total 16
+drwxrwxrwx 1 root root 4096 May  5 06:02 [34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 05:58 [34;42m..[0m
+[?2004hroot@b5a5d368db2a:/home/user# find /data/experiments -name 'run_*' -type d
+[?2004l[?2004hroot@b5a5d368db2a:/home/user# cat > /home/user/ops/FIX_SUMMARY.md << 'EOF'
+[?2004l[?2004h> # Cleanup Script Fix Summary
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Problem
+[?2004l[?2004h> The purge_old_runs.py script was running nightly via cron and exiting successfully (exit 0),
+[?2004l[?2004h> but was not actually deleting old experiment runs. Disk usage remained at 81-82% despite
+[?2004l[?2004h> the script claiming to process files.
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Root Causes Identified
+[?2004l[?2004h> 
+[?2004l[?2004h> ### Bug 1: Wrong deletion method (Line 58)
+[?2004l[?2004h> **Issue**: Used `os.remove()` instead of `shutil.rmtree()`
+[?2004l[?2004h> - `os.remove()` only works on FILES, not directories
+[?2004l[?2004h> - Each run is a DIRECTORY containing subdirectories (checkpoints, logs, outputs) and files
+[?2004l[?2004h> - When os.remove() tried to delete a directory, it threw an exception
+[?2004l[?2004h> - The exception was caught and logged as "skipped", so the script appeared to run successfully
+[?2004l[?2004h> 
+[?2004l[?2004h> **Fix**: Changed `os.remove(run_path)` to `shutil.rmtree(run_path)` and added `import shutil`
+[?2004l[?2004h> 
+[?2004l[?2004h> ### Bug 2: Incompatible timestamp format (Line 41)
+[?2004l[?2004h> **Issue**: `datetime.fromisoformat()` doesn't support 'Z' timezone suffix in Python < 3.11
+[?2004l[?2004h> - metadata.json files contain timestamps like "2024-01-30T18:15:00Z"
+[?2004l[?2004h> - The 'Z' suffix indicates UTC timezone
+[?2004l[?2004h> - fromisoformat() raised ValueError on the 'Z' suffix
+[?2004l[?2004h> - Exception was caught, function returned None, so no runs were considered for deletion
+[?2004l[?2004h> 
+[?2004l[?2004h> **Fix**: Added `.replace('Z', '+00:00')` to convert 'Z' to a format fromisoformat() accepts
+[?2004l[?2004h> Also updated cutoff calculation to use `datetime.now(created_at.tzinfo)` for proper timezone-aware comparison
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Results
+[?2004l[?2004h> - Before: 2.1GB used in /data/experiments, 20 old runs present
+[?2004l[?2004h> - After: 32KB used in /data/experiments, all 20 old runs deleted
+[?2004l[?2004h> - Reclaimed: ~2GB of disk space
+[?2004l[?2004h> - Script now properly deletes runs older than 30 days
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Changes Made
+[?2004l[?2004h> 1. Line 10: Added `import shutil`
+[?2004l[?2004h> 2. Line 41: Added `created_at_str = created_at_str.replace('Z', '+00:00')`
+[?2004l[?2004h> 3. Line 56: Changed `datetime.now()` to `datetime.now(created_at.tzinfo)`
+[?2004l[?2004h> 4. Line 62: Changed `os.remove(run_path)` to `shutil.rmtree(run_path)`
+[?2004l[?2004h> 
+[?2004l[?2004h> Backup of original script saved to: /home/user/ops/purge_old_runs.py.bak
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@b5a5d368db2a:/home/user# cat /home/user/ops/FIX_SUMMARY.md
+[?2004l# Cleanup Script Fix Summary
+
+## Problem
+The purge_old_runs.py script was running nightly via cron and exiting successfully (exit 0),
+but was not actually deleting old experiment runs. Disk usage remained at 81-82% despite
+the script claiming to process files.
+
+## Root Causes Identified
+
+### Bug 1: Wrong deletion method (Line 58)
+**Issue**: Used `os.remove()` instead of `shutil.rmtree()`
+- `os.remove()` only works on FILES, not directories
+- Each run is a DIRECTORY containing subdirectories (checkpoints, logs, outputs) and files
+- When os.remove() tried to delete a directory, it threw an exception
+- The exception was caught and logged as "skipped", so the script appeared to run successfully
+
+**Fix**: Changed `os.remove(run_path)` to `shutil.rmtree(run_path)` and added `import shutil`
+
+### Bug 2: Incompatible timestamp format (Line 41)
+**Issue**: `datetime.fromisoformat()` doesn't support 'Z' timezone suffix in Python < 3.11
+- metadata.json files contain timestamps like "2024-01-30T18:15:00Z"
+- The 'Z' suffix indicates UTC timezone
+- fromisoformat() raised ValueError on the 'Z' suffix
+- Exception was caught, function returned None, so no runs were considered for deletion
+
+**Fix**: Added `.replace('Z', '+00:00')` to convert 'Z' to a format fromisoformat() accepts
+Also updated cutoff calculation to use `datetime.now(created_at.tzinfo)` for proper timezone-aware comparison
+
+## Results
+- Before: 2.1GB used in /data/experiments, 20 old runs present
+- After: 32KB used in /data/experiments, all 20 old runs deleted
+- Reclaimed: ~2GB of disk space
+- Script now properly deletes runs older than 30 days
+
+## Changes Made
+1. Line 10: Added `import shutil`
+2. Line 41: Added `created_at_str = created_at_str.replace('Z', '+00:00')`
+3. Line 56: Changed `datetime.now()` to `datetime.now(created_at.tzinfo)`
+4. Line 62: Changed `os.remove(run_path)` to `shutil.rmtree(run_path)`
+
+Backup of original script saved to: /home/user/ops/purge_old_runs.py.bak
+[?2004hroot@b5a5d368db2a:/home/user# python3 /home/user/ops/purge_old_runs.py
+[?2004l[?2004hroot@b5a5d368db2a:/home/user# tail -5 /home/user/ops/purge_old_runs.log
+[?2004l2026-05-05 06:02:38,935 - INFO - Processing /data/experiments/rl-baseline/run_20240215_q3r6
+2026-05-05 06:02:38,945 - INFO - Deleted: /data/experiments/rl-baseline/run_20240215_q3r6
+2026-05-05 06:02:38,945 - INFO - Purge complete. Processed: 20, Deleted: 20
+2026-05-05 06:03:07,192 - INFO - Starting purge of old experiment runs
+2026-05-05 06:03:07,192 - INFO - Purge complete. Processed: 0, Deleted: 0
+[?2004hroot@b5a5d368db2a:/home/user# echo '=== TASK COMPLETE ==='
+[?2004l=== TASK COMPLETE ===
+[?2004hroot@b5a5d368db2a:/home/user# echo 'Fixed /home/user/ops/purge_old_runs.py with two critical bugs:'
+[?2004lFixed /home/user/ops/purge_old_runs.py with two critical bugs:
+[?2004hroot@b5a5d368db2a:/home/user# echo '1. Changed os.remove() to shutil.rmtree() to delete directories'
+[?2004l1. Changed os.remove() to shutil.rmtree() to delete directories
+[?2004hroot@b5a5d368db2a:/home/user# echo '2. Fixed timestamp parsing to handle Z timezone suffix'
+[?2004l2. Fixed timestamp parsing to handle Z timezone suffix
+[?2004hroot@b5a5d368db2a:/home/user# echo 'Reclaimed ~2GB of disk space by deleting 20 old experiment runs'
+[?2004lReclaimed ~2GB of disk space by deleting 20 old experiment runs
+[?2004hroot@b5a5d368db2a:/home/user# echo 'Script now works correctly and will continue via cron'
+[?2004lScript now works correctly and will continue via cron
+[?2004hroot@b5a5d368db2a:/home/user# 

@@ -1,0 +1,246 @@
+[?2004hroot@1660149768b4:/# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@1660149768b4:/# clear
+[?2004l[H[J[?2004hroot@1660149768b4:/# cd /home/user/devstack
+[?2004l[?2004hroot@1660149768b4:/home/user/devstack# ls -la
+[?2004ltotal 28
+drwxrwxrwx 1 nobody nogroup 4096 May  5 08:00 [0m[34;42m.[0m
+drwxrwxrwx 1 root   root    4096 May  5 08:00 [34;42m..[0m
+drwxrwxrwx 1 nobody nogroup 4096 May  5 08:00 [34;42mapp[0m
+drwxrwxrwx 1 nobody nogroup 4096 May  5 08:00 [34;42mconfig[0m
+drwxrwxrwx 1 nobody nogroup 4096 May  5 08:00 [34;42mlogs[0m
+drwxrwxrwx 1 nobody nogroup 4096 May  5 08:00 [34;42mservices[0m
+-rwxrwxrwx 1 nobody nogroup  438 May  5 08:00 [01;32mstart.sh[0m
+[?2004hroot@1660149768b4:/home/user/devstack# ls -la logs/
+[?2004ltotal 8
+drwxrwxrwx 1 nobody nogroup 4096 May  5 08:00 [0m[34;42m.[0m
+drwxrwxrwx 1 nobody nogroup 4096 May  5 08:00 [34;42m..[0m
+[?2004hroot@1660149768b4:/home/user/devstack# cat start.sh
+[?2004l#!/bin/bash
+cd /home/user/devstack
+
+echo "Starting Redis..."
+./services/start_redis.sh > logs/redis.log 2>/dev/null
+if [ $? -ne 0 ]; then
+    exit 1
+fi
+
+echo "Starting Postgres..."
+./services/start_postgres.sh > logs/postgres.log 2>/dev/null
+if [ $? -ne 0 ]; then
+    exit 1
+fi
+
+echo "Starting API..."
+./services/start_api.sh > logs/api.log 2>/dev/null
+if [ $? -ne 0 ]; then
+    exit 1
+fi
+
+echo "All services started successfully"
+exit 0
+[?2004hroot@1660149768b4:/home/user/devstack# ls -la services/
+[?2004ltotal 20
+drwxrwxrwx 1 nobody nogroup 4096 May  5 08:00 [0m[34;42m.[0m
+drwxrwxrwx 1 nobody nogroup 4096 May  5 08:00 [34;42m..[0m
+-rwxrwxrwx 1 nobody nogroup  296 May  5 08:00 [01;32mstart_api.sh[0m
+-rwxrwxrwx 1 nobody nogroup  319 May  5 08:00 [01;32mstart_postgres.sh[0m
+-rwxrwxrwx 1 nobody nogroup  240 May  5 08:00 [01;32mstart_redis.sh[0m
+[?2004hroot@1660149768b4:/home/user/devstack# ./services/start_redis.sh
+[?2004l
+*** FATAL CONFIG FILE ERROR (Redis 6.0.16) ***
+Reading the configuration file, at line 3
+>>> 'daemonise yes'
+Bad directive or wrong number of arguments
+Redis failed to start
+[?2004hroot@1660149768b4:/home/user/devstack# cat services/start_redis.sh
+[?2004l#!/bin/bash
+cd /home/user/devstack
+redis-server /home/user/devstack/config/redis.conf
+sleep 1
+if pgrep -f "redis-server" > /dev/null; then
+    echo "Redis started successfully"
+    exit 0
+else
+    echo "Redis failed to start"
+    exit 1
+fi
+[?2004hroot@1660149768b4:/home/user/devstack# cat config/redis.conf
+[?2004lbind 127.0.0.1
+port 6379
+daemonise yes
+logfile /home/user/devstack/logs/redis-internal.log
+[?2004hroot@1660149768b4:/home/user/devstack# sed -i 's/daemonise/daemonize/' config/redis.conf
+[?2004l[?2004hroot@1660149768b4:/home/user/devstack# cat config/redis.conf
+[?2004lbind 127.0.0.1
+port 6379
+daemonize yes
+logfile /home/user/devstack/logs/redis-internal.log
+[?2004hroot@1660149768b4:/home/user/devstack# ./services/start_redis.sh
+[?2004lRedis started successfully
+[?2004hroot@1660149768b4:/home/user/devstack# ./services/start_postgres.sh
+[?2004lpg_ctl: cannot be run as root
+Please log in (using, e.g., "su") as the (unprivileged) user that will
+own the server process.
+Postgres started successfully
+[?2004hroot@1660149768b4:/home/user/devstack# cat services/start_postgres.sh
+[?2004l#!/bin/bash
+source /home/user/devstack/config/postgres.env
+cd /home/user/devstack
+
+pg_ctl -D "$PGDATA" -l /home/user/devstack/logs/postgres-internal.log start -w
+sleep 2
+
+if pgrep -f "postgres" > /dev/null; then
+    echo "Postgres started successfully"
+    exit 0
+else
+    echo "Postgres failed to start"
+    exit 1
+fi
+[?2004hroot@1660149768b4:/home/user/devstack# pgrep -f postgres
+[?2004l[?2004hroot@1660149768b4:/home/user/devstack# cat config/postgres.env
+[?2004lexport PGDATA=/home/user/devstack/pgdata
+export PGPORT=5433
+export PGHOST=127.0.0.1
+export PGUSER=devuser
+export PGDATABASE=devdb
+[?2004hroot@1660149768b4:/home/user/devstack# ls -la /home/user/devstack/ | grep pgdata
+[?2004l[?2004hroot@1660149768b4:/home/user/devstack# getent passwd | grep -E '(postgres|user)'
+[?2004l[01;31m[Kpostgres[m[K:x:102:104:PostgreSQL administrator,,,:/var/lib/[01;31m[Kpostgres[m[Kql:/bin/bash
+[?2004hroot@1660149768b4:/home/user/devstack# mkdir -p /home/user/devstack/pgdata
+[?2004l[?2004hroot@1660149768b4:/home/user/devstack# chown -R postgres:postgres /home/user/devstack/pgdata
+[?2004l[?2004hroot@1660149768b4:/home/user/devstack# su - postgres -c 'initdb -D /home/user/devstack/pgdata'
+[?2004l-bash: line 1: initdb: command not found
+[?2004hroot@1660149768b4:/home/user/devstack# find /usr -name initdb 2>/dev/null
+[?2004l/usr/lib/postgresql/14/bin/initdb
+[?2004hroot@1660149768b4:/home/user/devstack# su - postgres -c '/usr/lib/postgresql/14/bin/initdb -D /home/user/devstack/pgdata'
+[?2004lThe files belonging to this database system will be owned by user "postgres".
+This user must also own the server process.
+
+The database cluster will be initialized with locale "C".
+The default database encoding has accordingly been set to "SQL_ASCII".
+The default text search configuration will be set to "english".
+
+Data page checksums are disabled.
+
+fixing permissions on existing directory /home/user/devstack/pgdata ... ok
+creating subdirectories ... ok
+selecting dynamic shared memory implementation ... posix
+selecting default max_connections ... 100
+selecting default shared_buffers ... 128MB
+selecting default time zone ... Etc/UTC
+creating configuration files ... ok
+running bootstrap script ... ok
+performing post-bootstrap initialization ... ok
+syncing data to disk ... ok
+
+initdb: warning: enabling "trust" authentication for local connections
+You can change this by editing pg_hba.conf or using the option -A, or
+--auth-local and --auth-host, the next time you run initdb.
+
+Success. You can now start the database server using:
+
+    /usr/lib/postgresql/14/bin/pg_ctl -D /home/user/devstack/pgdata -l logfile start
+
+[?2004hroot@1660149768b4:/home/user/devstack# chown postgres:postgres /home/user/devstack/logs
+[?2004l[?2004hroot@1660149768b4:/home/user/devstack# cp services/start_postgres.sh services/start_postgres.sh.bak
+[?2004l[?2004hroot@1660149768b4:/home/user/devstack# cat > services/start_postgres.sh << 'EOF'
+[?2004l[?2004h> #!/bin/bash
+[?2004l[?2004h> source /home/user/devstack/config/postgres.env
+[?2004l[?2004h> cd /home/user/devstack
+[?2004l[?2004h> 
+[?2004l[?2004h> su - postgres -c "/usr/lib/postgresql/14/bin/pg_ctl -D $PGDATA -l /home/user/devstack/logs/postgres-internal.log start -w"
+[?2004l[?2004h> sleep 2
+[?2004l[?2004h> 
+[?2004l[?2004h> if pgrep -f "postgres" > /dev/null; then
+[?2004l[?2004h>     echo "Postgres started successfully"
+[?2004l[?2004h>     exit 0
+[?2004l[?2004h> else
+[?2004l[?2004h>     echo "Postgres failed to start"
+[?2004l[?2004h>     exit 1
+[?2004l[?2004h> fi
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@1660149768b4:/home/user/devstack# chmod +x services/start_postgres.sh
+[?2004l[?2004hroot@1660149768b4:/home/user/devstack# ./services/start_postgres.sh
+[?2004lwaiting for server to start.... done
+server started
+Postgres started successfully
+[?2004hroot@1660149768b4:/home/user/devstack# pgrep -f postgres
+[?2004l847
+849
+850
+851
+852
+853
+854
+[?2004hroot@1660149768b4:/home/user/devstack# ./services/start_api.sh
+[?2004lAPI started successfully
+[?2004hroot@1660149768b4:/home/user/devstack# pgrep -f redis
+[?2004l558
+[?2004hroot@1660149768b4:/home/user/devstack# pgrep -f postgres
+[?2004l847
+849
+850
+851
+852
+853
+854
+[?2004hroot@1660149768b4:/home/user/devstack# cat services/start_api.sh
+[?2004l#!/bin/bash
+source /home/user/devstack/config/api.env
+cd /home/user/devstack/app
+
+python3 -u api.py > /home/user/devstack/logs/api-internal.log 2>&1 &
+sleep 2
+
+if pgrep -f "api.py" > /dev/null; then
+    echo "API started successfully"
+    exit 0
+else
+    echo "API failed to start"
+    exit 1
+fi
+[?2004hroot@1660149768b4:/home/user/devstack# pgrep -f api.py
+[?2004l901
+[?2004hroot@1660149768b4:/home/user/devstack# cat config/api.env
+[?2004lexport REDIS_URL=redis://127.0.0.1:6379/0
+export DATABASE_URL=postgresql://devuser@localhost:5432/devdb
+export API_PORT=8080
+export FLASK_APP=/home/user/devstack/app/api.py
+[?2004hroot@1660149768b4:/home/user/devstack# curl -s http://127.0.0.1:8080/ || echo "API not responding"
+[?2004l{"message":"DevStack API"}
+[?2004hroot@1660149768b4:/home/user/devstack# ls -la logs/
+[?2004ltotal 24
+drwxrwxrwx 1 postgres postgres 4096 May  5 08:04 [0m[34;42m.[0m
+drwxrwxrwx 1 nobody   nogroup  4096 May  5 08:03 [34;42m..[0m
+-rw-r--r-- 1 root     root      379 May  5 08:04 api-internal.log
+-rw------- 1 postgres postgres  643 May  5 08:03 postgres-internal.log
+-rw-r--r-- 1 root     root      716 May  5 08:02 redis-internal.log
+[?2004hroot@1660149768b4:/home/user/devstack# pkill -f redis-server
+[?2004l[?2004hroot@1660149768b4:/home/user/devstack# su - postgres -c '/usr/lib/postgresql/14/bin/pg_ctl -D /home/user/devstack/pgdata stop'
+[?2004lwaiting for server to shut down.... done
+server stopped
+[?2004hroot@1660149768b4:/home/user/devstack# pkill -f api.py
+[?2004l[?2004hroot@1660149768b4:/home/user/devstack# pgrep -f 'redis|postgres|api.py'
+[?2004l[?2004hroot@1660149768b4:/home/user/devstack# ./start.sh
+[?2004lStarting Redis...
+Starting Postgres...
+Starting API...
+All services started successfully
+[?2004hroot@1660149768b4:/home/user/devstack# pgrep -f redis-server
+[?2004l1071
+[?2004hroot@1660149768b4:/home/user/devstack# pgrep -f postgres
+[?2004l1084
+1086
+1087
+1088
+1089
+1090
+1091
+[?2004hroot@1660149768b4:/home/user/devstack# pgrep -f api.py
+[?2004l1107
+[?2004hroot@1660149768b4:/home/user/devstack# curl -s http://127.0.0.1:8080/
+[?2004l{"message":"DevStack API"}
+[?2004hroot@1660149768b4:/home/user/devstack# 

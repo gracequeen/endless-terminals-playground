@@ -1,0 +1,31 @@
+{
+  "analysis": "I see the issue! The script processed ALL 50,000 lines again (from 0 to 50000), which added to the existing 25,000 records in the database, resulting in 75,000 total records. This is incorrect - it should have stopped at line 25000 since the checkpoint was already at 50000 from the previous run. The problem is that when I manually set the checkpoint to 0, it processes everything again and accumulates with existing data. This actually proves the accumulation works, but reveals we need to test a true interruption scenario.",
+  "plan": "Let me create a proper test: 1) Start completely fresh, 2) Run to a specific point and kill it with a real signal, 3) Verify checkpoint and partial data, 4) Resume and verify final totals match baseline. I'll use a background process and kill it with SIGTERM to simulate a real crash.",
+  "commands": [
+    {
+      "keystrokes": "rm -f .checkpoint output/summary.db\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "./run.sh &\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "sleep 1.5\n",
+      "duration": 1.5
+    },
+    {
+      "keystrokes": "kill %1\n",
+      "duration": 0.5
+    },
+    {
+      "keystrokes": "echo \"\\n--- Checkpoint after kill ---\"\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "cat .checkpoint\n",
+      "duration": 0.1
+    }
+  ],
+  "task_complete": false
+}

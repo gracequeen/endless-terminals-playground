@@ -1,0 +1,141 @@
+Reading package lists...
+E: Could not open lock file /var/lib/apt/lists/lock - open (13: Permission denied)
+E: Unable to lock directory /var/lib/apt/lists/
+E: Could not open lock file /var/lib/dpkg/lock-frontend - open (13: Permission denied)
+E: Unable to acquire the dpkg frontend lock (/var/lib/dpkg/lock-frontend), are you root?
+downloading uv 0.9.5 x86_64-unknown-linux-gnu
+no checksums to verify
+installing to /home/user/.local/bin
+  uv
+  uvx
+everything's installed!
+
+To add $HOME/.local/bin to your PATH, either restart your shell or run:
+
+    source $HOME/.local/bin/env (sh, bash, zsh)
+    source $HOME/.local/bin/env.fish (fish)
+Downloading cpython-3.12.12-linux-x86_64-gnu (download) (31.1MiB)
+ Downloading cpython-3.12.12-linux-x86_64-gnu (download)
+Downloading pygments (1.2MiB)
+ Downloading pygments
+Installed 5 packages in 118ms
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-8.4.1, pluggy-1.6.0 -- /home/user/.cache/uv/archive-v0/mW4KdLeuo22JG4yjQegCN/bin/python
+cachedir: .pytest_cache
+rootdir: /tests
+collecting ... collected 15 items
+
+../../tests/test_final_state.py::TestMlserviceRunsSuccessfully::test_mlservice_runs_with_explicit_venv_python FAILED [  6%]
+../../tests/test_final_state.py::TestMlserviceRunsSuccessfully::test_mlservice_runs_with_activated_venv_and_python_command FAILED [ 13%]
+../../tests/test_final_state.py::TestMlserviceRunsSuccessfully::test_mlservice_output_contains_tokenizer_class FAILED [ 20%]
+../../tests/test_final_state.py::TestSourceCodeUnchanged::test_init_py_unchanged PASSED [ 26%]
+../../tests/test_final_state.py::TestSourceCodeUnchanged::test_main_py_unchanged PASSED [ 33%]
+../../tests/test_final_state.py::TestRequirementsUnchanged::test_requirements_contains_original_packages PASSED [ 40%]
+../../tests/test_final_state.py::TestRequirementsUnchanged::test_transformers_version_unchanged PASSED [ 46%]
+../../tests/test_final_state.py::TestVenvPackagesIntact::test_tokenizers_version_in_venv PASSED [ 53%]
+../../tests/test_final_state.py::TestVenvPackagesIntact::test_transformers_version_in_venv PASSED [ 60%]
+../../tests/test_final_state.py::TestVenvPythonIsUsed::test_venv_python_resolves_correctly_after_activation PASSED [ 66%]
+../../tests/test_final_state.py::TestVenvPythonIsUsed::test_python_version_after_activation_is_311 PASSED [ 73%]
+../../tests/test_final_state.py::TestImportWorksCorrectly::test_transformers_autotokenizer_import PASSED [ 80%]
+../../tests/test_final_state.py::TestImportWorksCorrectly::test_tokenizers_import_with_correct_version PASSED [ 86%]
+../../tests/test_final_state.py::TestNoSystemPackageModification::test_system_python_still_exists PASSED [ 93%]
+../../tests/test_final_state.py::TestNoSystemPackageModification::test_venv_is_still_separate PASSED [100%]
+
+=================================== FAILURES ===================================
+_ TestMlserviceRunsSuccessfully.test_mlservice_runs_with_explicit_venv_python __
+
+self = <test_final_state.TestMlserviceRunsSuccessfully object at 0x760e5054b5c0>
+
+    def test_mlservice_runs_with_explicit_venv_python(self):
+        """
+        Running mlservice with explicit venv Python should succeed.
+        This is the primary success criterion.
+        """
+        result = subprocess.run(
+            [VENV_PYTHON, "-m", "mlservice"],
+            capture_output=True,
+            text=True,
+            cwd=MLSERVICE_DIR,
+            timeout=120
+        )
+>       assert result.returncode == 0, (
+            f"Running '{VENV_PYTHON} -m mlservice' should exit 0.\n"
+            f"Exit code: {result.returncode}\n"
+            f"stdout: {result.stdout}\n"
+            f"stderr: {result.stderr}"
+        )
+E       AssertionError: Running '/home/user/mlservice/.venv/bin/python -m mlservice' should exit 0.
+E         Exit code: 1
+E         stdout: 
+E         stderr: /home/user/mlservice/.venv/bin/python: No module named mlservice
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/home/user/mlservice/.venv/bin/python', '-m', 'mlservice'], returncode=1, stdout='', stderr='/home/user/mlservice/.venv/bin/python: No module named mlservice\n').returncode
+
+/tests/test_final_state.py:36: AssertionError
+_ TestMlserviceRunsSuccessfully.test_mlservice_runs_with_activated_venv_and_python_command _
+
+self = <test_final_state.TestMlserviceRunsSuccessfully object at 0x760e50372840>
+
+    def test_mlservice_runs_with_activated_venv_and_python_command(self):
+        """
+        After activating the venv, 'python -m mlservice' should work.
+        This tests that the alias/PATH issue is resolved for normal usage.
+        """
+        # Use bash to source the activate script and then run python
+        script = f"""
+        cd {MLSERVICE_DIR}
+        source .venv/bin/activate
+        python -m mlservice
+        """
+        result = subprocess.run(
+            ["bash", "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env={**os.environ, "HOME": HOME}  # Ensure HOME is set correctly
+        )
+>       assert result.returncode == 0, (
+            f"Running 'source .venv/bin/activate && python -m mlservice' should exit 0.\n"
+            f"Exit code: {result.returncode}\n"
+            f"stdout: {result.stdout}\n"
+            f"stderr: {result.stderr}"
+        )
+E       AssertionError: Running 'source .venv/bin/activate && python -m mlservice' should exit 0.
+E         Exit code: 1
+E         stdout: 
+E         stderr: /home/user/mlservice/.venv/bin/python: No module named mlservice
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['bash', '-c', '\n        cd /home/user/mlservice\n        source .venv/bin/activate\n        python -m mlservice\n        '], returncode=1, stdout='', stderr='/home/user/mlservice/.venv/bin/python: No module named mlservice\n').returncode
+
+/tests/test_final_state.py:66: AssertionError
+_ TestMlserviceRunsSuccessfully.test_mlservice_output_contains_tokenizer_class _
+
+self = <test_final_state.TestMlserviceRunsSuccessfully object at 0x760e4fb780b0>
+
+    def test_mlservice_output_contains_tokenizer_class(self):
+        """
+        The output should contain a tokenizer class name like BertTokenizerFast.
+        """
+        result = subprocess.run(
+            [VENV_PYTHON, "-m", "mlservice"],
+            capture_output=True,
+            text=True,
+            cwd=MLSERVICE_DIR,
+            timeout=120
+        )
+>       assert result.returncode == 0, (
+            f"mlservice should run successfully. stderr: {result.stderr}"
+        )
+E       AssertionError: mlservice should run successfully. stderr: /home/user/mlservice/.venv/bin/python: No module named mlservice
+E         
+E       assert 1 == 0
+E        +  where 1 = CompletedProcess(args=['/home/user/mlservice/.venv/bin/python', '-m', 'mlservice'], returncode=1, stdout='', stderr='/home/user/mlservice/.venv/bin/python: No module named mlservice\n').returncode
+
+/tests/test_final_state.py:89: AssertionError
+=========================== short test summary info ============================
+FAILED ../../tests/test_final_state.py::TestMlserviceRunsSuccessfully::test_mlservice_runs_with_explicit_venv_python
+FAILED ../../tests/test_final_state.py::TestMlserviceRunsSuccessfully::test_mlservice_runs_with_activated_venv_and_python_command
+FAILED ../../tests/test_final_state.py::TestMlserviceRunsSuccessfully::test_mlservice_output_contains_tokenizer_class
+========================= 3 failed, 12 passed in 4.76s =========================

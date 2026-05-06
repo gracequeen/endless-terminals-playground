@@ -1,0 +1,113 @@
+New Terminal Output:
+
+I have no name!@8d9b8d08258a:~$ cat > /home/user/README.md << 'EOF'
+> # Distributed TF-IDF Feature Extraction - FIXED
+>
+> ## Quick Start
+>
+> ### Run the FIXED pipeline (recommended):
+> ```bash
+> cd /home/user/pipeline
+> bash run_fixed.sh
+> ```
+>
+> ### Output:
+> - `/home/user/data/features.parquet` - 50,000 rows × 100 features
+> - All tf-idf values in valid range [0, 1]
+> - No missing data, no duplicates
+>
+> ## What Was Fixed
+>
+> The original pipeline had 4 critical bugs:
+>
+> 1. **Race condition** - Chunks sent before workers connected → data loss
+> 2. **Independent vocabularies** - Each worker fit its own vocabulary → incompatible features
+> 3. **Timeout-based completion** - Stopped after 5s timeout → missing results
+> 4. **No chunk tracking** - Used list instead of dict → couldn't detect missing/duplicate chunks
+>
+> ### Result: Only 12k/50k rows with invalid tf-idf scores > 1.0
+>
+> ## The Fix
+>
+> 1. **Worker registration** - Coordinator waits for all workers before sending
+> 2. **Global vocabulary** - Built once on all data, shared with workers
+> 3. **Explicit tracking** - Dict-based result collection, verifies all chunks received
+> 4. **Graceful termination** - Workers exit cleanly on signal
+>
+> ### Result: All 50k rows with valid tf-idf scores ≤ 1.0
+>
+> ## Files
+>
+> ### Fixed (Use These):
+> - `coordinator_fixed.py` - Fixed coordinator
+> - `worker_fixed.py` - Fixed worker
+> - `run_fixed.sh` - Launcher for fixed pipeline
+>
+> ### Original (Broken):
+> - `coordinator.py` - Original buggy coordinator
+> - `worker.py` - Original buggy worker
+> - `run.sh` - Original launcher (produces wrong results)
+>
+> ### Reference:
+> - `single.py` - Single-threaded reference implementation (slow but correct)
+>
+> ## Detailed Documentation
+>
+> See `BUG_REPORT_AND_FIX.md` for:
+> - Detailed bug analysis
+> - Code-level explanations
+> - Before/after comparisons
+> - Performance metrics
+> EOF
+I have no name!@8d9b8d08258a:~$ echo ''
+ne/coordinator_fixed.py'
+echo '  - /home/user/pipeline/worker_fixed.py'
+echo '  - /home/user/pipeline/run_fixed.sh'
+echo '  - /home/user/BUG_REPORT_AND_FIX.md (detailed analysis)'
+echo '  - /home/user/README.md (quick start gu
+ide)'
+echo ''
+echo 'USAGE: cd /home/user/pipeline && bash run_fixed.sh'
+echo ''
+I have no name!@8d9b8d08258a:~$ echo '=== SUMMARY ==='
+=== SUMMARY ===
+I have no name!@8d9b8d08258a:~$ echo 'Fixed distributed TF-IDF pipeline:'
+Fixed distributed TF-IDF pipeline:
+I have no name!@8d9b8d08258a:~$ echo ''
+
+I have no name!@8d9b8d08258a:~$ echo 'BUGS FOUND:'
+BUGS FOUND:
+I have no name!@8d9b8d08258a:~$ echo '1. Race condition - chunks sent before workers connected'
+1. Race condition - chunks sent before workers connected
+I have no name!@8d9b8d08258a:~$ echo '2. Independent vocabularies - each worker fit() on different data'
+2. Independent vocabularies - each worker fit() on different data
+I have no name!@8d9b8d08258a:~$ echo '3. Timeout-based completion - missing results'
+3. Timeout-based completion - missing results
+I have no name!@8d9b8d08258a:~$ echo '4. No chunk tracking - silent data loss'
+4. No chunk tracking - silent data loss
+I have no name!@8d9b8d08258a:~$ echo ''
+
+I have no name!@8d9b8d08258a:~$ echo 'FIXES APPLIED:'
+FIXES APPLIED:
+I have no name!@8d9b8d08258a:~$ echo '1. Worker registration via REQ-REP socket'
+1. Worker registration via REQ-REP socket
+I have no name!@8d9b8d08258a:~$ echo '2. Global vocabulary built once, shared via pickle'
+2. Global vocabulary built once, shared via pickle
+I have no name!@8d9b8d08258a:~$ echo '3. Explicit chunk counting (dict-based tracking)'
+3. Explicit chunk counting (dict-based tracking)
+I have no name!@8d9b8d08258a:~$ echo '4. Graceful termination signals'
+4. Graceful termination signals
+I have no name!@8d9b8d08258a:~$ echo ''
+
+I have no name!@8d9b8d08258a:~$ echo 'RESULT:'
+RESULT:
+I have no name!@8d9b8d08258a:~$ ls -lh /home/user/data/features.parquet
+-rw-r--r-- 1 1000 root 15M May  5 08:53 /home/user/data/features.parquet
+I have no name!@8d9b8d08258a:~$ python3 -c "import pandas as pd; df=pd.read_parquet('/home/user/data/features.parquet'); print(f'✓ Rows: {len(df)} (expected 500
+00)'); print(f'✓ Columns: {len(df.columns)} (100 features)'); print(f'✓ Value range: [{df.values.min():.4f}, {df.values.max():.4f}] (valid: < 1.0)'); print(f'✓
+No NaN: {not df.isna().any().any()}')"
+✓ Rows: 50000 (expected 50000)
+✓ Columns: 100 (100 features)
+✓ Value range: [0.0000, 0.7998] (valid: < 1.0)
+✓ No NaN: True
+

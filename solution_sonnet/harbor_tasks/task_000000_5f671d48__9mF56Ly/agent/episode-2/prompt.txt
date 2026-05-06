@@ -1,0 +1,59 @@
+New Terminal Output:
+
+user@a7ff13b9f77a:~/monitoring$ cat config.yaml
+threshold: 0.05
+summary_dir: summaries
+alert_log: alerts.log
+user@a7ff13b9f77a:~/monitoring$ cat alerter.py
+#!/usr/bin/env python3
+"""
+Alerter script that reads summaries and writes alerts when error_rate exceeds threshold.
+"""
+
+import json
+import os
+import yaml
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).parent
+
+def load_config():
+    """Load configuration from config.yaml."""
+    config_path = SCRIPT_DIR / "config.yaml"
+    with open(config_path, 'r') as f:
+        return yaml.safe_load(f)
+
+def main():
+    config = load_config()
+
+    # BUG: Typo 'treshold' instead of 'threshold'
+    # This silently defaults to 0.5 (50%) instead of 0.05 (5%)
+    threshold = config.get('treshold', 0.5)
+
+    summary_dir = SCRIPT_DIR / config.get('summary_dir', 'summaries')
+    alert_log = SCRIPT_DIR / config.get('alert_log', 'alerts.log')
+
+    alerts = []
+
+    for summary_file in sorted(summary_dir.glob("summary_*.json")):
+        with open(summary_file, 'r') as f:
+            summary = json.load(f)
+
+        error_rate = float(summary['error_rate'])
+
+        if error_rate > threshold:
+            alert_msg = f"ALERT: Hour {summary['hour']} had error_rate {error_rate:.4f} (threshold: {threshold})"
+            alerts.append(alert_msg)
+
+    with open(alert_log, 'a') as f:
+        for alert in alerts:
+            f.write(alert + "\n")
+
+    if alerts:
+        print(f"Wrote {len(alerts)} alerts to {alert_log}")
+    else:
+        print("No alerts generated")
+
+if __name__ == "__main__":
+    main()
+user@a7ff13b9f77a:~/monitoring$

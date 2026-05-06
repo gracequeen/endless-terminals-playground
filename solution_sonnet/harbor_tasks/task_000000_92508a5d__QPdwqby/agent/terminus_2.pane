@@ -1,0 +1,125 @@
+[?2004hroot@c81bdf53732b:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@c81bdf53732b:/home/user# clear
+[?2004l[H[J[?2004hroot@c81bdf53732b:/home/user# cd /home/user/research
+[?2004l[?2004hroot@c81bdf53732b:/home/user/research# ls -la
+[?2004ltotal 24
+drwxrwxrwx 1 root root 4096 May  5 07:23 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 07:23 [34;42m..[0m
+drwxrwxrwx 2 root root 4096 May  5 07:23 [34;42moutput[0m
+-rwxrwxrwx 1 root root 1332 May  5 07:23 [01;32mprep_data.py[0m
+drwxrwxrwx 1 root root 4096 May  5 07:23 [34;42mraw[0m
+drwxrwxrwx 1 root root 4096 May  5 07:23 [34;42mutils[0m
+[?2004hroot@c81bdf53732b:/home/user/research# cat prep_data.py
+[?2004l"""Data preparation script for survey responses."""
+
+import numpy as np
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from utils.converters import standardize_dtypes
+
+
+def load_raw_data(filepath):
+    """Load raw CSV data."""
+    return pd.read_csv(filepath)
+
+
+def clean_numeric_columns(df):
+    """Clean and convert numeric columns."""
+    # Convert score columns to float
+    score_cols = ['satisfaction_score', 'recommendation_score', 'effort_score']
+    for col in score_cols:
+        if col in df.columns:
+            df[col] = df[col].astype(np.float)
+
+    # Convert age to float for handling missing values
+    if 'age' in df.columns:
+        df['age'] = pd.to_numeric(df['age'], errors='coerce').astype(np.float)
+
+    return df
+
+
+def prepare_data():
+    """Main data preparation function."""
+    # Load raw data
+    df = load_raw_data('/home/user/research/raw/survey_responses.csv')
+
+    # Clean numeric columns
+    df = clean_numeric_columns(df)
+
+    # Standardize dtypes using utility functions
+    df = standardize_dtypes(df)
+
+    # Write to parquet
+    output_path = '/home/user/research/output/cleaned_survey.parquet'
+    df.to_parquet(output_path, engine='pyarrow', index=False)
+
+    print(f"Successfully wrote {len(df)} rows to {output_path}")
+
+
+if __name__ == '__main__':
+    prepare_data()
+[?2004hroot@c81bdf53732b:/home/user/research# python3 -c "import numpy as np; print(f'numpy version: {np.__version__}')"
+[?2004lnumpy version: 1.26.0
+[?2004hroot@c81bdf53732b:/home/user/research# cat utils/converters.py
+[?2004l"""Utility functions for data type conversions."""
+
+import numpy as np
+
+
+def convert_to_int_safe(series):
+    """Convert a pandas series to integer, handling NaN values."""
+    return series.fillna(0).astype(np.int)
+
+
+def convert_object_columns(df, columns):
+    """Convert specified columns to object dtype."""
+    for col in columns:
+        if col in df.columns:
+            df[col] = df[col].astype(np.object)
+    return df
+
+
+def convert_bool_column(series):
+    """Convert a series to boolean type."""
+    return series.fillna(False).astype(np.bool)
+
+
+def standardize_dtypes(df):
+    """Standardize dtypes across the dataframe."""
+    # Convert ID columns to int
+    if 'respondent_id' in df.columns:
+        df['respondent_id'] = convert_to_int_safe(df['respondent_id'])
+
+    # Convert text columns to object
+    text_cols = ['comments', 'feedback']
+    df = convert_object_columns(df, text_cols)
+
+    # Convert boolean columns
+    if 'is_complete' in df.columns:
+        df['is_complete'] = convert_bool_column(df['is_complete'])
+
+    return df
+[?2004hroot@c81bdf53732b:/home/user/research# sed -i 's/\.astype(np\.float)/.astype(float)/g' prep_data.py
+[?2004l[?2004hroot@c81bdf53732b:/home/user/research# sed -i 's/\.astype(np\.int)/.astype(int)/g' utils/converters.py
+[?2004l[?2004hroot@c81bdf53732b:/home/user/research# sed -i 's/\.astype(np\.object)/.astype(object)/g' utils/converters.py
+[?2004l[?2004hroot@c81bdf53732b:/home/user/research# sed -i 's/\.astype(np\.bool)/.astype(bool)/g' utils/converters.py
+[?2004l[?2004hroot@c81bdf53732b:/home/user/research# grep -n 'astype' prep_data.py
+[?2004l[32m[K22[m[K[36m[K:[m[K            df[col] = df[col].[01;31m[Kastype[m[K(float)
+[32m[K26[m[K[36m[K:[m[K        df['age'] = pd.to_numeric(df['age'], errors='coerce').[01;31m[Kastype[m[K(float)
+[?2004hroot@c81bdf53732b:/home/user/research# grep -n 'astype' utils/converters.py
+[?2004l[32m[K8[m[K[36m[K:[m[K    return series.fillna(0).[01;31m[Kastype[m[K(int)
+[32m[K15[m[K[36m[K:[m[K            df[col] = df[col].[01;31m[Kastype[m[K(object)
+[32m[K21[m[K[36m[K:[m[K    return series.fillna(False).[01;31m[Kastype[m[K(bool)
+[?2004hroot@c81bdf53732b:/home/user/research# python3 prep_data.py
+[?2004lSuccessfully wrote 500 rows to /home/user/research/output/cleaned_survey.parquet
+[?2004hroot@c81bdf53732b:/home/user/research# ls -lh output/
+[?2004ltotal 20K
+-rw-r--r-- 1 root root 17K May  5 07:25 cleaned_survey.parquet
+[?2004hroot@c81bdf53732b:/home/user/research# python3 -c "import pandas as pd; df = pd.read_parquet('output/cleaned_survey.parquet'); print(f'Verified: {len(df)} rows, {len(df.columns)} columns'); print(f'Columns: {list(df.columns)}')"
+[?2004lVerified: 500 rows, 8 columns
+Columns: ['respondent_id', 'age', 'satisfaction_score', 'recommendation_score', 'effort_score', 'comments', 'feedback', 'is_complete']
+[?2004hroot@c81bdf53732b:/home/user/research# 

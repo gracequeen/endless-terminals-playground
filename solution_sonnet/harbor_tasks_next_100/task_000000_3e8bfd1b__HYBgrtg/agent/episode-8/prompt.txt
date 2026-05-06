@@ -1,0 +1,58 @@
+New Terminal Output:
+
+root@9b7efba9545c:/home/user/reports# make clean
+Removing generated files...
+rm -f cleaned/*.csv
+rm -f final/summary.csv
+root@9b7efba9545c:/home/user/reports# ls cleaned/ final/
+cleaned/:
+
+final/:
+root@9b7efba9545c:/home/user/reports# make
+Cleaning raw/inventory.csv...
+python3 clean.py raw/inventory.csv cleaned/inventory.csv
+Cleaning raw/sales_q1.csv...
+python3 clean.py raw/sales_q1.csv cleaned/sales_q1.csv
+Cleaning raw/sales_q2.csv...
+python3 clean.py raw/sales_q2.csv cleaned/sales_q2.csv
+Aggregating cleaned files...
+python3 aggregate.py
+Aggregated 3 files into /home/user/reports/final/summary.csv
+root@9b7efba9545c:/home/user/reports# cat Makefile
+# Makefile for data pipeline automation
+
+# Directories
+RAW_DIR := raw
+CLEANED_DIR := cleaned
+FINAL_DIR := final
+
+# Find all CSV files in raw/
+RAW_CSVS := $(wildcard $(RAW_DIR)/*.csv)
+
+# Generate cleaned file names
+CLEANED_CSVS := $(patsubst $(RAW_DIR)/%.csv,$(CLEANED_DIR)/%.csv,$(RAW_CSVS))
+
+# Final output
+SUMMARY := $(FINAL_DIR)/summary.csv
+
+# Default target
+.PHONY: all
+all: $(SUMMARY)
+
+# Rule to create summary by aggregating all cleaned CSVs
+$(SUMMARY): $(CLEANED_CSVS) aggregate.py
+        @echo "Aggregating cleaned files..."
+        python3 aggregate.py
+
+# Pattern rule to clean individual CSV files
+$(CLEANED_DIR)/%.csv: $(RAW_DIR)/%.csv clean.py
+        @echo "Cleaning $<..."
+        python3 clean.py $< $@
+
+# Clean up generated files
+.PHONY: clean
+clean:
+        @echo "Removing generated files..."
+        rm -f $(CLEANED_DIR)/*.csv
+        rm -f $(SUMMARY)
+root@9b7efba9545c:/home/user/reports#

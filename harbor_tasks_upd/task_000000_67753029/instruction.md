@@ -1,0 +1,3 @@
+I'm trying to clean up our docs repo at /home/user/docs-site — we've got years of cruft and I need to find all the markdown files that were deleted from the main branch but are still referenced somewhere in our nav config. The nav is defined in /home/user/docs-site/mkdocs.yml under the `nav:` key, and it lists paths like `getting-started/install.md`, `api/reference.md`, etc.
+
+Problem is some of those paths point to files that got removed ages ago (probably during a restructure that never finished?). The site build doesn't fail, it just silently drops them, which is why nobody noticed. I need a list of the orphaned nav entries — the ones in mkdocs.yml that don't have a corresponding file on disk anymore. Dump them to /home/user/orphaned-nav.txt, one path per line.

@@ -1,0 +1,40 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@9365762ea513:~/wal_recovery$ echo "=== Searching for WAL magic number D097 (little-endian 97D0) ==="
+=== Searching for WAL magic number D097 (little-endian 97D0) ===
+user@9365762ea513:~/wal_recovery$ python3 -c "data = open('primary_wal/000000010000000000000003', 'rb').read(); import re; matches = [(i, data[i:i+4].hex()) for
+ i in range(0, min(len(data), 100000), 8192) if len(data[i:i+4]) == 4]; print('\n'.join([f'Offset {m[0]:08x}: {m[1]}' for m in matches[:20]]))"
+Offset 00000000: 4472c307
+Offset 00002000: 6155a925
+Offset 00004000: 6732c737
+Offset 00006000: 6b754bde
+Offset 00008000: 399254e3
+Offset 0000a000: 1510d2b2
+Offset 0000c000: 6ab12a0b
+Offset 0000e000: 0f34a6f0
+Offset 00010000: 97744311
+Offset 00012000: 2ef51586
+Offset 00014000: a54c55dc
+Offset 00016000: b0aba78a
+Offset 00018000: 208fa18d
+user@9365762ea513:~/wal_recovery$ echo "=== Trying to find XOR key by comparing with expected WAL header ==="
+=== Trying to find XOR key by comparing with expected WAL header ===
+user@9365762ea513:~/wal_recovery$ python3 << 'XOREOF'
+> data = open('primary_wal/000000010000000000000003', 'rb').read(24)
+> print(f"First 24 bytes: {data.hex()}")
+> # WAL page header magic is typically D097 or D093 (little-endian)
+> # Let's see if XORing first 2 bytes gives us the magic
+> for magic in [0xD097, 0xD093, 0xD07E, 0xD081]:
+>     key1 = data[0] ^ (magic & 0xFF)
+>     key2 = data[1] ^ ((magic >> 8) & 0xFF)
+>     if key1 == key2:
+>         print(f"Possible XOR key: 0x{key1:02x} for magic 0x{magic:04x}")
+>         xored = bytes([b ^ key1 for b in data[:24]])
+>         print(f"XORed result: {xored.hex()}")
+> XOREOF
+First 24 bytes: 4472c3072a4699225666a1ec3b14765d99ffef5a503a10cd
+user@9365762ea513:~/wal_recovery$

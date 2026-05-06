@@ -1,0 +1,494 @@
+[?2004huser@27e1f8e94251:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004huser@27e1f8e94251:~$ clear
+[?2004l[H[J[?2004huser@27e1f8e94251:~$ cd /home/user/scheduler
+[?2004l[?2004huser@27e1f8e94251:~/scheduler$ ls -la
+[?2004ltotal 24
+drwxrwxrwx 1 user user 4096 May  6 00:28 [0m[34;42m.[0m
+drwxrwxrwx 1 user user 4096 May  6 00:28 [34;42m..[0m
+-rwxr-xr-x 1 user user 1995 May  6 00:28 [01;32mapp.py[0m
+-rw-r--r-- 1 user user  144 May  6 00:28 crontab
+-rw-r--r-- 1 user user  453 May  6 00:28 meetings.json
+-rwxr-xr-x 1 user user 1015 May  6 00:28 [01;32mtest_conversion.py[0m
+[?2004huser@27e1f8e94251:~/scheduler$ cat crontab
+[?2004l# Scheduler crontab - runs at the top of every hour
+0 * * * * cd /home/user/scheduler && python3 app.py >> /home/user/scheduler/output.log 2>&1
+[?2004huser@27e1f8e94251:~/scheduler$ cat app.py
+[?2004l#!/usr/bin/env python3
+"""
+Meeting reminder application.
+Sends reminders 15 minutes before each meeting.
+Converts UTC times to Europe/Berlin timezone.
+"""
+
+import json
+import pytz
+from datetime import datetime, timedelta
+
+MEETINGS_FILE = '/home/user/scheduler/meetings.json'
+BERLIN_TZ = pytz.timezone('Europe/Berlin')
+UTC_TZ = pytz.utc
+
+def load_meetings():
+    """Load meetings from JSON file."""
+    with open(MEETINGS_FILE, 'r') as f:
+        return json.load(f)
+
+def convert_to_berlin(utc_time_str):
+    """
+    Convert UTC time string to Berlin timezone.
+    """
+    # Parse the UTC time string
+    utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%dT%H:%M:%S')
+
+    # Convert to Berlin time
+    # BUG: This incorrectly localizes the UTC datetime as if it were already Berlin time
+    berlin_dt = BERLIN_TZ.localize(utc_dt)
+
+    return berlin_dt
+
+def get_current_time_berlin():
+    """Get current time in Berlin timezone."""
+    return datetime.now(BERLIN_TZ)
+
+def check_reminders():
+    """Check for meetings that need reminders (15-75 minutes from now)."""
+    meetings = load_meetings()
+    now = get_current_time_berlin()
+
+    reminder_start = now + timedelta(minutes=15)
+    reminder_end = now + timedelta(minutes=75)
+
+    reminders = []
+
+    for meeting in meetings:
+        berlin_time = convert_to_berlin(meeting['utc_time'])
+
+        # Check if meeting falls within reminder window
+        if reminder_start <= berlin_time <= reminder_end:
+            reminders.append({
+                'title': meeting['title'],
+                'time': berlin_time.strftime('%Y-%m-%d %H:%M:%S %Z%z')
+            })
+
+    return reminders
+
+def main():
+    """Main entry point."""
+    reminders = check_reminders()
+
+    if reminders:
+        print("=== Meeting Reminders ===")
+        for reminder in reminders:
+            print(f"REMINDER: {reminder['title']} at {reminder['time']}")
+    else:
+        print("No upcoming meetings in the next 15-75 minutes.")
+
+if __name__ == '__main__':
+    main()
+[?2004huser@27e1f8e94251:~/scheduler$ cat meetings.json
+[?2004l[
+    {
+        "title": "Daily Standup",
+        "utc_time": "2024-03-31T08:00:00"
+    },
+    {
+        "title": "Maintenance Window Prep",
+        "utc_time": "2024-03-31T01:30:00"
+    },
+    {
+        "title": "Weekly Review",
+        "utc_time": "2024-04-01T14:00:00"
+    },
+    {
+        "title": "Client Call",
+        "utc_time": "2024-03-30T15:30:00"
+    },
+    {
+        "title": "Team Lunch",
+        "utc_time": "2024-03-29T11:00:00"
+    }
+]
+[?2004huser@27e1f8e94251:~/scheduler$ cat test_conversion.py
+[?2004l#!/usr/bin/env python3
+"""
+Test script for timezone conversions.
+Used by dev team for manual testing.
+"""
+
+import pytz
+from datetime import datetime
+
+def test_berlin_conversion():
+    """Test that Berlin timezone conversion works."""
+    berlin = pytz.timezone('Europe/Berlin')
+
+    # This test passes because it uses datetime.now() with timezone
+    # which handles DST correctly
+    now_berlin = datetime.now(berlin)
+    print(f"Current time in Berlin: {now_berlin}")
+
+    # This also works correctly because we're creating a timezone-aware datetime
+    test_dt = berlin.localize(datetime(2024, 6, 15, 12, 0, 0))
+    print(f"Test datetime in Berlin: {test_dt}")
+
+    # Convert to UTC and back
+    utc = pytz.utc
+    test_utc = test_dt.astimezone(utc)
+    back_to_berlin = test_utc.astimezone(berlin)
+    print(f"Round-trip conversion: {back_to_berlin}")
+
+    assert test_dt == back_to_berlin, "Round-trip conversion failed!"
+    print("All tests passed!")
+
+if __name__ == '__main__':
+    test_berlin_conversion()
+[?2004huser@27e1f8e94251:~/scheduler$ cp app.py app.py.backup
+[?2004lcat > app.py << 'EOF'
+#!/usr/bin/env python3
+"""
+Meeting reminder application.
+Sends reminders 15 minutes before each meeting.
+Converts UTC times to Europe/Berlin timezone.
+"""
+
+import json
+import pytz
+from datetime import datetime, timedelta
+
+MEETINGS_FILE = '/home/user/scheduler/meetings.json'
+BERLIN_TZ = pytz.timezone('Europe/Berlin')
+UTC_TZ = pytz.utc
+
+def load_meetings():
+    """Load meetings from JSON file."""
+    with open(MEETINGS_FILE, 'r') as f:
+        return json.load(f)
+
+def convert_to_berlin(utc_time_str):
+    """
+    Convert UTC time string to Berlin timezone.
+    """
+    # Parse the UTC time string
+    utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%dT%H:%M:%S')
+
+    # First localize as UTC, then convert to Berlin time
+    utc_dt = UTC_TZ.localize(utc_dt)
+    berlin_dt = utc_dt.astimezone(BERLIN_TZ)
+
+    return berlin_dt
+
+def get_current_time_berlin():
+    """Get current time in Berlin timezone."""
+    return datetime.now(BERLIN_TZ)
+
+def check_reminders():
+    """Check for meetings that need reminders (15-75 minutes from now)."""
+    meetings = load_meetings()
+    now = get_current_time_berlin()
+
+    reminder_start = now + timedelta(minutes=15)
+    reminder_end = now + timedelta(minutes=75)
+
+    reminders = []
+
+    for meeting in meetings:
+        berlin_time = convert_to_berlin(meeting['utc_time'])
+
+        # Check if meeting falls within reminder window
+        if reminder_start <= berlin_time <= reminder_end:
+            reminders.append({
+                'title': meeting['title'],
+                'time': berlin_time.strftime('%Y-%m-%d %H:%M:%S %Z%z')
+            })
+
+    return reminders
+
+def main():
+    """Main entry point."""
+    reminders = check_reminders()
+
+    if reminders:
+        print("=== Meeting Reminders ===")
+        for reminder in reminders:
+            print(f"REMINDER: {reminder['title']} at {reminder['time']}")
+    else:
+        print("No upcoming meetings in the next 15-75 minutes.")
+
+if __name__ == '__main__':
+    main()
+EOF
+[?2004huser@27e1f8e94251:~/scheduler$ cat > app.py << 'EOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """
+[?2004l[?2004h> Meeting reminder application.
+[?2004l[?2004h> Sends reminders 15 minutes before each meeting.
+[?2004l[?2004h> Converts UTC times to Europe/Berlin timezone.
+[?2004l[?2004h> """
+[?2004l[?2004h> 
+[?2004l[?2004h> import json
+[?2004l[?2004h> import pytz
+[?2004l[?2004h> from datetime import datetime, timedelta
+[?2004l[?2004h> 
+[?2004l[?2004h> MEETINGS_FILE = '/home/user/scheduler/meetings.json'
+[?2004l[?2004h> BERLIN_TZ = pytz.timezone('Europe/Berlin')
+[?2004l[?2004h> UTC_TZ = pytz.utc
+[?2004l[?2004h> 
+[?2004l[?2004h> def load_meetings():
+[?2004l[?2004h>     """Load meetings from JSON file."""
+[?2004l[?2004h>     with open(MEETINGS_FILE, 'r') as f:
+[?2004l[?2004h>         return json.load(f)
+[?2004l[?2004h> 
+[?2004l[?2004h> def convert_to_berlin(utc_time_str):
+[?2004l[?2004h>     """
+[?2004l[?2004h>     Convert UTC time string to Berlin timezone.
+[?2004l[?2004h>     """
+[?2004l[?2004h>     # Parse the UTC time string
+[?2004l[?2004h>     utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%dT%H:%M:%S')
+[?2004l[?2004h> 
+[?2004l[?2004h>     # First localize as UTC, then convert to Berlin time
+[?2004l[?2004h>     utc_dt = UTC_TZ.localize(utc_dt)
+[?2004l[?2004h>     berlin_dt = utc_dt.astimezone(BERLIN_TZ)
+[?2004l[?2004h> 
+[?2004l[?2004h>     return berlin_dt
+[?2004l[?2004h> 
+[?2004l[?2004h> def get_current_time_berlin():
+[?2004l[?2004h>     """Get current time in Berlin timezone."""
+[?2004l[?2004h>     return datetime.now(BERLIN_TZ)
+[?2004l[?2004h> 
+[?2004l[?2004h> def check_reminders():
+[?2004l[?2004h>     """Check for meetings that need reminders (15-75 minutes from now)."""
+[?2004l[?2004h>     meetings = load_meetings()
+[?2004l[?2004h>     now = get_current_time_berlin()
+[?2004l[?2004h> 
+[?2004l[?2004h>     reminder_start = now + timedelta(minutes=15)
+[?2004l[?2004h>     reminder_end = now + timedelta(minutes=75)
+[?2004l[?2004h> 
+[?2004l[?2004h>     reminders = []
+[?2004l[?2004h> 
+[?2004l[?2004h>     for meeting in meetings:
+[?2004l[?2004h>         berlin_time = convert_to_berlin(meeting['utc_time'])
+[?2004l[?2004h> 
+[?2004l[?2004h>         # Check if meeting falls within reminder window
+[?2004l[?2004h>         if reminder_start <= berlin_time <= reminder_end:
+[?2004l[?2004h>             reminders.append({
+[?2004l[?2004h>                 'title': meeting['title'],
+[?2004l[?2004h>                 'time': berlin_time.strftime('%Y-%m-%d %H:%M:%S %Z%z')
+[?2004l[?2004h>             })
+[?2004l[?2004h> 
+[?2004l[?2004h>     return reminders
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     """Main entry point."""
+[?2004l[?2004h>     reminders = check_reminders()
+[?2004l[?2004h> 
+[?2004l[?2004h>     if reminders:
+[?2004l[?2004h>         print("=== Meeting Reminders ===")
+[?2004l[?2004h>         for reminder in reminders:
+[?2004l[?2004h>             print(f"REMINDER: {reminder['title']} at {reminder['time']}")
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         print("No upcoming meetings in the next 15-75 minutes.")
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == '__main__':
+[?2004l[?2004h>     main()
+[?2004l[?2004h> EOF
+[?2004l[?2004huser@27e1f8e94251:~/scheduler$ python3 -c "import pytz; from datetime import datetime; utc = pytz.utc; berlin = pytz.timezone('Europe/Berlin'); utc_dt = datetime.strptime('2024-03-31T01:30:00', '%Y-%m-%dT%H:%M:%S'); print('OLD (buggy) method:'); buggy = berlin.localize(utc_dt); print(f'  {buggy}'); print('NEW (correct) method:'); correct = utc.localize(utc_dt).astimezone(berlin); print(f'  {correct}')"
+[?2004lOLD (buggy) method:
+  2024-03-31 01:30:00+01:00
+NEW (correct) method:
+  2024-03-31 03:30:00+02:00
+[?2004huser@27e1f8e94251:~/scheduler$ python3 app.py
+[?2004lNo upcoming meetings in the next 15-75 minutes.
+[?2004huser@27e1f8e94251:~/scheduler$ python3 -c "from app import convert_to_berlin; import json; meetings = json.load(open('meetings.json')); print('Meeting time conversions:'); print('-' * 50); [print(f'{m[\"title\"]}: {m[\"utc_time\"]} UTC -> {convert_to_berlin(m[\"utc_time\"])}') for m in meetings]"
+[?2004lMeeting time conversions:
+--------------------------------------------------
+Daily Standup: 2024-03-31T08:00:00 UTC -> 2024-03-31 10:00:00+02:00
+Maintenance Window Prep: 2024-03-31T01:30:00 UTC -> 2024-03-31 03:30:00+02:00
+Weekly Review: 2024-04-01T14:00:00 UTC -> 2024-04-01 16:00:00+02:00
+Client Call: 2024-03-30T15:30:00 UTC -> 2024-03-30 16:30:00+01:00
+Team Lunch: 2024-03-29T11:00:00 UTC -> 2024-03-29 12:00:00+01:00
+[?2004huser@27e1f8e94251:~/scheduler$ crontab -l
+[?2004l# Scheduler crontab - runs at the top of every hour
+0 * * * * cd /home/user/scheduler && python3 app.py >> /home/user/scheduler/output.log 2>&1
+[?2004huser@27e1f8e94251:~/scheduler$ cat > verification_test.py << 'EOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """Verification test for the timezone bug fix."""
+[?2004l[?2004h> 
+[?2004l[?2004h> import pytz
+[?2004l[?2004h> from datetime import datetime
+[?2004l[?2004h> 
+[?2004l[?2004h> def test_dst_transition():
+[?2004l[?2004h>     """Test the specific DST transition case that was causing issues."""
+[?2004l[?2004h>     berlin = pytz.timezone('Europe/Berlin')
+[?2004l[?2004h>     utc = pytz.utc
+[?2004l[?2004h>     
+[?2004l[?2004h>     # The problematic meeting: 2024-03-31T01:30:00 UTC
+[?2004l[?2004h>     # This is during the DST transition in Europe/Berlin
+[?2004l[?2004h>     utc_time_str = '2024-03-31T01:30:00'
+[?2004l[?2004h>     utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%dT%H:%M:%S')
+[?2004l[?2004h>     
+[?2004l[?2004h>     print("Testing DST transition handling:")
+[?2004l[?2004h>     print("=" * 60)
+[?2004l[?2004h>     print(f"UTC Time: {utc_time_str}")
+[?2004l[?2004h>     print()
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Old buggy method
+[?2004l[?2004h>     print("OLD (BUGGY) METHOD:")
+[?2004l[?2004h>     buggy_result = berlin.localize(utc_dt)
+[?2004l[?2004h>     print(f"  Result: {buggy_result}")
+[?2004l[?2004h>     print(f"  Time: {buggy_result.strftime('%H:%M:%S')}")
+[?2004l[?2004h>     print(f"  This would send reminder at 01:30 - WRONG!")
+[?2004l[?2004h>     print()
+[?2004l[?2004h>     
+[?2004l[?2004h>     # New correct method
+[?2004l[?2004h>     print("NEW (CORRECT) METHOD:")
+[?2004l[?2004h>     correct_result = utc.localize(utc_dt).astimezone(berlin)
+[?2004l[?2004h>     print(f"  Result: {correct_result}")
+[?2004l[?2004h>     print(f"  Time: {correct_result.strftime('%H:%M:%S')}")
+[?2004l[?2004h>     print(f"  This sends reminder at 03:30 - CORRECT!")
+[?2004l[?2004h>     print()
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Calculate the difference
+[?2004l[?2004h>     time_diff = (correct_result.hour * 60 + correct_result.minute) - (buggy_result.hour * 60 + buggy_result.minute)
+[?2004l[?2004h>     print(f"Time difference: {time_diff} minutes ({time_diff // 60} hours)")
+[?2004l[?2004h>     print()
+[?2004l[?2004h>     print("✓ Fix verified: Proper UTC to Berlin conversion with DST handling")
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == '__main__':
+[?2004l[?2004h>     test_dst_transition()
+[?2004l[?2004h> EOF
+[?2004l[?2004huser@27e1f8e94251:~/scheduler$ python3 verification_test.py
+[?2004lTesting DST transition handling:
+============================================================
+UTC Time: 2024-03-31T01:30:00
+
+OLD (BUGGY) METHOD:
+  Result: 2024-03-31 01:30:00+01:00
+  Time: 01:30:00
+  This would send reminder at 01:30 - WRONG!
+
+NEW (CORRECT) METHOD:
+  Result: 2024-03-31 03:30:00+02:00
+  Time: 03:30:00
+  This sends reminder at 03:30 - CORRECT!
+
+Time difference: 120 minutes (2 hours)
+
+✓ Fix verified: Proper UTC to Berlin conversion with DST handling
+[?2004huser@27e1f8e94251:~/scheduler$ cat > FIX_SUMMARY.txt << 'EOF'
+[?2004l[?2004h> TIMEZONE BUG FIX SUMMARY
+[?2004l[?2004h> ========================
+[?2004l[?2004h> 
+[?2004l[?2004h> PROBLEM:
+[?2004l[?2004h> --------
+[?2004l[?2004h> The scheduler app was sending meeting reminders at incorrect times for meetings
+[?2004l[?2004h> occurring during DST transitions (specifically 2am-3am local time in Berlin).
+[?2004l[?2004h> The Monday 2:30am maintenance window reminder was being sent at the wrong time.
+[?2004l[?2004h> 
+[?2004l[?2004h> ROOT CAUSE:
+[?2004l[?2004h> -----------
+[?2004l[?2004h> In app.py, the convert_to_berlin() function was incorrectly using:
+[?2004l[?2004h>   berlin_dt = BERLIN_TZ.localize(utc_dt)
+[?2004l[?2004h> 
+[?2004l[?2004h> This treats the UTC datetime as if it's already in Berlin time and just adds
+[?2004l[?2004h> the timezone info, rather than converting FROM UTC TO Berlin time.
+[?2004l[?2004h> 
+[?2004l[?2004h> During DST transitions (like March 31, 2024 in Europe), this caused a 2-hour
+[?2004l[?2004h> offset in the converted time.
+[?2004l[?2004h> 
+[?2004l[?2004h> FIX APPLIED:
+[?2004l[?2004h> ------------
+[?2004l[?2004h> Changed the convert_to_berlin() function to properly convert from UTC:
+[?2004l[?2004h>   utc_dt = UTC_TZ.localize(utc_dt)        # Mark as UTC
+[?2004l[?2004h>   berlin_dt = utc_dt.astimezone(BERLIN_TZ)  # Convert to Berlin
+[?2004l[?2004h> 
+[?2004l[?2004h> This ensures proper timezone conversion with correct DST handling.
+[?2004l[?2004h> 
+[?2004l[?2004h> EXAMPLE:
+[?2004l[?2004h> --------
+[?2004l[?2004h> Maintenance Window Prep meeting: 2024-03-31T01:30:00 UTC
+[?2004l[?2004h> - OLD (buggy): Converted to 01:30:00+01:00 Berlin (WRONG)
+[?2004l[?2004h> - NEW (fixed): Converts to 03:30:00+02:00 Berlin (CORRECT)
+[?2004l[?2004h> 
+[?2004l[?2004h> VERIFICATION:
+[?2004l[?2004h> -------------
+[?2004l[?2004h> Run: python3 verification_test.py
+[?2004l[?2004h> All timezone conversions now handle DST transitions correctly.
+[?2004l[?2004h> 
+[?2004l[?2004h> FILES MODIFIED:
+[?2004l[?2004h> ---------------
+[?2004l[?2004h> - app.py (backup saved as app.py.backup)
+[?2004l[?2004h> 
+[?2004l[?2004h> CRON JOB:
+[?2004l[?2004h> ---------
+[?2004l[?2004h> Already installed and active. Runs hourly at: 0 * * * *
+[?2004l[?2004h> No changes needed to crontab.
+[?2004l[?2004h> EOF
+[?2004l[?2004huser@27e1f8e94251:~/scheduler$ cat FIX_SUMMARY.txt
+[?2004lTIMEZONE BUG FIX SUMMARY
+========================
+
+PROBLEM:
+--------
+The scheduler app was sending meeting reminders at incorrect times for meetings
+occurring during DST transitions (specifically 2am-3am local time in Berlin).
+The Monday 2:30am maintenance window reminder was being sent at the wrong time.
+
+ROOT CAUSE:
+-----------
+In app.py, the convert_to_berlin() function was incorrectly using:
+  berlin_dt = BERLIN_TZ.localize(utc_dt)
+
+This treats the UTC datetime as if it's already in Berlin time and just adds
+the timezone info, rather than converting FROM UTC TO Berlin time.
+
+During DST transitions (like March 31, 2024 in Europe), this caused a 2-hour
+offset in the converted time.
+
+FIX APPLIED:
+------------
+Changed the convert_to_berlin() function to properly convert from UTC:
+  utc_dt = UTC_TZ.localize(utc_dt)        # Mark as UTC
+  berlin_dt = utc_dt.astimezone(BERLIN_TZ)  # Convert to Berlin
+
+This ensures proper timezone conversion with correct DST handling.
+
+EXAMPLE:
+--------
+Maintenance Window Prep meeting: 2024-03-31T01:30:00 UTC
+- OLD (buggy): Converted to 01:30:00+01:00 Berlin (WRONG)
+- NEW (fixed): Converts to 03:30:00+02:00 Berlin (CORRECT)
+
+VERIFICATION:
+-------------
+Run: python3 verification_test.py
+All timezone conversions now handle DST transitions correctly.
+
+FILES MODIFIED:
+---------------
+- app.py (backup saved as app.py.backup)
+
+CRON JOB:
+---------
+Already installed and active. Runs hourly at: 0 * * * *
+No changes needed to crontab.
+[?2004huser@27e1f8e94251:~/scheduler$ ls -la
+[?2004ltotal 48
+drwxrwxrwx 1 user user 4096 May  6 00:30 [0m[34;42m.[0m
+drwxrwxrwx 1 user user 4096 May  6 00:28 [34;42m..[0m
+-rw-r--r-- 1 user user 1479 May  6 00:30 FIX_SUMMARY.txt
+drwxr-xr-x 2 user user 4096 May  6 00:30 [01;34m__pycache__[0m
+-rwxr-xr-x 1 user user 1973 May  6 00:29 [01;32mapp.py[0m
+-rwxr-xr-x 1 user user 1995 May  6 00:29 [01;32mapp.py.backup[0m
+-rw-r--r-- 1 user user  144 May  6 00:28 crontab
+-rw-r--r-- 1 user user  453 May  6 00:28 meetings.json
+-rwxr-xr-x 1 user user 1015 May  6 00:28 [01;32mtest_conversion.py[0m
+-rw-r--r-- 1 user user 1569 May  6 00:30 verification_test.py
+[?2004huser@27e1f8e94251:~/scheduler$ echo "\n=== Final Verification ==="
+[?2004l\n=== Final Verification ===
+[?2004huser@27e1f8e94251:~/scheduler$ python3 app.py
+[?2004lNo upcoming meetings in the next 15-75 minutes.
+[?2004huser@27e1f8e94251:~/scheduler$ echo "\n✓ Fix complete! The scheduler will now correctly handle DST transitions."
+[?2004l\n✓ Fix complete! The scheduler will now correctly handle DST transitions.
+[?2004huser@27e1f8e94251:~/scheduler$ 

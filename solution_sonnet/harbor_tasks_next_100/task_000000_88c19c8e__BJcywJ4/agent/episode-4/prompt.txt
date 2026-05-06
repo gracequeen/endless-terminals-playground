@@ -1,0 +1,70 @@
+New Terminal Output:
+
+I have no name!@8d9b8d08258a:~$ cat /home/user/pipeline/worker.py
+#!/usr/bin/env python3
+"""
+Worker for distributed tf-idf feature extraction.
+Receives chunks from coordinator, computes tf-idf, sends results back.
+"""
+import pickle
+import sys
+import zmq
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+def main():
+    worker_id = sys.argv[1] if len(sys.argv) > 1 else "0"
+
+    context = zmq.Context()
+
+    # Socket to receive work from coordinator
+    receiver = context.socket(zmq.PULL)
+    receiver.connect("tcp://127.0.0.1:5557")
+
+    # Socket to send results to coordinator
+    sender = context.socket(zmq.PUSH)
+    sender.connect("tcp://127.0.0.1:5558")
+
+    print(f"Worker {worker_id}: Started and connected")
+
+    chunks_processed = 0
+
+    # BUG: Each worker creates its own vectorizer with its own vocabulary
+    vectorizer = TfidfVectorizer(max_features=100)
+
+    while True:
+        try:
+            msg = receiver.recv()
+            chunk_id, chunk_df = pickle.loads(msg)
+
+            print(f"Worker {worker_id}: Processing chunk {chunk_id}")
+
+            # Compute tf-idf (BUG: fitting on each chunk independently)
+            texts = chunk_df["text"].tolist()
+            tfidf_matrix = vectorizer.fit_transform(texts)
+
+            # Convert to DataFrame with feature names as columns
+            feature_names = vectorizer.get_feature_names_out()
+            result_df = pd.DataFrame(
+                tfidf_matrix.toarray(),
+                columns=feature_names
+            )
+
+            # Send result back
+            result_msg = pickle.dumps((chunk_id, result_df))
+            sender.send(result_msg)
+
+            chunks_processed += 1
+            print(f"Worker {worker_id}: Processed chunk {chunk_id} (total: {chunks_processed})")
+
+        except Exception as e:
+            print(f"Worker {worker_id}: Error: {e}")
+            break
+
+    receiver.close()
+    sender.close()
+    context.term()
+
+if __name__ == "__main__":
+    main()
+I have no name!@8d9b8d08258a:~$

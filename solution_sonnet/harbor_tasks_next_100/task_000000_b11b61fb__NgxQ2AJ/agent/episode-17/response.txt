@@ -1,0 +1,10 @@
+{
+  "analysis": "I see the issue. In changelog mode, it's using get_current_version() which reads from package.json. I need to add a function to get the latest git tag and use that for changelog generation instead. This will ensure it gets the commits since the last actual release tag, not the updated package.json version.",
+  "plan": "I'll add a get_latest_tag() function and modify the changelog mode to use it instead of get_current_version(). This will fix the workflow issue.",
+  "commands": [
+    {
+      "keystrokes": "cat > /tmp/fix.py << 'EOF'\nimport sys\n\n# Read the file\nwith open('bump.py', 'r') as f:\n    content = f.read()\n\n# Add the get_latest_tag function after get_commits_since_tag\nget_latest_tag_func = '''def get_latest_tag():\n    \"\"\"Get the latest git tag.\"\"\"\n    cmd = \"git describe --tags --abbrev=0\"\n    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)\n    if result.returncode != 0:\n        return None\n    tag = result.stdout.strip()\n    # Remove 'v' prefix if present\n    if tag.startswith('v'):\n        tag = tag[1:]\n    return tag\n\n\n'''\n\n# Find the position after get_commits_since_tag function\ninsert_pos = content.find('def parse_commit_type')\nif insert_pos != -1:\n    content = content[:insert_pos] + get_latest_tag_func + content[insert_pos:]\n\n# Replace the changelog mode to use get_latest_tag\ncontent = content.replace(\n    \"\"\"    if len(sys.argv) > 1 and sys.argv[1] == '--changelog':\n        # Changelog mode\n        current = get_current_version()\"\"\",\n    \"\"\"    if len(sys.argv) > 1 and sys.argv[1] == '--changelog':\n        # Changelog mode\n        current = get_latest_tag() or get_current_version()\"\"\")\n\n# Write back\nwith open('bump.py', 'w') as f:\n    f.write(content)\n\nprint(\"Fixed!\")\nEOF\npython3 /tmp/fix.py\n",
+      "duration": 0.1
+    }
+  ]
+}

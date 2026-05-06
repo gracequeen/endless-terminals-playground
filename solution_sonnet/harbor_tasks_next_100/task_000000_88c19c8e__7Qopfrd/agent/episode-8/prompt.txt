@@ -1,0 +1,90 @@
+New Terminal Output:
+
+I have no name!@199a2e4cfacc:~/pipeline$ cat > worker.py << 'EOF'
+> #!/usr/bin/env python3
+> """
+> Worker for distributed tf-idf feature extraction.
+> Receives chunks from coordinator, computes tf-idf, sends results back.
+> """
+> import pickle
+> import sys
+> import zmq
+> import pandas as pd
+>
+> def main():
+>     worker_id = sys.argv[1] if len(sys.argv) > 1 else "0"
+>
+>     context = zmq.Context()
+>
+>     # Socket to receive work from coordinator
+>     receiver = context.socket(zmq.PULL)
+>     receiver.connect("tcp://127.0.0.1:5557")
+>
+>     # Socket to send results to coordinator
+>     sender = context.socket(zmq.PUSH)
+>     sender.connect("tcp://127.0.0.1:5558")
+>
+>     print(f"Worker {worker_id}: Started and connected")
+>
+>     # FIX: Wait for fitted vectorizer from coordinator
+>     print(f"Worker {worker_id}: Waiting for vectorizer...")
+>     msg = receiver.recv()
+>     msg_type, vectorizer = pickle.loads(msg)
+>
+>     if msg_type != "VECTORIZER":
+>         print(f"Worker {worker_id}: ERROR - Expected VECTORIZER, got {msg_type}")
+>         return
+>
+>     print(f"Worker {worker_id}: Received fitted vectorizer with {len(vectorizer.vocabulary_)} terms")
+>
+>     chunks_processed = 0
+>
+>     # Process chunks until DONE signal
+>     while True:
+>         try:
+>             msg = receiver.recv()
+>             msg_type, chunk_id, chunk_df = pickle.loads(msg)
+>
+>             if msg_type == "DONE":
+>                 print(f"Worker {worker_id}: Received termination signal, exiting")
+>                 break
+>
+>             if msg_type != "CHUNK":
+>                 print(f"Worker {worker_id}: Unknown message type: {msg_type}")
+>                 continue
+>
+>             print(f"Worker {worker_id}: Processing chunk {chunk_id}")
+>
+>             # FIX: Use transform() only, not fit_transform()
+>             texts = chunk_df["text"].tolist()
+>             tfidf_matrix = vectorizer.transform(texts)
+>
+>             # Convert to DataFrame with feature names as columns
+>             feature_names = vectorizer.get_feature_names_out()
+>             result_df = pd.DataFrame(
+>                 tfidf_matrix.toarray(),
+>                 columns=feature_names
+>             )
+>
+>             # Send result back
+>             result_msg = pickle.dumps((chunk_id, result_df))
+>             sender.send(result_msg)
+>
+>             chunks_processed += 1
+>             print(f"Worker {worker_id}: Processed chunk {chunk_id} (total: {chunks_processed})")
+>
+>         except Exception as e:
+>             print(f"Worker {worker_id}: Error: {e}")
+>             import traceback
+>             traceback.print_exc()
+>             break
+>
+>     print(f"Worker {worker_id}: Shutting down after processing {chunks_processed} chunks")
+>     receiver.close()
+>     sender.close()
+>     context.term()
+>
+> if __name__ == "__main__":
+>     main()
+> EOF
+I have no name!@199a2e4cfacc:~/pipeline$

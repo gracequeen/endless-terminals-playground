@@ -1,0 +1,35 @@
+New Terminal Output:
+
+root@01724f5fbedb:/home/user/audit# cat scan.py
+#!/usr/bin/env python3
+import sqlite3
+
+def load_breach_hashes(path):
+    with open(path, 'r') as f:
+        return set(f.readlines())  # BUG: readlines() preserves \n
+
+def scan_users(db_path, breach_set):
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute("SELECT uid, email, password_hash FROM accounts")
+    compromised = []
+    for uid, email, pw_hash in cur.fetchall():
+        # normalize email for domain check (case insensitive)
+        email_lower = email.lower()
+        if pw_hash in breach_set:
+            compromised.append(uid)
+    conn.close()
+    return compromised
+
+def main():
+    breach_set = load_breach_hashes('/home/user/audit/breach_hashes.txt')
+    print(f"Checking {len(breach_set)} hashes...")
+    compromised = scan_users('/home/user/audit/users.db', breach_set)
+    print(f"Found {len(compromised)} compromised accounts")
+    with open('/home/user/audit/compromised_uids.txt', 'w') as f:
+        for uid in compromised:
+            f.write(f"{uid}\n")
+
+if __name__ == '__main__':
+    main()
+root@01724f5fbedb:/home/user/audit#

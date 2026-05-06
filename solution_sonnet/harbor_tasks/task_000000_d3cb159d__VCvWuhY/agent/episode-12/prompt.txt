@@ -1,0 +1,48 @@
+New Terminal Output:
+
+user@b7869e42860b:~/infra-configs$ cat > .git/hooks/pre-receive << 'EOF'
+> #!/bin/bash
+> # Pre-receive hook to block world-readable private keys
+> # This cannot be bypassed with --no-verify
+>
+> while read oldrev newrev refname; do
+>     # Get list of all files in the new commit(s)
+>     if [ "$oldrev" = "0000000000000000000000000000000000000000" ]; then
+>         # New branch, check all files
+>         files=$(git ls-tree -r --name-only "$newrev")
+>     else
+>         # Existing branch, check changed files
+>         files=$(git diff --name-only "$oldrev" "$newrev")
+>     fi
+>
+>     for file in $files; do
+>         # Check if file matches *.pem or *.key
+>         if [[ "$file" == *.pem ]] || [[ "$file" == *.key ]]; then
+>             # Get file mode from git object
+>             mode=$(git ls-tree "$newrev" "$file" | awk '{print $1}')
+>             # Extract permission bits (last 3 digits)
+>             perms=${mode: -3}
+>
+>             # Check if world-readable or group-readable (anything >= 640)
+>             if [ "$perms" -ge 640 ]; then
+>                 other_read=$((perms % 10))
+>                 group_read=$(((perms / 10) % 10))
+>
+>                 if [ $((other_read & 4)) -ne 0 ]; then
+>                     echo "ERROR: $file has world-readable permissions ($perms) in commit $newrev"
+>                     echo "Private keys must not be world-readable. Fix permissions and try again."
+>                     exit 1
+>                 fi
+>                 if [ $((group_read & 4)) -ne 0 ] && [ "$perms" -ge 644 ]; then
+>                     echo "ERROR: $file has group-readable permissions ($perms) in commit $newrev"
+>                     echo "Private keys should be 600 or 400. Fix permissions and try again."
+>                     exit 1
+>                 fi
+>             fi
+>         fi
+>     done
+> done
+>
+> exit 0
+> EOF
+user@b7869e42860b:~/infra-configs$

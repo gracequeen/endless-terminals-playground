@@ -1,0 +1,199 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+I have no name!@148def893cbc:~/pipeline$ cat > /home/user/BUGFIX_SUMMARY.txt << 'EOF'
+k_id
+   - Detect and ignore duplicate results
+   - Wait for exact number of chunks (50/50)
+   - Aggregate results in correct order
+
+4. WORKER PROTOCOL (worker.py)
+   - Receive and store fitted vectorizer first
+   - Use vectorizer.transform() on chunks
+   - Handle message types (VECTORIZER vs CHUNK)
+   - Ensure all workers use same vocabulary
+
+RESULTS:
+--------
+After fixes:
+✓ All 50,000 rows processed correctly
+✓ TF-IDF values in valid range [0.0, 0.7998]
+✓ 100 features (as specified by max_features=100)
+✓ No data loss, no duplicates, no corruption
+✓ Consistent with single-threaded reference implementation
+
+KEY LESSON:
+-----------
+In distributed TF-IDF, the vocabulary MUST be fitted on the complete
+dataset, then shared across all workers. Each worker should only
+transform its chunks using the shared vocabulary. Fitting independently
+per chunk creates incompatible feature spaces that cannot be merged.
+
+=================================================================
+EOF
+> =================================================================
+> DISTRIBUTED TF-IDF PIPELINE - BUG FIX SUMMARY
+> =================================================================
+>
+> PROBLEM:
+> --------
+> The distributed feature extraction pipeline was producing incorrect output:
+> - Only 12k/50k rows in output (massive data loss)
+> - TF-IDF scores > 1 (mathematically impossible)
+> - No errors or crashes (silent data corruption)
+>
+> ROOT CAUSES IDENTIFIED:
+> -----------------------
+>
+> 1. INDEPENDENT VOCABULARIES PER CHUNK (Critical Bug)
+>    - Each worker created its own TfidfVectorizer
+>    - Workers called fit_transform() on individual chunks
+>    - This created different vocabularies for each chunk
+>    - When coordinator concatenated results, columns didn't align
+>    - Result: Data corruption, invalid scores, wrong feature counts
+>
+> 2. RACE CONDITION (Data Loss)
+>    - Coordinator sent chunks immediately after binding sockets
+>    - Workers hadn't connected yet when chunks were sent
+>    - Early chunks were dropped by ZeroMQ
+>    - Result: Missing data, only ~12k/50k rows processed
+>
+> 3. NO CHUNK TRACKING (Potential Duplicates)
+>    - Coordinator used a list to collect results
+>    - No deduplication or verification of chunk IDs
+>    - Could process duplicates or miss chunks silently
+>
+> 4. TIMEOUT-BASED COLLECTION (Unreliable)
+>    - 5-second timeout for receiving results
+>    - Could exit before all workers finished
+>    - No guarantee all chunks were processed
+>
+> FIXES APPLIED:
+> --------------
+>
+> 1. SHARED VOCABULARY (coordinator.py)
+>    - Fit TfidfVectorizer on FULL dataset before chunking
+>    - Send fitted vectorizer to all workers first
+>    - Workers use transform() only, not fit_transform()
+>    - Ensures consistent feature columns across all chunks
+>
+> 2. PROPER SYNCHRONIZATION (coordinator.py)
+>    - Added 2-second delay for workers to connect
+>    - Send vectorizer first, wait, then send chunks
+>    - Eliminates race condition and data loss
+>
+> 3. CHUNK TRACKING (coordinator.py)
+>    - Use dict instead of list to track results by chunk_id
+>    - Detect and ignore duplicate results
+>    - Wait for exact number of chunks (50/50)
+>    - Aggregate results in correct order
+>
+> 4. WORKER PROTOCOL (worker.py)
+>    - Receive and store fitted vectorizer first
+>    - Use vectorizer.transform() on chunks
+>    - Handle message types (VECTORIZER vs CHUNK)
+>    - Ensure all workers use same vocabulary
+>
+> RESULTS:
+> --------
+> After fixes:
+> ✓ All 50,000 rows processed correctly
+> ✓ TF-IDF values in valid range [0.0, 0.7998]
+> ✓ 100 features (as specified by max_features=100)
+> ✓ No data loss, no duplicates, no corruption
+> ✓ Consistent with single-threaded reference implementation
+>
+> KEY LESSON:
+> -----------
+> In distributed TF-IDF, the vocabulary MUST be fitted on the complete
+> dataset, then shared across all workers. Each worker should only
+> transform its chunks using the shared vocabulary. Fitting independently
+> per chunk creates incompatible feature spaces that cannot be merged.
+>
+> =================================================================
+> EOF
+I have no name!@148def893cbc:~/pipeline$ cat /home/user/BUGFIX_SUMMARY.txt
+=================================================================
+DISTRIBUTED TF-IDF PIPELINE - BUG FIX SUMMARY
+=================================================================
+
+PROBLEM:
+--------
+The distributed feature extraction pipeline was producing incorrect output:
+- Only 12k/50k rows in output (massive data loss)
+- TF-IDF scores > 1 (mathematically impossible)
+- No errors or crashes (silent data corruption)
+
+ROOT CAUSES IDENTIFIED:
+-----------------------
+
+1. INDEPENDENT VOCABULARIES PER CHUNK (Critical Bug)
+   - Each worker created its own TfidfVectorizer
+   - Workers called fit_transform() on individual chunks
+   - This created different vocabularies for each chunk
+   - When coordinator concatenated results, columns didn't align
+   - Result: Data corruption, invalid scores, wrong feature counts
+
+2. RACE CONDITION (Data Loss)
+   - Coordinator sent chunks immediately after binding sockets
+   - Workers hadn't connected yet when chunks were sent
+   - Early chunks were dropped by ZeroMQ
+   - Result: Missing data, only ~12k/50k rows processed
+
+3. NO CHUNK TRACKING (Potential Duplicates)
+   - Coordinator used a list to collect results
+   - No deduplication or verification of chunk IDs
+   - Could process duplicates or miss chunks silently
+
+4. TIMEOUT-BASED COLLECTION (Unreliable)
+   - 5-second timeout for receiving results
+   - Could exit before all workers finished
+   - No guarantee all chunks were processed
+
+FIXES APPLIED:
+--------------
+
+1. SHARED VOCABULARY (coordinator.py)
+   - Fit TfidfVectorizer on FULL dataset before chunking
+   - Send fitted vectorizer to all workers first
+   - Workers use transform() only, not fit_transform()
+   - Ensures consistent feature columns across all chunks
+
+2. PROPER SYNCHRONIZATION (coordinator.py)
+   - Added 2-second delay for workers to connect
+   - Send vectorizer first, wait, then send chunks
+   - Eliminates race condition and data loss
+
+3. CHUNK TRACKING (coordinator.py)
+   - Use dict instead of list to track results by chunk_id
+   - Detect and ignore duplicate results
+   - Wait for exact number of chunks (50/50)
+   - Aggregate results in correct order
+
+4. WORKER PROTOCOL (worker.py)
+   - Receive and store fitted vectorizer first
+   - Use vectorizer.transform() on chunks
+   - Handle message types (VECTORIZER vs CHUNK)
+   - Ensure all workers use same vocabulary
+
+RESULTS:
+--------
+After fixes:
+✓ All 50,000 rows processed correctly
+✓ TF-IDF values in valid range [0.0, 0.7998]
+✓ 100 features (as specified by max_features=100)
+✓ No data loss, no duplicates, no corruption
+✓ Consistent with single-threaded reference implementation
+
+KEY LESSON:
+-----------
+In distributed TF-IDF, the vocabulary MUST be fitted on the complete
+dataset, then shared across all workers. Each worker should only
+transform its chunks using the shared vocabulary. Fitting independently
+per chunk creates incompatible feature spaces that cannot be merged.
+
+=================================================================
+I have no name!@148def893cbc:~/pipeline$

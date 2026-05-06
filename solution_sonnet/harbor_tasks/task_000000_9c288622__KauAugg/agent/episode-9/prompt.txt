@@ -1,0 +1,100 @@
+New Terminal Output:
+
+user@27e1f8e94251:~/scheduler$ cat > FIX_SUMMARY.txt << 'EOF'
+> TIMEZONE BUG FIX SUMMARY
+> ========================
+>
+> PROBLEM:
+> --------
+> The scheduler app was sending meeting reminders at incorrect times for meetings
+> occurring during DST transitions (specifically 2am-3am local time in Berlin).
+> The Monday 2:30am maintenance window reminder was being sent at the wrong time.
+>
+> ROOT CAUSE:
+> -----------
+> In app.py, the convert_to_berlin() function was incorrectly using:
+>   berlin_dt = BERLIN_TZ.localize(utc_dt)
+>
+> This treats the UTC datetime as if it's already in Berlin time and just adds
+> the timezone info, rather than converting FROM UTC TO Berlin time.
+>
+> During DST transitions (like March 31, 2024 in Europe), this caused a 2-hour
+> offset in the converted time.
+>
+> FIX APPLIED:
+> ------------
+> Changed the convert_to_berlin() function to properly convert from UTC:
+>   utc_dt = UTC_TZ.localize(utc_dt)        # Mark as UTC
+>   berlin_dt = utc_dt.astimezone(BERLIN_TZ)  # Convert to Berlin
+>
+> This ensures proper timezone conversion with correct DST handling.
+>
+> EXAMPLE:
+> --------
+> Maintenance Window Prep meeting: 2024-03-31T01:30:00 UTC
+> - OLD (buggy): Converted to 01:30:00+01:00 Berlin (WRONG)
+> - NEW (fixed): Converts to 03:30:00+02:00 Berlin (CORRECT)
+>
+> VERIFICATION:
+> -------------
+> Run: python3 verification_test.py
+> All timezone conversions now handle DST transitions correctly.
+>
+> FILES MODIFIED:
+> ---------------
+> - app.py (backup saved as app.py.backup)
+>
+> CRON JOB:
+> ---------
+> Already installed and active. Runs hourly at: 0 * * * *
+> No changes needed to crontab.
+> EOF
+user@27e1f8e94251:~/scheduler$ cat FIX_SUMMARY.txt
+TIMEZONE BUG FIX SUMMARY
+========================
+
+PROBLEM:
+--------
+The scheduler app was sending meeting reminders at incorrect times for meetings
+occurring during DST transitions (specifically 2am-3am local time in Berlin).
+The Monday 2:30am maintenance window reminder was being sent at the wrong time.
+
+ROOT CAUSE:
+-----------
+In app.py, the convert_to_berlin() function was incorrectly using:
+  berlin_dt = BERLIN_TZ.localize(utc_dt)
+
+This treats the UTC datetime as if it's already in Berlin time and just adds
+the timezone info, rather than converting FROM UTC TO Berlin time.
+
+During DST transitions (like March 31, 2024 in Europe), this caused a 2-hour
+offset in the converted time.
+
+FIX APPLIED:
+------------
+Changed the convert_to_berlin() function to properly convert from UTC:
+  utc_dt = UTC_TZ.localize(utc_dt)        # Mark as UTC
+  berlin_dt = utc_dt.astimezone(BERLIN_TZ)  # Convert to Berlin
+
+This ensures proper timezone conversion with correct DST handling.
+
+EXAMPLE:
+--------
+Maintenance Window Prep meeting: 2024-03-31T01:30:00 UTC
+- OLD (buggy): Converted to 01:30:00+01:00 Berlin (WRONG)
+- NEW (fixed): Converts to 03:30:00+02:00 Berlin (CORRECT)
+
+VERIFICATION:
+-------------
+Run: python3 verification_test.py
+All timezone conversions now handle DST transitions correctly.
+
+FILES MODIFIED:
+---------------
+- app.py (backup saved as app.py.backup)
+
+CRON JOB:
+---------
+Already installed and active. Runs hourly at: 0 * * * *
+No changes needed to crontab.
+user@27e1f8e94251:~/scheduler$

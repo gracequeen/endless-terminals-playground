@@ -1,0 +1,35 @@
+New Terminal Output:
+
+root@2c97eda80e6b:/home/user/infra# cat provision.sh
+#!/bin/bash
+set -euo pipefail
+
+source /home/user/infra/.env
+
+echo "Loaded DB_HOST=$DB_HOST"
+echo "Loaded REDIS_URL=$REDIS_URL"
+
+# Sensitive vars handled separately for security
+unset VAULT_ADDR API_SECRET DEPLOY_KEY
+
+if [[ -f /home/user/infra/.env.secrets ]]; then
+    source /home/user/infra/.env.secrets
+fi
+
+# Validate
+echo "Checking vault connectivity..."
+curl -sf "${VAULT_ADDR}/v1/sys/health" > /dev/null || echo "Vault check skipped"
+
+# Generate config
+cat > /home/user/infra/output/config.json <<EOF
+{
+    "database": "${DB_HOST}",
+    "cache": "${REDIS_URL}",
+    "vault": "${VAULT_ADDR}",
+    "api_key": "${API_SECRET}",
+    "deploy": "${DEPLOY_KEY}"
+}
+EOF
+
+echo "Provisioning complete"
+root@2c97eda80e6b:/home/user/infra#

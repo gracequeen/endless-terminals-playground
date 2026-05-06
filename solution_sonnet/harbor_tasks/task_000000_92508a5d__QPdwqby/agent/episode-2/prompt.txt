@@ -1,0 +1,54 @@
+New Terminal Output:
+
+root@c81bdf53732b:/home/user/research# cat prep_data.py
+"""Data preparation script for survey responses."""
+
+import numpy as np
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from utils.converters import standardize_dtypes
+
+
+def load_raw_data(filepath):
+    """Load raw CSV data."""
+    return pd.read_csv(filepath)
+
+
+def clean_numeric_columns(df):
+    """Clean and convert numeric columns."""
+    # Convert score columns to float
+    score_cols = ['satisfaction_score', 'recommendation_score', 'effort_score']
+    for col in score_cols:
+        if col in df.columns:
+            df[col] = df[col].astype(np.float)
+
+    # Convert age to float for handling missing values
+    if 'age' in df.columns:
+        df['age'] = pd.to_numeric(df['age'], errors='coerce').astype(np.float)
+
+    return df
+
+
+def prepare_data():
+    """Main data preparation function."""
+    # Load raw data
+    df = load_raw_data('/home/user/research/raw/survey_responses.csv')
+
+    # Clean numeric columns
+    df = clean_numeric_columns(df)
+
+    # Standardize dtypes using utility functions
+    df = standardize_dtypes(df)
+
+    # Write to parquet
+    output_path = '/home/user/research/output/cleaned_survey.parquet'
+    df.to_parquet(output_path, engine='pyarrow', index=False)
+
+    print(f"Successfully wrote {len(df)} rows to {output_path}")
+
+
+if __name__ == '__main__':
+    prepare_data()
+root@c81bdf53732b:/home/user/research#

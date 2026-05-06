@@ -1,0 +1,106 @@
+New Terminal Output:
+
+user@390d21a01ae7:~/archive_pipeline$ cat run_test.sh
+#!/bin/bash
+set -e
+
+TEST_SRC="/tmp/test_src"
+TEST_DST="/tmp/test_dst"
+TEST_ARCHIVE="/tmp/test.carch"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Clean up any previous test artifacts
+rm -rf "$TEST_SRC" "$TEST_DST" "$TEST_ARCHIVE"
+
+echo "=== Creating test source tree ==="
+mkdir -p "$TEST_SRC"
+
+# Create various subdirectories
+mkdir -p "$TEST_SRC/subdir1/nested"
+mkdir -p "$TEST_SRC/subdir2"
+mkdir -p "$TEST_SRC/empty_dir"
+mkdir -p "$TEST_SRC/deep/path/to/files"
+
+# Create files with random content of varying sizes
+# Small files
+for i in $(seq 1 10); do
+    dd if=/dev/urandom bs=100 count=1 2>/dev/null | base64 > "$TEST_SRC/small_$i.txt"
+done
+
+# Medium files
+for i in $(seq 1 15); do
+    dd if=/dev/urandom bs=1024 count=$((RANDOM % 50 + 10)) 2>/dev/null > "$TEST_SRC/subdir1/medium_$i.bin"
+done
+
+# Larger files
+for i in $(seq 1 5); do
+    dd if=/dev/urandom bs=1024 count=$((RANDOM % 500 + 500)) 2>/dev/null > "$TEST_SRC/subdir2/large_$i.dat"
+done
+
+# Files in nested directories
+for i in $(seq 1 10); do
+    dd if=/dev/urandom bs=512 count=$((RANDOM % 100 + 1)) 2>/dev/null > "$TEST_SRC/subdir1/nested/nested_$i.bin"
+done
+
+# Files in deep path
+for i in $(seq 1 8); do
+    dd if=/dev/urandom bs=2048 count=$((RANDOM % 200 + 50)) 2>/dev/null > "$TEST_SRC/deep/path/to/files/deep_$i.dat"
+done
+
+# Some empty files
+touch "$TEST_SRC/empty1.txt"
+touch "$TEST_SRC/subdir1/empty2.txt"
+
+# Text files with specific content
+echo "This is a test file with known content" > "$TEST_SRC/known_content.txt"
+for i in $(seq 1 100); do
+    echo "Line $i: $(dd if=/dev/urandom bs=50 count=1 2>/dev/null | base64)" >> "$TEST_SRC/multiline.txt"
+done
+
+FILE_COUNT=$(find "$TEST_SRC" -type f | wc -l)
+echo "Created $FILE_COUNT files in test source"
+
+echo ""
+echo "=== Computing source checksums ==="
+SRC_CHECKSUMS=$(cd "$TEST_SRC" && find . -type f -exec sha256sum {} \; | sort)
+
+echo ""
+echo "=== Creating archive ==="
+python3 "$SCRIPT_DIR/create.py" "$TEST_SRC" "$TEST_ARCHIVE"
+
+echo ""
+echo "=== Extracting archive ==="
+python3 "$SCRIPT_DIR/extract.py" "$TEST_ARCHIVE" "$TEST_DST"
+
+echo ""
+echo "=== Computing destination checksums ==="
+DST_CHECKSUMS=$(cd "$TEST_DST" && find . -type f -exec sha256sum {} \; | sort)
+
+echo ""
+echo "=== Comparing checksums ==="
+
+# Compare checksums
+if [ "$SRC_CHECKSUMS" = "$DST_CHECKSUMS" ]; then
+    echo "SUCCESS: All file checksums match!"
+    EXTRACTED_COUNT=$(find "$TEST_DST" -type f | wc -l)
+    echo "Verified $EXTRACTED_COUNT files"
+    exit 0
+else
+    echo "FAILURE: Checksum mismatch detected!"
+    echo ""
+    echo "Source checksums:"
+    echo "$SRC_CHECKSUMS" | head -20
+    echo "..."
+    echo ""
+    echo "Destination checksums:"
+    echo "$DST_CHECKSUMS" | head -20
+    echo "..."
+    echo ""
+
+    # Show specific differences
+    echo "Differences:"
+    diff <(echo "$SRC_CHECKSUMS") <(echo "$DST_CHECKSUMS") | head -30 || true
+
+    exit 1
+fi
+user@390d21a01ae7:~/archive_pipeline$

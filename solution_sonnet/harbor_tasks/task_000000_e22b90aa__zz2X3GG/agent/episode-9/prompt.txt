@@ -1,0 +1,87 @@
+New Terminal Output:
+
+root@f89a3181d97b:/home/user/pipeline# cp transform.py transform.py.bak
+root@f89a3181d97b:/home/user/pipeline# cat > transform.py << 'EOF'
+transform, and write to processed/."""
+    PROCESSED_DIR.mkdir(exist_ok=True)
+
+    parquet_files = list(STAGING_DIR.glob("*.parquet"))
+    if not parquet_files:
+        raise ValueError(f"No parquet files found in {STAGING_DIR}")
+
+    for parquet_file in parquet_files:
+        print(f"Transforming {parquet_file.name}...")
+        df = pd.read_parquet(parquet_file)
+
+        # Apply transformations
+        df = parse_timestamps(df)
+        df = convert_units(df)
+
+        # Write to processed
+        output_file = PROCESSED_DIR / parquet_file.name
+        df.to_parquet(output_file, index=False)
+        print(f"  -> Written to {output_file.name}")
+
+if __name__ == "__main__":
+    transform()
+    print("Transform stage complete.")
+EOF
+> #!/usr/bin/env python3
+> """
+> Transform stage: Read from staging/, apply transformations, write to processed/.
+> Includes unit conversions and datetime parsing.
+> """
+>
+> import os
+> import pandas as pd
+> from pathlib import Path
+> from datetime import datetime
+>
+> STAGING_DIR = Path(__file__).parent / "staging"
+> PROCESSED_DIR = Path(__file__).parent / "processed"
+>
+> def convert_units(df):
+>     """Apply unit conversions where needed."""
+>     # Convert Celsius to Kelvin for temperature sensors
+>     mask = df['unit'] == 'celsius'
+>     df.loc[mask, 'value'] = df.loc[mask, 'value'] + 273.15
+>     df.loc[mask, 'unit'] = 'kelvin'
+>     return df
+>
+> def parse_timestamps(df):
+>     """Parse recorded_at strings to datetime objects."""
+>     # Fixed: Let pandas infer the format to handle both YYYY-MM-DD and DD/MM/YYYY formats
+>     df['recorded_at'] = pd.to_datetime(
+>         df['recorded_at'],
+>         format='mixed',
+>         dayfirst=False,
+>         errors='coerce'
+>     )
+>     return df
+>
+> def transform():
+>     """Read from staging/, transform, and write to processed/."""
+>     PROCESSED_DIR.mkdir(exist_ok=True)
+>
+>     parquet_files = list(STAGING_DIR.glob("*.parquet"))
+>     if not parquet_files:
+>         raise ValueError(f"No parquet files found in {STAGING_DIR}")
+>
+>     for parquet_file in parquet_files:
+>         print(f"Transforming {parquet_file.name}...")
+>         df = pd.read_parquet(parquet_file)
+>
+>         # Apply transformations
+>         df = parse_timestamps(df)
+>         df = convert_units(df)
+>
+>         # Write to processed
+>         output_file = PROCESSED_DIR / parquet_file.name
+>         df.to_parquet(output_file, index=False)
+>         print(f"  -> Written to {output_file.name}")
+>
+> if __name__ == "__main__":
+>     transform()
+>     print("Transform stage complete.")
+> EOF
+root@f89a3181d97b:/home/user/pipeline#

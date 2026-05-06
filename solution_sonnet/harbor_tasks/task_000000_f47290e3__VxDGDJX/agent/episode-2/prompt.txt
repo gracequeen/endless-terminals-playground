@@ -1,0 +1,149 @@
+New Terminal Output:
+
+root@297d9a4c59fe:/home/user/deploy# cat test-sync.sh
+#!/bin/bash
+
+set -e
+
+SCRIPT_DIR="/home/user/deploy"
+SYNC_SCRIPT="$SCRIPT_DIR/sync-manifests.sh"
+
+echo "=== Test: Sync manifests idempotency ==="
+echo ""
+
+# First run - establish baseline (may apply everything)
+echo "--- First run (establishing baseline) ---"
+"$SYNC_SCRIPT"
+echo ""
+
+# Second run - should detect no changes
+echo "--- Second run (should detect no changes) ---"
+output=$("$SYNC_SCRIPT" 2>&1)
+echo "$output"
+echo ""
+
+# Check that second run reports 0 changes
+if echo "$output" | grep -q "0 manifests changed"; then
+    echo "SUCCESS: Second run correctly reported 0 manifests changed"
+    exit 0
+else
+    echo "FAILURE: Second run should have reported '0 manifests changed'"
+    echo "This indicates the diff logic is not working correctly."
+    exit 1
+fi
+root@297d9a4c59fe:/home/user/deploy# ls -la manifests/
+total 24
+drwxrwxrwx 1 root root 4096 May  5 05:15 .
+drwxrwxrwx 1 root root 4096 May  5 05:15 ..
+-rwxrwxrwx 1 root root  190 May  5 05:15 configmap.yaml
+-rwxrwxrwx 1 root root  388 May  5 05:15 deployment.yaml
+-rwxrwxrwx 1 root root  411 May  5 05:15 ingress.yaml
+-rwxrwxrwx 1 root root  208 May  5 05:15 service.yaml
+root@297d9a4c59fe:/home/user/deploy# cat /usr/local/bin/kubectl
+#!/bin/bash
+
+KUBE_STATE_DIR="/home/user/.kube-state"
+
+get_normalized_name() {
+    local filepath="$1"
+    basename "$filepath"
+}
+
+normalize_yaml() {
+    python3 -c "import yaml, sys; yaml.dump(yaml.safe_load(sys.stdin), sys.stdout, default_flow_style=False, sort_keys=True)"
+}
+
+cmd_apply() {
+    local filepath=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -f)
+                filepath="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$filepath" ]]; then
+        echo "error: must specify -f" >&2
+        exit 1
+    fi
+
+    if [[ ! -f "$filepath" ]]; then
+        echo "error: file not found: $filepath" >&2
+        exit 1
+    fi
+
+    local name
+    name=$(get_normalized_name "$filepath")
+    cp "$filepath" "$KUBE_STATE_DIR/$name"
+    echo "deployment.apps/web-app configured"
+    exit 0
+}
+
+cmd_diff() {
+    local filepath=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -f)
+                filepath="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$filepath" ]]; then
+        echo "error: must specify -f" >&2
+        exit 1
+    fi
+
+    if [[ ! -f "$filepath" ]]; then
+        echo "error: file not found: $filepath" >&2
+        exit 1
+    fi
+
+    local name
+    name=$(get_normalized_name "$filepath")
+    local stored_path="$KUBE_STATE_DIR/$name"
+
+    if [[ ! -f "$stored_path" ]]; then
+        echo "diff: file does not exist in cluster state"
+        exit 1
+    fi
+
+    # BUG: Only normalize the new file, not the stored one
+    local new_normalized
+    new_normalized=$(cat "$filepath" | normalize_yaml)
+
+    local stored_content
+    stored_content=$(cat "$stored_path")
+
+    if [[ "$new_normalized" == "$stored_content" ]]; then
+        exit 0
+    else
+        echo "diff detected between local and cluster state"
+        exit 1
+    fi
+}
+
+case "$1" in
+    apply)
+        shift
+        cmd_apply "$@"
+        ;;
+    diff)
+        shift
+        cmd_diff "$@"
+        ;;
+    *)
+        echo "fake kubectl: unknown command '$1'" >&2
+        exit 1
+        ;;
+esac
+root@297d9a4c59fe:/home/user/deploy#

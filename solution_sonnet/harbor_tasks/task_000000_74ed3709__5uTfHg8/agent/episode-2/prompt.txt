@@ -1,0 +1,70 @@
+New Terminal Output:
+
+root@b8e63bbdf501:~/scraper# cat scrape.py
+#!/usr/bin/env python3
+import asyncio
+import json
+import os
+from pyppeteer import launch
+
+async def scrape_prices():
+    browser = await launch(
+        headless=False,
+        args=['--no-sandbox']
+    )
+
+    page = await browser.newPage()
+    await page.goto('http://localhost:8080/products')
+
+    await page.waitForSelector('.product', timeout=5000)
+
+    products = await page.evaluate('''() => {
+        const items = document.querySelectorAll('.product');
+        return Array.from(items).map(item => ({
+            name: item.querySelector('.name').textContent,
+            price: item.querySelector('.price').textContent
+        }));
+    }''')
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    output_path = os.path.join(script_dir, 'prices.json')
+
+    with open(output_path, 'w') as f:
+        json.dump(products, f, indent=2)
+
+    await browser.close()
+    print(f"Scraped {len(products)} products to {output_path}")
+
+if __name__ == "__main__":
+    asyncio.get_event_loop().run_until_complete(scrape_prices())
+root@b8e63bbdf501:~/scraper# curl -s localhost:8080/products.html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Product Listing</title>
+</head>
+<body>
+    <h1>Products</h1>
+    <div class="product">
+        <span class="name">Widget A</span>
+        <span class="price">$19.99</span>
+    </div>
+    <div class="product">
+        <span class="name">Widget B</span>
+        <span class="price">$24.99</span>
+    </div>
+    <div class="product">
+        <span class="name">Gadget Pro</span>
+        <span class="price">$149.99</span>
+    </div>
+    <div class="product">
+        <span class="name">Super Gizmo</span>
+        <span class="price">$79.50</span>
+    </div>
+    <div class="product">
+        <span class="name">Mega Device</span>
+        <span class="price">$299.00</span>
+    </div>
+</body>
+</html>
+root@b8e63bbdf501:~/scraper#

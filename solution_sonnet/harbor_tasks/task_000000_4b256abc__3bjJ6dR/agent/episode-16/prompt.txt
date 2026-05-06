@@ -1,0 +1,57 @@
+Current terminal state:
+New Terminal Output:
+
+root@41fb9ce0900b:/home/user/deploy# cat > FIX_SUMMARY.md << 'EOF'
+size: 15
+features:
+  debug_mode: true
+```
+
+## Verification
+- Staging now correctly renders: db-staging.internal ✓
+- Production still correctly renders: db-prod.internal ✓
+EOF
+> # Database Host Fix for Staging Web-API
+>
+> ## Problem
+> `./render.py staging web-api` was returning `db-prod.internal` instead of `db-staging.internal`.
+>
+> ## Root Cause
+> The config merge order in render.py is:
+> 1. base/defaults.yaml
+> 2. environments/{environment}.yaml
+> 3. services/{service}.yaml
+> 4. overrides/.legacy/{service}.yaml (legacy compatibility layer)
+> 5. overrides/{environment}/{service}.yaml
+>
+> The legacy file `./overrides/.legacy/web-api.yaml` contains:
+> ```yaml
+> database:
+>   host: db-prod.internal
+> ```
+>
+> This was merged AFTER the staging environment config (which correctly set db-staging.internal)
+> but BEFORE the staging override. Since the staging override didn't explicitly set database.host,
+> the legacy value persisted.
+>
+> Production worked because `./overrides/production/web-api.yaml` explicitly set the host,
+> overriding the legacy value.
+>
+> ## Solution
+> Added `database.host: db-staging.internal` to `./overrides/staging/web-api.yaml`:
+> ```yaml
+> database:
+>   host: db-staging.internal
+>   pool_size: 15
+> features:
+>   debug_mode: true
+> ```
+>
+> ## Verification
+> - Staging now correctly renders: db-staging.internal ✓
+> - Production still correctly renders: db-prod.internal ✓
+> EOF
+root@41fb9ce0900b:/home/user/deploy#
+
+
+Are you sure you want to mark the task as complete? This will trigger your solution to be graded and you won't be able to make any further corrections. If so, include "task_complete": true in your JSON response again.

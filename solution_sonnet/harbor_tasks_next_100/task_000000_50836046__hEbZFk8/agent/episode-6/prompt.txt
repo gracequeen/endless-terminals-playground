@@ -1,0 +1,80 @@
+New Terminal Output:
+
+root@3630534cd05b:/home/user/firewall# cat apply.sh
+#!/bin/bash
+
+# Firewall rule applier script
+# Reads rules.conf and generates iptables commands
+# Applies iptables rules and logs them to applied.log
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RULES_FILE="$SCRIPT_DIR/rules.conf"
+OUTPUT_LOG="$SCRIPT_DIR/applied.log"
+
+if [[ ! -f "$RULES_FILE" ]]; then
+    echo "Error: rules.conf not found"
+    exit 1
+fi
+
+# Clear output log
+> "$OUTPUT_LOG"
+
+echo "# Firewall rules applied at $(date)" >> "$OUTPUT_LOG"
+echo "# Rules being executed" >> "$OUTPUT_LOG"
+echo "" >> "$OUTPUT_LOG"
+
+while IFS= read -r line || [[ -n "$line" ]]; do
+    # Skip comments and empty lines
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ -z "${line// }" ]] && continue
+
+    # Parse default policies
+    if [[ "$line" =~ ^default_input:[[:space:]]*(.+)$ ]]; then
+        policy="${BASH_REMATCH[1]}"
+        policy_upper=$(echo "$policy" | tr '[:lower:]' '[:upper:]')
+        cmd="iptables -P INPUT $policy_upper"; echo "$cmd" >> "$OUTPUT_LOG"; eval "$cmd"
+        continue
+    fi
+
+    if [[ "$line" =~ ^default_output:[[:space:]]*(.+)$ ]]; then
+        policy="${BASH_REMATCH[1]}"
+        policy_upper=$(echo "$policy" | tr '[:lower:]' '[:upper:]')
+        cmd="iptables -P OUTPUT $policy_upper"; echo "$cmd" >> "$OUTPUT_LOG"; eval "$cmd"
+        continue
+    fi
+
+    # Parse allow in state established,related
+    if [[ "$line" =~ ^allow[[:space:]]+in[[:space:]]+state[[:space:]]+(.+)$ ]]; then
+        states="${BASH_REMATCH[1]}"
+        states_upper=$(echo "$states" | tr '[:lower:]' '[:upper:]')
+        cmd="iptables -A INPUT -m state --state $states_upper -j ACCEPT"; echo "$cmd" >> "$OUTPUT_LOG"; eval "$cmd"
+        continue
+    fi
+
+    # Parse allow in tcp PORT from CIDR/any
+    if [[ "$line" =~ ^allow[[:space:]]+in[[:space:]]+tcp[[:space:]]+([0-9]+)[[:space:]]+from[[:space:]]+(.+)$ ]]; then
+        port="${BASH_REMATCH[1]}"
+        source="${BASH_REMATCH[2]}"
+        if [[ "$source" == "any" ]]; then
+            cmd="iptables -A INPUT -p tcp --dport $port -j ACCEPT"; echo "$cmd" >> "$OUTPUT_LOG"; eval "$cmd"
+        else
+            cmd="iptables -A INPUT -p tcp --dport $port -s $source -j ACCEPT"; echo "$cmd" >> "$OUTPUT_LOG"; eval "$cmd"
+        fi
+        continue
+    fi
+
+    # Parse deny in from CIDR
+    if [[ "$line" =~ ^deny[[:space:]]+in[[:space:]]+from[[:space:]]+(.+)$ ]]; then
+        source="${BASH_REMATCH[1]}"
+        cmd="iptables -A INPUT -s $source -j DROP"; echo "$cmd" >> "$OUTPUT_LOG"; eval "$cmd"
+        continue
+    fi
+
+done < "$RULES_FILE"
+
+echo "" >> "$OUTPUT_LOG"
+echo "# End of rules" >> "$OUTPUT_LOG"
+
+echo "Rules applied successfully"
+exit 0
+root@3630534cd05b:/home/user/firewall#

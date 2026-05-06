@@ -1,0 +1,209 @@
+[?2004hroot@41fb9ce0900b:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@41fb9ce0900b:/home/user# clear
+[?2004l[H[J[?2004hroot@41fb9ce0900b:/home/user# cd /home/user/deploy
+[?2004l[?2004hroot@41fb9ce0900b:/home/user/deploy# ls -la
+[?2004ltotal 28
+drwxrwxrwx 1 root root 4096 May  5 05:18 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 05:18 [34;42m..[0m
+drwxrwxrwx 1 root root 4096 May  5 05:18 [34;42mbase[0m
+drwxrwxrwx 1 root root 4096 May  5 05:18 [34;42menvironments[0m
+drwxrwxrwx 1 root root 4096 May  5 05:18 [34;42moverrides[0m
+-rwxrwxrwx 1 root root 1807 May  5 05:18 [01;32mrender.py[0m
+drwxrwxrwx 1 root root 4096 May  5 05:18 [34;42mservices[0m
+[?2004hroot@41fb9ce0900b:/home/user/deploy# tree -L 2
+[?2004lbash: tree: command not found
+[?2004hroot@41fb9ce0900b:/home/user/deploy# find . -type f | sort
+[?2004l./base/defaults.yaml
+./environments/production.yaml
+./environments/staging.yaml
+./overrides/.legacy/web-api.yaml
+./overrides/production/web-api.yaml
+./overrides/staging/web-api.yaml
+./render.py
+./services/web-api.yaml
+[?2004hroot@41fb9ce0900b:/home/user/deploy# cat render.py
+[?2004l#!/usr/bin/env python3
+import sys
+import yaml
+from pathlib import Path
+
+def deep_merge(base, override):
+    """Recursively merge override into base."""
+    if not isinstance(base, dict) or not isinstance(override, dict):
+        return override
+    result = base.copy()
+    for key, value in override.items():
+        if key in result:
+            result[key] = deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+def load_yaml(path):
+    if path.exists():
+        with open(path) as f:
+            return yaml.safe_load(f) or {}
+    return {}
+
+def render_config(environment, service):
+    base_dir = Path(__file__).parent
+
+    # Load layers
+    base = load_yaml(base_dir / "base" / "defaults.yaml")
+    env = load_yaml(base_dir / "environments" / f"{environment}.yaml")
+    svc = load_yaml(base_dir / "services" / f"{service}.yaml")
+    override = load_yaml(base_dir / "overrides" / environment / f"{service}.yaml")
+
+    # Merge in order: base → env → svc → override
+    # BUG: The variable name reuse causes issues with evaluation order
+    config = deep_merge(base, env)
+    config = deep_merge(config, svc)
+
+    # This is where staging breaks: there's a hidden file being loaded
+    # Check for legacy compatibility layer
+    legacy_path = base_dir / "overrides" / ".legacy" / f"{service}.yaml"
+    if legacy_path.exists():
+        legacy = load_yaml(legacy_path)
+        config = deep_merge(config, legacy)
+
+    config = deep_merge(config, override)
+
+    return config
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        print("Usage: render.py <environment> <service>", file=sys.stderr)
+        sys.exit(1)
+
+    env, svc = sys.argv[1], sys.argv[2]
+    config = render_config(env, svc)
+    print(yaml.dump(config, default_flow_style=False))
+[?2004hroot@41fb9ce0900b:/home/user/deploy# cat ./overrides/.legacy/web-api.yaml
+[?2004ldatabase:
+  host: db-prod.internal
+[?2004hroot@41fb9ce0900b:/home/user/deploy# cat ./overrides/staging/web-api.yaml
+[?2004ldatabase:
+  pool_size: 15
+features:
+  debug_mode: true
+[?2004hroot@41fb9ce0900b:/home/user/deploy# cat ./base/defaults.yaml
+[?2004ldatabase:
+  host: db-dev.internal
+  port: 5432
+  pool_size: 5
+cache:
+  host: redis-dev.internal
+  ttl: 300
+logging:
+  level: INFO
+[?2004hroot@41fb9ce0900b:/home/user/deploy# cat ./environments/staging.yaml
+[?2004ldatabase:
+  host: db-staging.internal
+  pool_size: 10
+cache:
+  host: redis-staging.internal
+[?2004hroot@41fb9ce0900b:/home/user/deploy# cat ./overrides/production/web-api.yaml
+[?2004ldatabase:
+  host: db-prod.internal
+  pool_size: 100
+[?2004hroot@41fb9ce0900b:/home/user/deploy# ./render.py staging web-api | grep -A 2 'database:'
+[?2004l[01;31m[Kdatabase:[m[K
+  host: db-prod.internal
+  pool_size: 15
+[?2004hroot@41fb9ce0900b:/home/user/deploy# ./render.py production web-api | grep -A 2 'database:'
+[?2004l[01;31m[Kdatabase:[m[K
+  host: db-prod.internal
+  pool_size: 100
+[?2004hroot@41fb9ce0900b:/home/user/deploy# cat > ./overrides/staging/web-api.yaml << 'EOF'
+[?2004l[?2004h> database:
+[?2004l[?2004h>   host: db-staging.internal
+[?2004l[?2004h>   pool_size: 15
+[?2004l[?2004h> features:
+[?2004l[?2004h>   debug_mode: true
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@41fb9ce0900b:/home/user/deploy# ./render.py staging web-api | grep -A 2 'database:'
+[?2004l[01;31m[Kdatabase:[m[K
+  host: db-staging.internal
+  pool_size: 15
+[?2004hroot@41fb9ce0900b:/home/user/deploy# ./render.py staging web-api
+[?2004lcache:
+  host: redis-staging.internal
+  ttl: 600
+database:
+  host: db-staging.internal
+  pool_size: 15
+  port: 5432
+  timeout: 30
+features:
+  debug_mode: true
+  rate_limiting: true
+logging:
+  level: INFO
+
+[?2004hroot@41fb9ce0900b:/home/user/deploy# ./render.py production web-api
+[?2004lcache:
+  host: redis-prod.internal
+  ttl: 600
+database:
+  host: db-prod.internal
+  pool_size: 100
+  port: 5432
+  timeout: 30
+features:
+  rate_limiting: true
+logging:
+  level: WARNING
+
+[?2004hroot@41fb9ce0900b:/home/user/deploy# cat > FIX_SUMMARY.md << 'EOF'
+[?2004lsize: 15
+features:
+  debug_mode: true
+```
+
+## Verification
+- Staging now correctly renders: db-staging.internal ✓
+- Production still correctly renders: db-prod.internal ✓
+EOF
+[?2004h> # Database Host Fix for Staging Web-API
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Problem
+[?2004l[?2004h> `./render.py staging web-api` was returning `db-prod.internal` instead of `db-staging.internal`.
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Root Cause
+[?2004l[?2004h> The config merge order in render.py is:
+[?2004l[?2004h> 1. base/defaults.yaml
+[?2004l[?2004h> 2. environments/{environment}.yaml  
+[?2004l[?2004h> 3. services/{service}.yaml
+[?2004l[?2004h> 4. overrides/.legacy/{service}.yaml (legacy compatibility layer)
+[?2004l[?2004h> 5. overrides/{environment}/{service}.yaml
+[?2004l[?2004h> 
+[?2004l[?2004h> The legacy file `./overrides/.legacy/web-api.yaml` contains:
+[?2004l[?2004h> ```yaml
+[?2004l[?2004h> database:
+[?2004l[?2004h>   host: db-prod.internal
+[?2004l[?2004h> ```
+[?2004l[?2004h> 
+[?2004l[?2004h> This was merged AFTER the staging environment config (which correctly set db-staging.internal)
+[?2004l[?2004h> but BEFORE the staging override. Since the staging override didn't explicitly set database.host,
+[?2004l[?2004h> the legacy value persisted.
+[?2004l[?2004h> 
+[?2004l[?2004h> Production worked because `./overrides/production/web-api.yaml` explicitly set the host,
+[?2004l[?2004h> overriding the legacy value.
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Solution
+[?2004l[?2004h> Added `database.host: db-staging.internal` to `./overrides/staging/web-api.yaml`:
+[?2004l[?2004h> ```yaml
+[?2004l[?2004h> database:
+[?2004l[?2004h>   host: db-staging.internal
+[?2004l[?2004h>   pool_size: 15
+[?2004l[?2004h> features:
+[?2004l[?2004h>   debug_mode: true
+[?2004l[?2004h> ```
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Verification
+[?2004l[?2004h> - Staging now correctly renders: db-staging.internal ✓
+[?2004l[?2004h> - Production still correctly renders: db-prod.internal ✓
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@41fb9ce0900b:/home/user/deploy# 

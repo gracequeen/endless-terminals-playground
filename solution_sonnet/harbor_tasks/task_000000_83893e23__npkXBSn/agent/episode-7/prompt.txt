@@ -1,0 +1,178 @@
+New Terminal Output:
+
+root@22c2f07b9e06:/home/user/capacity# cp forecast.py forecast.py.backup
+root@22c2f07b9e06:/home/user/capacity# cat > forecast.py << 'EOF'
+> #!/usr/bin/env python3
+eekly totals...")
+    weekly = compute_weekly_totals(hosts)
+    print(f"Generated {len(weekly)} weekly data points")
+
+    # Fit growth curve
+    print("\nFitting growth curve...")
+    params = fit_growth_curve(weekly)
+    print(f"Model parameters: a={params[0]:.4f}, b={params[1]:.6f}, c={params[2]:.2f}")
+
+    # Generate forecast
+    print("\nGenerating 8-week forecast...")
+    result = generate_forecast(weekly, params)
+
+    # Save output
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    result.to_csv(OUTPUT_CSV, index=False)
+    print(f"\nForecast saved to {OUTPUT_CSV}")
+
+    # Summary
+    print("\n" + "=" * 50)
+    print("Summary")
+    print("=" * 50)
+    q4_weeks = weekly[weekly['week'] >= 40]
+    print(f"Q4 average (weeks 40-52): {q4_weeks['cpu_hours'].mean():.1f} cpu_hours/week")
+    print(f"Last week ({weekly['week'].max()}): {weekly['cpu_hours'].iloc[-1]:.1f} cpu_hours")
+    forecast_only = result[result['type'] == 'forecast']
+    print(f"Forecast range: {forecast_only['cpu_hours'].min():.1f} - {forecast_only['cpu_hours'].max():.1f} cpu_hours")
+
+
+> """
+> Capacity Forecasting Pipeline
+>
+> Loads host metrics and reservation data, rolls up to weekly totals,
+> fits a growth curve, and projects forward.
+> """
+>
+> import pandas as pd
+> import numpy as np
+> from scipy.optimize import curve_fit
+> from pathlib import Path
+>
+> # Paths
+> BASE_DIR = Path(__file__).parent
+> DATA_DIR = BASE_DIR / "data"
+> OUTPUT_DIR = BASE_DIR / "output"
+>
+> HOSTS_CSV = DATA_DIR / "hosts.csv"
+> RESERVATIONS_CSV = DATA_DIR / "reservations.csv"
+> OUTPUT_CSV = OUTPUT_DIR / "forecast.csv"
+>
+>
+> def exponential_growth(x, a, b, c):
+>     """Exponential growth model: y = a * exp(b * x) + c"""
+>     return a * np.exp(b * x) + c
+>
+>
+> def load_data():
+>     """Load host metrics and reservation data."""
+>     print("Loading hosts.csv...")
+>     hosts = pd.read_csv(HOSTS_CSV)
+>     hosts['timestamp'] = pd.to_datetime(hosts['timestamp'])
+>
+>     print("Loading reservations.csv...")
+>     reservations = pd.read_csv(RESERVATIONS_CSV)
+>     reservations['start_time'] = pd.to_datetime(reservations['start_time'])
+>     reservations['end_time'] = pd.to_datetime(reservations['end_time'])
+>
+>     return hosts, reservations
+>
+>
+> def compute_weekly_totals(data):
+>     """Aggregate metrics to weekly totals."""
+>     # Extract ISO week number
+>     data = data.copy()
+>     data['week'] = data['timestamp'].dt.isocalendar().week
+>
+>     # Sum cpu_hours by week
+>     weekly = data.groupby('week')['cpu_hours'].sum().reset_index()
+>     weekly.columns = ['week', 'cpu_hours']
+>
+>     return weekly
+>
+>
+> def fit_growth_curve(weekly):
+>     """Fit exponential growth curve to weekly data."""
+>     x = weekly['week'].values
+>     y = weekly['cpu_hours'].values
+>
+>     # Initial guess for parameters
+>     try:
+>         popt, _ = curve_fit(
+>             exponential_growth,
+>             x, y,
+>             p0=[1, 0.01, y.mean()],
+>             maxfev=10000,
+>             bounds=([0, -0.1, 0], [np.inf, 0.5, np.inf])
+>         )
+>     except RuntimeError:
+>         # Fallback to linear if exponential doesn't converge
+>         popt = [0, 0, y.mean()]
+>
+>     return popt
+>
+>
+> def generate_forecast(weekly, params, weeks_ahead=8):
+>     """Generate forecast for future weeks."""
+>     last_week = weekly['week'].max()
+>
+>     # Historical data
+>     historical = weekly.copy()
+>     historical['type'] = 'historical'
+>
+>     # Forecast data
+>     forecast_weeks = list(range(last_week + 1, last_week + weeks_ahead + 1))
+>     forecast_values = [exponential_growth(w, *params) for w in forecast_weeks]
+>
+>     forecast = pd.DataFrame({
+>         'week': forecast_weeks,
+>         'cpu_hours': forecast_values,
+>         'type': ['forecast'] * len(forecast_weeks)
+>     })
+>
+>     # Combine
+>     result = pd.concat([historical, forecast], ignore_index=True)
+>
+>     return result
+>
+>
+> def main():
+>     """Main pipeline."""
+>     print("=" * 50)
+>     print("Capacity Forecasting Pipeline")
+>     print("=" * 50)
+>
+>     # Load data
+>     hosts, reservations = load_data()
+>     print(f"Loaded {len(hosts)} host metric records")
+>     print(f"Loaded {len(reservations)} reservation records")
+>
+>     # Compute weekly totals directly from hosts (no merge needed)
+>     print("\nComputing weekly totals...")
+>     weekly = compute_weekly_totals(hosts)
+>     print(f"Generated {len(weekly)} weekly data points")
+>
+>     # Fit growth curve
+>     print("\nFitting growth curve...")
+>     params = fit_growth_curve(weekly)
+>     print(f"Model parameters: a={params[0]:.4f}, b={params[1]:.6f}, c={params[2]:.2f}")
+>
+>     # Generate forecast
+>     print("\nGenerating 8-week forecast...")
+>     result = generate_forecast(weekly, params)
+>
+>     # Save output
+>     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+>     result.to_csv(OUTPUT_CSV, index=False)
+>     print(f"\nForecast saved to {OUTPUT_CSV}")
+>
+>     # Summary
+>     print("\n" + "=" * 50)
+>     print("Summary")
+>     print("=" * 50)
+>     q4_weeks = weekly[weekly['week'] >= 40]
+>     print(f"Q4 average (weeks 40-52): {q4_weeks['cpu_hours'].mean():.1f} cpu_hours/week")
+>     print(f"Last week ({weekly['week'].max()}): {weekly['cpu_hours'].iloc[-1]:.1f} cpu_hours")
+>     forecast_only = result[result['type'] == 'forecast']
+>     print(f"Forecast range: {forecast_only['cpu_hours'].min():.1f} - {forecast_only['cpu_hours'].max():.1f} cpu_hours")
+>
+>
+> if __name__ == "__main__":
+>     main()
+> EOF
+root@22c2f07b9e06:/home/user/capacity#

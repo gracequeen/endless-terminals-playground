@@ -1,0 +1,265 @@
+[?2004hroot@adead4b2841a:/home/user/loadtest# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@adead4b2841a:/home/user/loadtest# clear
+[?2004l[H[J[?2004hroot@adead4b2841a:/home/user/loadtest# ls -la
+[?2004ltotal 40
+drwxrwxrwx 1 nobody nogroup 4096 May  5 18:50 [0m[34;42m.[0m
+drwxrwxrwx 1 root   root    4096 May  5 18:50 [34;42m..[0m
+-rw-rw-rw- 1 root   root       2 May  5 18:50 .server.pid
+-rwxrwxrwx 1 nobody nogroup 1646 May  5 18:50 [01;32maggregate.py[0m
+-rwxrwxrwx 1 nobody nogroup 1149 May  5 18:50 [01;32mclient.py[0m
+-rwxrwxrwx 1 nobody nogroup  649 May  5 18:50 [01;32mmock_server.py[0m
+-rwxrwxrwx 1 nobody nogroup  757 May  5 18:50 [01;32mreport.py[0m
+-rwxrwxrwx 1 nobody nogroup  246 May  5 18:50 [01;32mrun_bench.sh[0m
+-rwxrwxrwx 1 nobody nogroup   90 May  5 18:50 [01;32mstart_server.sh[0m
+[?2004hroot@adead4b2841a:/home/user/loadtest# ./run_bench.sh
+[?2004lStarting benchmark run...
+Completed 200 requests, results in raw_timings.csv
+Aggregated 200 samples to stats.json
+==================================================
+         LATENCY REPORT
+==================================================
+Total requests: 200
+Min latency:    52.08 ms
+Max latency:    151.29 ms
+--------------------------------------------------
+p50 (median):   99.22 ms
+p99:            52.17 ms
+==================================================
+Benchmark complete.
+[?2004hroot@adead4b2841a:/home/user/loadtest# ^C[?2004l[?2004h[?2004l
+[?2004hroot@adead4b2841a:/home/user/loadtest# cat run_bench.sh
+[?2004l#!/bin/bash
+set -e
+
+cd /home/user/loadtest
+
+echo "Starting benchmark run..."
+
+# Run the client to make requests
+python3 client.py 200
+
+# Aggregate the results
+python3 aggregate.py
+
+# Print the report
+python3 report.py
+
+echo "Benchmark complete."
+[?2004hroot@adead4b2841a:/home/user/loadtest# cat aggregate.py
+[?2004l#!/usr/bin/env python3
+"""
+Reads raw_timings.csv and computes percentile statistics.
+Writes results to stats.json.
+"""
+import csv
+import json
+import sys
+
+def compute_percentile(sorted_data, percentile):
+    """Compute the given percentile from sorted data."""
+    if not sorted_data:
+        return 0
+    k = (len(sorted_data) - 1) * (percentile / 100)
+    f = int(k)
+    c = f + 1 if f + 1 < len(sorted_data) else f
+    return sorted_data[f] + (k - f) * (sorted_data[c] - sorted_data[f])
+
+def aggregate(input_file="raw_timings.csv", output_file="stats.json"):
+    """Read latencies and compute statistics."""
+    latencies = []
+
+    with open(input_file, 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            latencies.append(row['latency_ms'])
+
+    if not latencies:
+        print("No data to aggregate", file=sys.stderr)
+        sys.exit(1)
+
+    # BUG: sorting as strings instead of floats!
+    # This causes "99.5" to sort after "9.1" due to string comparison
+    sorted_latencies = sorted(latencies)
+
+    # Convert to float for percentile calculation (but data is already wrongly sorted)
+    sorted_latencies_float = [float(x) for x in sorted_latencies]
+
+    stats = {
+        'count': len(latencies),
+        'min': min(sorted_latencies_float),
+        'max': max(sorted_latencies_float),
+        'p50': compute_percentile(sorted_latencies_float, 50),
+        'p99': compute_percentile(sorted_latencies_float, 99)
+    }
+
+    with open(output_file, 'w') as f:
+        json.dump(stats, f, indent=2)
+
+    print(f"Aggregated {stats['count']} samples to {output_file}")
+
+if __name__ == '__main__':
+    aggregate()
+[?2004hroot@adead4b2841a:/home/user/loadtest# cp aggregate.py aggregate.py.bak
+[?2004l[?2004hroot@adead4b2841a:/home/user/loadtest# cat > aggregate.py << 'EOF'
+[?2004l': len(latencies),
+        'min': min(sorted_latencies),
+        'max': max(sorted_latencies),
+        'p50': compute_percentile(sorted_latencies, 50),
+        'p99': compute_percentile(sorted_latencies, 99)
+    }
+
+    with open(output_file, 'w') as f:
+        json.dump(stats, f, indent=2)
+
+    print(f"Aggregated {stats['count']} samples to {output_file}")
+
+if __name__ == '__main__':
+    aggregate()
+EOF
+[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """
+[?2004l[?2004h> Reads raw_timings.csv and computes percentile statistics.
+[?2004l[?2004h> Writes results to stats.json.
+[?2004l[?2004h> """
+[?2004l[?2004h> import csv
+[?2004l[?2004h> import json
+[?2004l[?2004h> import sys
+[?2004l[?2004h> 
+[?2004l[?2004h> def compute_percentile(sorted_data, percentile):
+[?2004l[?2004h>     """Compute the given percentile from sorted data."""
+[?2004l[?2004h>     if not sorted_data:
+[?2004l[?2004h>         return 0
+[?2004l[?2004h>     k = (len(sorted_data) - 1) * (percentile / 100)
+[?2004l[?2004h>     f = int(k)
+[?2004l[?2004h>     c = f + 1 if f + 1 < len(sorted_data) else f
+[?2004l[?2004h>     return sorted_data[f] + (k - f) * (sorted_data[c] - sorted_data[f])
+[?2004l[?2004h> 
+[?2004l[?2004h> def aggregate(input_file="raw_timings.csv", output_file="stats.json"):
+[?2004l[?2004h>     """Read latencies and compute statistics."""
+[?2004l[?2004h>     latencies = []
+[?2004l[?2004h> 
+[?2004l[?2004h>     with open(input_file, 'r') as f:
+[?2004l[?2004h>         reader = csv.DictReader(f)
+[?2004l[?2004h>         for row in reader:
+[?2004l[?2004h>             latencies.append(float(row['latency_ms']))
+[?2004l[?2004h> 
+[?2004l[?2004h>     if not latencies:
+[?2004l[?2004h>         print("No data to aggregate", file=sys.stderr)
+[?2004l[?2004h>         sys.exit(1)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # FIX: Convert to float BEFORE sorting
+[?2004l[?2004h>     sorted_latencies = sorted(latencies)
+[?2004l[?2004h> 
+[?2004l[?2004h>     stats = {
+[?2004l[?2004h>         'count': len(latencies),
+[?2004l[?2004h>         'min': min(sorted_latencies),
+[?2004l[?2004h>         'max': max(sorted_latencies),
+[?2004l[?2004h>         'p50': compute_percentile(sorted_latencies, 50),
+[?2004l[?2004h>         'p99': compute_percentile(sorted_latencies, 99)
+[?2004l[?2004h>     }
+[?2004l[?2004h> 
+[?2004l[?2004h>     with open(output_file, 'w') as f:
+[?2004l[?2004h>         json.dump(stats, f, indent=2)
+[?2004l[?2004h> 
+[?2004l[?2004h>     print(f"Aggregated {stats['count']} samples to {output_file}")
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == '__main__':
+[?2004l[?2004h>     aggregate()
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@adead4b2841a:/home/user/loadtest# ./run_bench.sh
+[?2004lStarting benchmark run...
+Completed 200 requests, results in raw_timings.csv
+Aggregated 200 samples to stats.json
+==================================================
+         LATENCY REPORT
+==================================================
+Total requests: 200
+Min latency:    52.60 ms
+Max latency:    151.27 ms
+--------------------------------------------------
+p50 (median):   150.31 ms
+p99:            101.19 ms
+==================================================
+Benchmark complete.
+[?2004hroot@adead4b2841a:/home/user/loadtest# cat report.py
+[?2004l#!/usr/bin/env python3
+"""
+Reads stats.json and prints a human-readable latency report.
+"""
+import json
+import sys
+
+def print_report(stats_file="stats.json"):
+    """Print the latency report to stdout."""
+    with open(stats_file, 'r') as f:
+        stats = json.load(f)
+
+    print("=" * 50)
+    print("         LATENCY REPORT")
+    print("=" * 50)
+    print(f"Total requests: {stats['count']}")
+    print(f"Min latency:    {stats['min']:.2f} ms")
+    print(f"Max latency:    {stats['max']:.2f} ms")
+    print("-" * 50)
+    # BUG: Labels are swapped! p50 shows p99 value and vice versa
+    print(f"p50 (median):   {stats['p99']:.2f} ms")
+    print(f"p99:            {stats['p50']:.2f} ms")
+    print("=" * 50)
+
+if __name__ == '__main__':
+    print_report()
+[?2004hroot@adead4b2841a:/home/user/loadtest# cp report.py report.py.bak
+[?2004l[?2004hroot@adead4b2841a:/home/user/loadtest# cat > report.py << 'EOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """
+[?2004l[?2004h> Reads stats.json and prints a human-readable latency report.
+[?2004l[?2004h> """
+[?2004l[?2004h> import json
+[?2004l[?2004h> import sys
+[?2004l[?2004h> 
+[?2004l[?2004h> def print_report(stats_file="stats.json"):
+[?2004l[?2004h>     """Print the latency report to stdout."""
+[?2004l[?2004h>     with open(stats_file, 'r') as f:
+[?2004l[?2004h>         stats = json.load(f)
+[?2004l[?2004h> 
+[?2004l[?2004h>     print("=" * 50)
+[?2004l[?2004h>     print("         LATENCY REPORT")
+[?2004l[?2004h>     print("=" * 50)
+[?2004l[?2004h>     print(f"Total requests: {stats['count']}")
+[?2004l[?2004h>     print(f"Min latency:    {stats['min']:.2f} ms")
+[?2004l[?2004h>     print(f"Max latency:    {stats['max']:.2f} ms")
+[?2004l[?2004h>     print("-" * 50)
+[?2004l[?2004h>     # FIX: Corrected labels to match the actual values
+[?2004l[?2004h>     print(f"p50 (median):   {stats['p50']:.2f} ms")
+[?2004l[?2004h>     print(f"p99:            {stats['p99']:.2f} ms")
+[?2004l[?2004h>     print("=" * 50)
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == '__main__':
+[?2004l[?2004h>     print_report()
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@adead4b2841a:/home/user/loadtest# ./run_bench.sh
+[?2004lStarting benchmark run...
+Completed 200 requests, results in raw_timings.csv
+Aggregated 200 samples to stats.json
+==================================================
+         LATENCY REPORT
+==================================================
+Total requests: 200
+Min latency:    51.20 ms
+Max latency:    151.01 ms
+--------------------------------------------------
+p50 (median):   97.32 ms
+p99:            148.44 ms
+==================================================
+Benchmark complete.
+[?2004hroot@adead4b2841a:/home/user/loadtest# echo "=== Summary of fixes ==="
+[?2004l=== Summary of fixes ===
+[?2004hroot@adead4b2841a:/home/user/loadtest# echo "1. aggregate.py: Changed line 26 to convert latencies to float before sorting"
+[?2004l1. aggregate.py: Changed line 26 to convert latencies to float before sorting
+[?2004hroot@adead4b2841a:/home/user/loadtest# echo "2. report.py: Fixed lines 20-21 to display p50 and p99 with correct labels"
+[?2004l2. report.py: Fixed lines 20-21 to display p50 and p99 with correct labels
+[?2004hroot@adead4b2841a:/home/user/loadtest# echo "Result: p50 < p99 as expected (97.32 ms < 148.44 ms)"
+[?2004lResult: p50 < p99 as expected (97.32 ms < 148.44 ms)
+[?2004hroot@adead4b2841a:/home/user/loadtest# 

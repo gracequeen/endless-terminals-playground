@@ -1,0 +1,13 @@
+```json
+{
+  "analysis": "Both pre-commit and pre-push hooks are now executable. Now I need to create a commit-msg hook for additional validation and create a safe wrapper script that automation tools should use. I should also create documentation explaining the issue and the fix.",
+  "plan": "Create a commit-msg hook that validates the commit, create a safe-commit wrapper script for automation, add documentation, and then commit the fixed permissions.",
+  "commands": [
+    {
+      "keystrokes": "cat > .git/hooks/commit-msg << 'EOF'\n#!/bin/bash\n# Commit-msg hook to validate commits don't contain world-readable keys\n# Additional layer of defense\n\nexit_code=0\n\n# Get the commit message file\nmsg_file=\"$1\"\n\n# Check all staged files\nfor file in $(git diff --cached --name-only --diff-filter=ACM); do\n    if [[ \"$file\" == *.pem ]] || [[ \"$file\" == *.key ]]; then\n        if [ -f \"$file\" ]; then\n            perms=$(stat -c \"%a\" \"$file\")\n            other_read=$((perms % 10))\n            \n            if [ \"$perms\" -ge 644 ] && [ $((other_read & 4)) -ne 0 ]; then\n                echo \"ERROR: $file has world-readable permissions ($perms)\"\n                echo \"ERROR: Private keys must have permissions 600 or stricter\"\n                echo \"ERROR: Run: chmod 600 $file\"\n                exit_code=1\n            fi\n        fi\n    fi\ndone\n\nif [ $exit_code -ne 0 ]; then\n    echo \"\"\n    echo \"Commit rejected: World-readable private keys detected\"\nfi\n\nexit $exit_code\nEOF\n",
+      "duration": 0.1
+    }
+  ],
+  "task_complete": false
+}
+```

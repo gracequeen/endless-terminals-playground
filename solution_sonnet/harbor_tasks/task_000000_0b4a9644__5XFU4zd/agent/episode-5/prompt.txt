@@ -1,0 +1,79 @@
+New Terminal Output:
+
+root@bdc6449b5223:/home/user/releaser# cat changelog.py
+"""
+Changelog generation logic for the release tooling.
+"""
+
+from datetime import datetime
+
+
+def get_section_for_tag(tag, config):
+    """
+    Determine which changelog section a commit tag belongs to.
+    Returns the section name or 'Other' if no match found.
+    """
+    sections = config['changelog_sections']
+
+    # Normalize tag for comparison
+    normalized_tag = tag.upper()
+
+    for section_name, section_tags in sections.items():
+        if normalized_tag in section_tags:
+            return section_name
+
+    # Default section if no match
+    return 'Features'
+
+
+def generate_changelog_entry(version, commits, config):
+    """
+    Generate a changelog entry for the given version and commits.
+    Groups commits by their appropriate sections.
+    """
+    sections = {}
+
+    for commit in commits:
+        tag = commit.get('tag', 'OTHER')
+        message = commit.get('message', '')
+
+        section = get_section_for_tag(tag, config)
+
+        if section not in sections:
+            sections[section] = []
+        sections[section].append(message)
+
+    # Build the changelog entry
+    date_str = datetime.now().strftime('%Y-%m-%d')
+    entry_lines = [f"\n## [{version}] - {date_str}\n"]
+
+    # Order sections consistently
+    section_order = ['Breaking Changes', 'Features', 'Bug Fixes', 'Security', 'Documentation', 'Other']
+
+    for section_name in section_order:
+        if section_name in sections:
+            entry_lines.append(f"\n### {section_name}\n")
+            for msg in sections[section_name]:
+                entry_lines.append(f"- {msg}\n")
+
+    return ''.join(entry_lines)
+
+
+def update_changelog(changelog_path, new_entry):
+    """
+    Update the changelog file by inserting the new entry after the header.
+    """
+    with open(changelog_path, 'r') as f:
+        content = f.read()
+
+    # Find the position after "# Changelog" header
+    header = "# Changelog"
+    if header in content:
+        pos = content.find(header) + len(header)
+        new_content = content[:pos] + new_entry + content[pos:]
+    else:
+        new_content = header + new_entry + "\n" + content
+
+    with open(changelog_path, 'w') as f:
+        f.write(new_content)
+root@bdc6449b5223:/home/user/releaser#

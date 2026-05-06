@@ -1,0 +1,83 @@
+New Terminal Output:
+
+I have no name!@8d9b8d08258a:~$ cat > /home/user/pipeline/worker_fixed.py << 'EOF'
+> #!/usr/bin/env python3
+> """
+> Fixed worker for distributed tf-idf feature extraction.
+> Registers with coordinator, receives fitted vectorizer, transforms only.
+> """
+> import pickle
+> import sys
+> import zmq
+> import pandas as pd
+>
+> def main():
+>     worker_id = sys.argv[1] if len(sys.argv) > 1 else "0"
+>
+>     context = zmq.Context()
+>
+>     # Register with coordinator
+>     sync = context.socket(zmq.REQ)
+>     sync.connect("tcp://127.0.0.1:5559")
+>     sync.send(worker_id.encode('utf-8'))
+>     response = sync.recv()
+>     print(f"Worker {worker_id}: Registered with coordinator")
+>     sync.close()
+>
+>     # Socket to receive work from coordinator
+>     receiver = context.socket(zmq.PULL)
+>     receiver.connect("tcp://127.0.0.1:5557")
+>
+>     # Socket to send results to coordinator
+>     sender = context.socket(zmq.PUSH)
+>     sender.connect("tcp://127.0.0.1:5558")
+>
+>     print(f"Worker {worker_id}: Ready to process chunks")
+>
+>     chunks_processed = 0
+>
+>     while True:
+>         try:
+>             msg = receiver.recv()
+>             chunk_id, chunk_df, vectorizer = pickle.loads(msg)
+>
+>             # Check for termination signal
+>             if chunk_id is None:
+>                 print(f"Worker {worker_id}: Received termination signal, exiting")
+>                 break
+>
+>             print(f"Worker {worker_id}: Processing chunk {chunk_id}")
+>
+>             # Use transform only (not fit_transform) with the provided vectorizer
+>             texts = chunk_df["text"].tolist()
+>             tfidf_matrix = vectorizer.transform(texts)
+>
+>             # Convert to DataFrame with feature names from the fitted vectorizer
+>             feature_names = vectorizer.get_feature_names_out()
+>             result_df = pd.DataFrame(
+>                 tfidf_matrix.toarray(),
+>                 columns=feature_names
+>             )
+>
+>             # Send result back
+>             result_msg = pickle.dumps((chunk_id, result_df))
+>             sender.send(result_msg)
+>
+>             chunks_processed += 1
+>             print(f"Worker {worker_id}: Completed chunk {chunk_id} (total: {chunks_processed})")
+>
+>         except Exception as e:
+>             print(f"Worker {worker_id}: Error: {e}")
+>             import traceback
+>             traceback.print_exc()
+>             break
+>
+>     print(f"Worker {worker_id}: Processed {chunks_processed} chunks total, shutting down")
+>     receiver.close()
+>     sender.close()
+>     context.term()
+>
+> if __name__ == "__main__":
+>     main()
+> EOF
+I have no name!@8d9b8d08258a:~$

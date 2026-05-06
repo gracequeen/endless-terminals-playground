@@ -1,0 +1,314 @@
+[?2004hroot@506d11167905:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@506d11167905:/home/user# clear
+[?2004l[H[J[?2004hroot@506d11167905:/home/user# cd /home/user/pipeline
+[?2004l[?2004hroot@506d11167905:/home/user/pipeline# ls -la
+[?2004ltotal 24
+drwxrwxrwx 1 root root 4096 May  5 22:28 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 22:28 [34;42m..[0m
+drwxrwxrwx 1 root root 4096 May  5 22:28 [34;42mbuilds[0m
+drwxrwxrwx 1 root root 4096 May  5 22:28 [34;42mconfig[0m
+drwxrwxrwx 1 root root 4096 May  5 22:28 [34;42mkeys[0m
+-rwxrwxrwx 1 root root 2380 May  5 22:28 [01;32msign_apk.sh[0m
+[?2004hroot@506d11167905:/home/user/pipeline# cat sign_apk.sh
+[?2004l#!/bin/bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="$SCRIPT_DIR/config/signing.yaml"
+VERIFY_CONF="$SCRIPT_DIR/config/verify.conf"
+INPUT_APK="$SCRIPT_DIR/builds/app-release-unsigned.apk"
+OUTPUT_APK="$SCRIPT_DIR/builds/app-release-signed.apk"
+
+# Source verify config
+if [ -f "$VERIFY_CONF" ]; then
+    source "$VERIFY_CONF"
+fi
+
+# Parse YAML config (simple parser)
+parse_yaml() {
+    local key=$1
+    grep "^${key}:" "$CONFIG_FILE" | sed "s/^${key}:[[:space:]]*//"
+}
+
+KEYSTORE_PATH=$(parse_yaml "keystore_path")
+KEY_ALIAS=$(parse_yaml "key_alias")
+KEYSTORE_PASS=$(parse_yaml "keystore_pass")
+KEY_PASS=$(parse_yaml "key_pass")
+SIG_ALGORITHM=$(parse_yaml "signature_algorithm")
+
+echo "=== Android APK Signing Pipeline ==="
+echo "Keystore: $KEYSTORE_PATH"
+echo "Alias: $KEY_ALIAS"
+echo "Signature Algorithm: $SIG_ALGORITHM"
+echo ""
+
+# Verify keystore exists
+if [ ! -f "$KEYSTORE_PATH" ]; then
+    echo "ERROR: Keystore not found at $KEYSTORE_PATH"
+    exit 1
+fi
+
+# Verify input APK exists
+if [ ! -f "$INPUT_APK" ]; then
+    echo "ERROR: Input APK not found at $INPUT_APK"
+    exit 1
+fi
+
+# Verify alias exists in keystore
+echo "Verifying keystore alias..."
+if ! keytool -list -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASS" | grep -q "$KEY_ALIAS"; then
+    echo "ERROR: Alias '$KEY_ALIAS' not found in keystore"
+    exit 1
+fi
+
+# Remove old signed APK if exists
+rm -f "$OUTPUT_APK"
+
+# Sign the APK using apksigner with specified algorithm
+echo "Signing APK..."
+apksigner sign \
+    --ks "$KEYSTORE_PATH" \
+    --ks-key-alias "$KEY_ALIAS" \
+    --ks-pass "pass:$KEYSTORE_PASS" \
+    --key-pass "pass:$KEY_PASS" \
+    --v1-signing-enabled true \
+    --v2-signing-enabled true \
+    --v1-signer-name "CERT" \
+    --out "$OUTPUT_APK" \
+    --sig-algorithm "$SIG_ALGORITHM" \
+    "$INPUT_APK"
+
+echo "Signing complete."
+
+# Verify the signed APK
+echo ""
+echo "Verifying signed APK..."
+
+# Check min SDK warning
+if [ -n "$VERIFY_MIN_SDK" ]; then
+    echo "Note: Verify min SDK set to $VERIFY_MIN_SDK"
+fi
+
+# This is where the failure happens - certificate chain validation
+if ! apksigner verify --print-certs "$OUTPUT_APK"; then
+    echo "ERROR: Certificate chain validation failed!"
+    echo "The signed APK failed verification."
+    rm -f "$OUTPUT_APK"
+    exit 1
+fi
+
+echo ""
+echo "=== APK signed successfully ==="
+echo "Output: $OUTPUT_APK"
+exit 0
+[?2004hroot@506d11167905:/home/user/pipeline# cat config/signing.yaml
+[?2004lkeystore_path: /home/user/pipeline/keys/release.jks
+key_alias: release-key
+keystore_pass: android123
+key_pass: android123
+signature_algorithm: SHA1withRSA
+[?2004hroot@506d11167905:/home/user/pipeline# ls -la config/
+[?2004ltotal 16
+drwxrwxrwx 1 root root 4096 May  5 22:28 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 22:28 [34;42m..[0m
+-rwxrwxrwx 1 root root  155 May  5 22:28 [01;32msigning.yaml[0m
+-rwxrwxrwx 1 root root   18 May  5 22:28 [01;32mverify.conf[0m
+[?2004hroot@506d11167905:/home/user/pipeline# cat config/verify.conf
+[?2004lVERIFY_MIN_SDK=24
+[?2004hroot@506d11167905:/home/user/pipeline# keytool -list -v -keystore keys/release.jks -storepass android123 | head -30
+[?2004lKeystore type: PKCS12
+Keystore provider: SUN
+
+Your keystore contains 1 entry
+
+Alias name: release-key
+Creation date: May 5, 2026
+Entry type: PrivateKeyEntry
+Certificate chain length: 1
+Certificate[1]:
+Owner: CN=Release Key, OU=Development, O=MyCompany, L=City, ST=State, C=US
+Issuer: CN=Release Key, OU=Development, O=MyCompany, L=City, ST=State, C=US
+Serial number: 773f49a9
+Valid from: Tue May 05 22:28:20 GMT 2026 until: Sat Sep 20 22:28:20 GMT 2053
+Certificate fingerprints:
+	 SHA1: DB:F1:94:95:4E:E8:18:58:24:26:B7:83:26:E2:83:2C:D9:EF:5D:1D
+	 SHA256: 21:50:3E:5E:C3:2E:A3:C1:07:59:16:B7:4C:B4:D0:D6:BD:74:78:07:CB:93:68:E3:36:4A:40:31:58:DA:44:57
+Signature algorithm name: SHA256withRSA
+Subject Public Key Algorithm: 2048-bit RSA key
+Version: 3
+
+Extensions: 
+
+#1: ObjectId: 2.5.29.14 Criticality=false
+SubjectKeyIdentifier [
+KeyIdentifier [
+0000: 38 66 B9 6D 18 8D 51 15   D8 EA 5A C3 8D EF EA 96  8f.m..Q...Z.....
+0010: FE 2A 2C BE                                        .*,.
+]
+]
+[?2004hroot@506d11167905:/home/user/pipeline# keytool -list -v -keystore keys/release.jks -storepass android123
+[?2004lKeystore type: PKCS12
+Keystore provider: SUN
+
+Your keystore contains 1 entry
+
+Alias name: release-key
+Creation date: May 5, 2026
+Entry type: PrivateKeyEntry
+Certificate chain length: 1
+Certificate[1]:
+Owner: CN=Release Key, OU=Development, O=MyCompany, L=City, ST=State, C=US
+Issuer: CN=Release Key, OU=Development, O=MyCompany, L=City, ST=State, C=US
+Serial number: 773f49a9
+Valid from: Tue May 05 22:28:20 GMT 2026 until: Sat Sep 20 22:28:20 GMT 2053
+Certificate fingerprints:
+	 SHA1: DB:F1:94:95:4E:E8:18:58:24:26:B7:83:26:E2:83:2C:D9:EF:5D:1D
+	 SHA256: 21:50:3E:5E:C3:2E:A3:C1:07:59:16:B7:4C:B4:D0:D6:BD:74:78:07:CB:93:68:E3:36:4A:40:31:58:DA:44:57
+Signature algorithm name: SHA256withRSA
+Subject Public Key Algorithm: 2048-bit RSA key
+Version: 3
+
+Extensions: 
+
+#1: ObjectId: 2.5.29.14 Criticality=false
+SubjectKeyIdentifier [
+KeyIdentifier [
+0000: 38 66 B9 6D 18 8D 51 15   D8 EA 5A C3 8D EF EA 96  8f.m..Q...Z.....
+0010: FE 2A 2C BE                                        .*,.
+]
+]
+
+
+
+*******************************************
+*******************************************
+
+
+[?2004hroot@506d11167905:/home/user/pipeline# ls -la builds/
+[?2004ltotal 52
+drwxrwxrwx 1 root root  4096 May  5 22:28 [0m[34;42m.[0m
+drwxrwxrwx 1 root root  4096 May  5 22:28 [34;42m..[0m
+-rwxrwxrwx 1 root root 43196 May  5 22:28 [01;32mapp-release-unsigned.apk[0m
+[?2004hroot@506d11167905:/home/user/pipeline# sed -i 's/SHA1withRSA/SHA256withRSA/' config/signing.yaml
+[?2004l[?2004hroot@506d11167905:/home/user/pipeline# cat config/signing.yaml
+[?2004lkeystore_path: /home/user/pipeline/keys/release.jks
+key_alias: release-key
+keystore_pass: android123
+key_pass: android123
+signature_algorithm: SHA256withRSA
+[?2004hroot@506d11167905:/home/user/pipeline# ./sign_apk.sh
+[?2004l=== Android APK Signing Pipeline ===
+Keystore: /home/user/pipeline/keys/release.jks
+Alias: release-key
+Signature Algorithm: SHA256withRSA
+
+Verifying keystore alias...
+Signing APK...
+Unsupported option: --sig-algorithm. See --help for supported options.
+[?2004hroot@506d11167905:/home/user/pipeline# sed -i '/--sig-algorithm/d' sign_apk.sh
+[?2004l[?2004hroot@506d11167905:/home/user/pipeline# grep -A5 'apksigner sign' sign_apk.sh
+[?2004l[01;31m[Kapksigner sign[m[K \
+    --ks "$KEYSTORE_PATH" \
+    --ks-key-alias "$KEY_ALIAS" \
+    --ks-pass "pass:$KEYSTORE_PASS" \
+    --key-pass "pass:$KEY_PASS" \
+    --v1-signing-enabled true \
+[?2004hroot@506d11167905:/home/user/pipeline# ./sign_apk.sh
+[?2004l=== Android APK Signing Pipeline ===
+Keystore: /home/user/pipeline/keys/release.jks
+Alias: release-key
+Signature Algorithm: SHA256withRSA
+
+Verifying keystore alias...
+Signing APK...
+Exception in thread "main" com.android.apksig.apk.MinSdkVersionException: Failed to determine APK's minimum supported platform version. Use --min-sdk-version to override
+	at com.android.apksigner.ApkSignerTool.sign(ApkSignerTool.java:401)
+	at com.android.apksigner.ApkSignerTool.main(ApkSignerTool.java:92)
+Caused by: com.android.apksig.apk.MinSdkVersionException: Unable to determine APK's minimum supported Android platform version: malformed binary resource: AndroidManifest.xml
+	at com.android.apksig.apk.ApkUtils.getMinSdkVersionFromBinaryAndroidManifest(ApkUtils.java:297)
+	at com.android.apksig.ApkSigner.getMinSdkVersionFromApk(ApkSigner.java:971)
+	at com.android.apksig.ApkSigner.sign(ApkSigner.java:287)
+	at com.android.apksig.ApkSigner.sign(ApkSigner.java:223)
+	at com.android.apksigner.ApkSignerTool.sign(ApkSignerTool.java:395)
+	... 1 more
+Caused by: com.android.apksig.internal.apk.AndroidBinXmlParser$XmlParserException: No XML chunk in file
+	at com.android.apksig.internal.apk.AndroidBinXmlParser.<init>(AndroidBinXmlParser.java:101)
+	at com.android.apksig.apk.ApkUtils.getMinSdkVersionFromBinaryAndroidManifest(ApkUtils.java:258)
+	... 5 more
+[?2004hroot@506d11167905:/home/user/pipeline# sed -i '/--v1-signing-enabled true/a\    --min-sdk-version "$VERIFY_MIN_SDK" \\' sign_apk.sh
+[?2004l[?2004hroot@506d11167905:/home/user/pipeline# grep -A8 'apksigner sign' sign_apk.sh
+[?2004l[01;31m[Kapksigner sign[m[K \
+    --ks "$KEYSTORE_PATH" \
+    --ks-key-alias "$KEY_ALIAS" \
+    --ks-pass "pass:$KEYSTORE_PASS" \
+    --key-pass "pass:$KEY_PASS" \
+    --v1-signing-enabled true \
+    --min-sdk-version "$VERIFY_MIN_SDK" \
+    --v2-signing-enabled true \
+    --v1-signer-name "CERT" \
+[?2004hroot@506d11167905:/home/user/pipeline# ./sign_apk.sh
+[?2004l=== Android APK Signing Pipeline ===
+Keystore: /home/user/pipeline/keys/release.jks
+Alias: release-key
+Signature Algorithm: SHA256withRSA
+
+Verifying keystore alias...
+Signing APK...
+Signing complete.
+
+Verifying signed APK...
+Note: Verify min SDK set to 24
+Exception in thread "main" com.android.apksig.apk.MinSdkVersionException: Failed to determine APK's minimum supported platform version. Use --min-sdk-version to override
+	at com.android.apksigner.ApkSignerTool.verify(ApkSignerTool.java:570)
+	at com.android.apksigner.ApkSignerTool.main(ApkSignerTool.java:95)
+Caused by: com.android.apksig.apk.MinSdkVersionException: Unable to determine APK's minimum supported Android platform version: malformed binary resource: AndroidManifest.xml
+	at com.android.apksig.apk.ApkUtils.getMinSdkVersionFromBinaryAndroidManifest(ApkUtils.java:297)
+	at com.android.apksig.ApkVerifier.verifyAndGetMinSdkVersion(ApkVerifier.java:627)
+	at com.android.apksig.ApkVerifier.verify(ApkVerifier.java:182)
+	at com.android.apksig.ApkVerifier.verify(ApkVerifier.java:150)
+	at com.android.apksigner.ApkSignerTool.verify(ApkSignerTool.java:564)
+	... 1 more
+Caused by: com.android.apksig.internal.apk.AndroidBinXmlParser$XmlParserException: No XML chunk in file
+	at com.android.apksig.internal.apk.AndroidBinXmlParser.<init>(AndroidBinXmlParser.java:101)
+	at com.android.apksig.apk.ApkUtils.getMinSdkVersionFromBinaryAndroidManifest(ApkUtils.java:258)
+	... 5 more
+ERROR: Certificate chain validation failed!
+The signed APK failed verification.
+[?2004hroot@506d11167905:/home/user/pipeline# sed -i 's/apksigner verify --print-certs/apksigner verify --min-sdk-version "$VERIFY_MIN_SDK" --print-certs/' sign_apk.sh M[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[C[Kh
+[?2004l[?2004hroot@506d11167905:/home/user/pipeline# grep 'apksigner verify' sign_apk.sh
+[?2004lif ! [01;31m[Kapksigner verify[m[K --min-sdk-version "$VERIFY_MIN_SDK" --print-certs "$OUTPUT_APK"; then
+[?2004hroot@506d11167905:/home/user/pipeline# ./sign_apk.sh
+[?2004l=== Android APK Signing Pipeline ===
+Keystore: /home/user/pipeline/keys/release.jks
+Alias: release-key
+Signature Algorithm: SHA256withRSA
+
+Verifying keystore alias...
+Signing APK...
+Signing complete.
+
+Verifying signed APK...
+Note: Verify min SDK set to 24
+Signer #1 certificate DN: CN=Release Key, OU=Development, O=MyCompany, L=City, ST=State, C=US
+Signer #1 certificate SHA-256 digest: 21503e5ec32ea3c1075916b74cb4d0d6bd747807cb9368e3364a403158da4457
+Signer #1 certificate SHA-1 digest: dbf194954ee818582426b78326e2832cd9ef5d1d
+Signer #1 certificate MD5 digest: 121f3f7d158f602c406276f7e8d30f39
+
+=== APK signed successfully ===
+Output: /home/user/pipeline/builds/app-release-signed.apk
+[?2004hroot@506d11167905:/home/user/pipeline# ls -lh builds/app-release-*.apk
+[?2004l-rw-r--r-- 1 root root 49K May  5 22:31 builds/app-release-signed.apk
+-rwxrwxrwx 1 root root 43K May  5 22:28 [0m[01;32mbuilds/app-release-unsigned.apk[0m
+[?2004hroot@506d11167905:/home/user/pipeline# echo '=== Summary of fixes applied ==='
+[?2004l=== Summary of fixes applied ===
+[?2004hroot@506d11167905:/home/user/pipeline# echo '1. Updated signing.yaml: SHA1withRSA -> SHA256withRSA'
+[?2004l1. Updated signing.yaml: SHA1withRSA -> SHA256withRSA
+[?2004hroot@506d11167905:/home/user/pipeline# echo '2. Removed unsupported --sig-algorithm from apksigner sign command'
+[?2004l2. Removed unsupported --sig-algorithm from apksigner sign command
+[?2004hroot@506d11167905:/home/user/pipeline# echo '3. Added --min-sdk-version to apksigner sign command'
+[?2004l3. Added --min-sdk-version to apksigner sign command
+[?2004hroot@506d11167905:/home/user/pipeline# echo '4. Added --min-sdk-version to apksigner verify command'
+[?2004l4. Added --min-sdk-version to apksigner verify command
+[?2004hroot@506d11167905:/home/user/pipeline# 

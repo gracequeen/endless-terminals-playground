@@ -1,0 +1,56 @@
+New Terminal Output:
+
+root@cc935c4300a3:/home/user# cp /home/user/correlate.py /home/user/correlate.py.bak
+root@cc935c4300a3:/home/user# cat > /home/user/correlate.py << 'EOF'
+> #!/usr/bin/env python3
+> import json
+> from collections import defaultdict
+> from datetime import datetime, timedelta
+>
+> INTERNAL_PREFIX = "10."
+> WINDOW_MINUTES = 5
+> THRESHOLD = 3
+>
+> def is_internal(ip):
+>     return ip.startswith(INTERNAL_PREFIX)
+>
+> def parse_timestamp(ts):
+>     # Fixed: Suricata timestamps have microseconds and timezone
+>     # Format: 2024-01-10T00:01:13.605445+0000
+>     return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S.%f%z")
+>
+> def main():
+>     connections = []
+>     with open("/var/log/suricata/eve.json") as f:
+>         for line in f:
+>             event = json.loads(line)
+>             # Fixed: Changed from "netflow" to "flow"
+>             if event.get("event_type") != "flow":
+>                 continue
+>             src = event.get("src_ip", "")
+>             dst = event.get("dest_ip", "")
+>             if is_internal(src) and is_internal(dst) and src != dst:
+>                 ts = parse_timestamp(event.get("timestamp", ""))
+>                 connections.append((ts, src, dst))
+>
+>     # Window-based grouping
+>     connections.sort()
+>     flagged = set()
+>     for i, (ts, src, dst) in enumerate(connections):
+>         window_end = ts + timedelta(minutes=WINDOW_MINUTES)
+>         dsts_in_window = set()
+>         for j in range(i, len(connections)):
+>             if connections[j][0] > window_end:
+>                 break
+>             if connections[j][1] == src:
+>                 dsts_in_window.add(connections[j][2])
+>         if len(dsts_in_window) > THRESHOLD:
+>             flagged.add(src)
+>
+>     for host in sorted(flagged):
+>         print(f"LATERAL_MOVEMENT_CANDIDATE: {host}")
+>
+> if __name__ == "__main__":
+>     main()
+> EOF
+root@cc935c4300a3:/home/user#

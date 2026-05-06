@@ -1,0 +1,63 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+I have no name!@00a3411aa0cf:~$ cd /home/user/backup-verify
+I have no name!@00a3411aa0cf:~/backup-verify$ ls -la
+total 12
+drwxrwxrwx 1 1000 1000 4096 May  5 19:10 .
+drwxrwxrwx 1 1000 1000 4096 May  5 19:10 ..
+-rwxr-xr-x 1 1000 1000 1083 May  5 19:10 check.sh
+I have no name!@00a3411aa0cf:~/backup-verify$ cat check.sh
+#!/bin/bash
+
+BACKUP_DIR="/var/backups/encrypted"
+SENTINEL="/home/user/backup-verify/.last-verified"
+
+# Find the newest .gpg file
+newest_gpg=$(ls -t "$BACKUP_DIR"/*.gpg 2>/dev/null | head -1)
+
+if [ -z "$newest_gpg" ]; then
+    echo "verification failed"
+    exit 1
+fi
+
+# Derive the tar filename and sig filename
+basename_gpg=$(basename "$newest_gpg" .gpg)
+tarfile="/tmp/${basename_gpg}"
+sigfile="${BACKUP_DIR}/${basename_gpg}.sig"
+
+if [ ! -f "$sigfile" ]; then
+    echo "verification failed"
+    exit 1
+fi
+
+# Decrypt the backup
+gpg --batch --yes --decrypt --output "$tarfile" "$newest_gpg" 2>/dev/null
+if [ $? -ne 0 ]; then
+    echo "verification failed"
+    exit 1
+fi
+
+# Verify the signature with status output
+status=$(gpg --verify --status-fd 1 "$sigfile" "$tarfile" 2>&1)
+
+if ! echo "$status" | grep -q "GOODSIG"; then
+    echo "verification failed"
+    rm -f "$tarfile"
+    exit 1
+fi
+
+if echo "$status" | grep -q "TRUST_UNDEFINED\|TRUST_NEVER"; then
+    echo "verification failed"
+    rm -f "$tarfile"
+    exit 1
+fi
+
+# All checks passed
+rm -f "$tarfile"
+touch "$SENTINEL"
+exit 0
+I have no name!@00a3411aa0cf:~/backup-verify$

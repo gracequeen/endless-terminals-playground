@@ -1,0 +1,147 @@
+New Terminal Output:
+
+root@1a47e7718deb:/home/user/logpipe# cp filter.py filter.py.backup
+root@1a47e7718deb:/home/user/logpipe# cat > filter.py << 'EOF'
+> #!/usr/bin/env python3
+> """
+> Log filter script that routes container logs to different outputs
+> based on severity and source service.
+> """
+>
+> import re
+> import os
+> import yaml
+> from configparser import ConfigParser
+>
+> SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+> RAW_LOG = os.path.join(SCRIPT_DIR, 'raw.log')
+> PATTERNS_CONF = os.path.join(SCRIPT_DIR, 'patterns.conf')
+> ROUTING_YAML = os.path.join(SCRIPT_DIR, 'routing.yaml')
+> OUTPUT_DIR = os.path.join(SCRIPT_DIR, 'output')
+>
+>
+> def load_patterns(conf_path):
+>     """Load regex patterns from patterns.conf"""
+>     config = ConfigParser()
+>     config.read(conf_path)
+>     patterns = {}
+>     for section in config.sections():
+>         patterns[section] = {}
+>         for key, value in config.items(section):
+>             patterns[section][key.upper()] = value
+>     return patterns
+>
+>
+> def load_routing(yaml_path):
+>     """Load routing rules from routing.yaml"""
+>     with open(yaml_path, 'r') as f:
+>         return yaml.safe_load(f)
+>
+>
+> def get_severity(line, patterns):
+>     """Extract severity level from log line using regex patterns."""
+>     severity_patterns = patterns.get('severity', {})
+>     for level, pattern in severity_patterns.items():
+>         if re.match(pattern, line):
+>             return level
+>     return None
+>
+>
+> def get_service(line, patterns):
+>     """Extract service name from log line."""
+>     service_patterns = patterns.get('service', {})
+>     for service_name, pattern in service_patterns.items():
+>         if re.search(pattern, line):
+>             return service_name
+>     return 'unknown'
+>
+>
+> def classify_line(line):
+>     """
+>     Classify a log line as structured (JSON-like) or plaintext.
+>     Returns 'structured' or 'plaintext'.
+>     """
+>     # Check for actual JSON
+>     stripped = line.strip()
+>     if stripped.startswith('{') and stripped.endswith('}'):
+>         return 'structured'
+>     # All other logs should be processed as plaintext for severity routing
+>     return 'plaintext'
+>
+>
+> def normalize_line(line):
+>     """Normalize a log line by stripping control characters."""
+>     # Remove leading non-printable characters
+>     result = []
+>     started = False
+>     for char in line:
+>         if started or char.isprintable() or char in '\t\n':
+>             result.append(char)
+>             started = True
+>     return ''.join(result)
+>
+>
+> def route_line(line, severity, service, routing_config):
+>     """Determine output file for a log line based on routing rules."""
+>     rules = routing_config.get('rules', [])
+>     for rule in rules:
+>         if rule.get('severity') == severity:
+>             return rule.get('output', 'default.log')
+>         if rule.get('service') == service:
+>             return rule.get('output', 'default.log')
+>     return routing_config.get('default_output', 'default.log')
+>
+>
+> def process_logs():
+>     """Main processing function."""
+>     patterns = load_patterns(PATTERNS_CONF)
+>     routing = load_routing(ROUTING_YAML)
+>
+>     # Ensure output directory exists
+>     os.makedirs(OUTPUT_DIR, exist_ok=True)
+>
+>     # Open output file handles
+>     output_files = {}
+>
+>     with open(RAW_LOG, 'r') as f:
+>         for line in f:
+>             line = line.rstrip('\n')
+>             if not line:
+>                 continue
+>
+>             # Normalize the line
+>             normalized = normalize_line(line)
+>
+>             # Classify line type
+>             line_type = classify_line(normalized)
+>
+>             if line_type == 'structured':
+>                 # Route to structured.log
+>                 output_path = os.path.join(OUTPUT_DIR, 'structured.log')
+>                 if output_path not in output_files:
+>                     output_files[output_path] = open(output_path, 'w')
+>                 output_files[output_path].write(line + '\n')
+>                 continue
+>
+>             # Get severity and service
+>             severity = get_severity(normalized, patterns)
+>             service = get_service(normalized, patterns)
+>
+>             # Route based on rules
+>             output_file = route_line(normalized, severity, service, routing)
+>             output_path = os.path.join(OUTPUT_DIR, output_file)
+>
+>             if output_path not in output_files:
+>                 output_files[output_path] = open(output_path, 'w')
+>
+>             output_files[output_path].write(line + '\n')
+>
+>     # Close all output files
+>     for f in output_files.values():
+>         f.close()
+>
+>
+> if __name__ == '__main__':
+>     process_logs()
+> EOF
+root@1a47e7718deb:/home/user/logpipe#

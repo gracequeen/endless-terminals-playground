@@ -1,0 +1,89 @@
+New Terminal Output:
+
+user@dacdc6047aaa:~/scheduler$ cat > verify_fix.py << 'EOF'
+> #!/usr/bin/env python3
+> """
+> Verify the timezone conversion fix.
+> Compares old buggy method vs new correct method.
+> """
+>
+> import pytz
+> from datetime import datetime
+>
+> BERLIN_TZ = pytz.timezone('Europe/Berlin')
+> UTC_TZ = pytz.utc
+>
+> def old_buggy_convert(utc_time_str):
+>     """Old buggy conversion - treats UTC time as Berlin time."""
+>     utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%dT%H:%M:%S')
+>     berlin_dt = BERLIN_TZ.localize(utc_dt)
+>     return berlin_dt
+>
+> def new_correct_convert(utc_time_str):
+>     """New correct conversion - properly converts UTC to Berlin."""
+>     utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%dT%H:%M:%S')
+>     utc_dt_aware = UTC_TZ.localize(utc_dt)
+>     berlin_dt = utc_dt_aware.astimezone(BERLIN_TZ)
+>     return berlin_dt
+>
+> print("Testing timezone conversion fix")
+> print("=" * 60)
+>
+> # Test cases including DST transition times
+> test_cases = [
+>     ('2024-03-31T01:30:00', 'Maintenance Window (DST transition day)'),
+>     ('2024-03-31T08:00:00', 'Daily Standup (DST transition day)'),
+>     ('2024-01-15T01:30:00', 'Winter time (CET, UTC+1)'),
+>     ('2024-07-15T01:30:00', 'Summer time (CEST, UTC+2)'),
+> ]
+>
+> for utc_time, description in test_cases:
+>     print(f"\nTest: {description}")
+>     print(f"UTC Time: {utc_time}")
+>
+>     old_result = old_buggy_convert(utc_time)
+>     new_result = new_correct_convert(utc_time)
+>
+>     print(f"  OLD (buggy):  {old_result.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
+>     print(f"  NEW (fixed):  {new_result.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
+>
+>     if old_result != new_result:
+>         diff_hours = (new_result - old_result).total_seconds() / 3600
+>         print(f"  DIFFERENCE: {diff_hours:+.1f} hours")
+>     else:
+>         print(f"  SAME (no difference)")
+>
+> print("\n" + "=" * 60)
+> print("Fix verified: UTC times are now correctly converted to Berlin timezone.")
+> EOF
+user@dacdc6047aaa:~/scheduler$ python3 verify_fix.py
+Testing timezone conversion fix
+============================================================
+
+Test: Maintenance Window (DST transition day)
+UTC Time: 2024-03-31T01:30:00
+  OLD (buggy):  2024-03-31 01:30:00 CET+0100
+  NEW (fixed):  2024-03-31 03:30:00 CEST+0200
+  DIFFERENCE: +1.0 hours
+
+Test: Daily Standup (DST transition day)
+UTC Time: 2024-03-31T08:00:00
+  OLD (buggy):  2024-03-31 08:00:00 CEST+0200
+  NEW (fixed):  2024-03-31 10:00:00 CEST+0200
+  DIFFERENCE: +2.0 hours
+
+Test: Winter time (CET, UTC+1)
+UTC Time: 2024-01-15T01:30:00
+  OLD (buggy):  2024-01-15 01:30:00 CET+0100
+  NEW (fixed):  2024-01-15 02:30:00 CET+0100
+  DIFFERENCE: +1.0 hours
+
+Test: Summer time (CEST, UTC+2)
+UTC Time: 2024-07-15T01:30:00
+  OLD (buggy):  2024-07-15 01:30:00 CEST+0200
+  NEW (fixed):  2024-07-15 03:30:00 CEST+0200
+  DIFFERENCE: +2.0 hours
+
+============================================================
+Fix verified: UTC times are now correctly converted to Berlin timezone.
+user@dacdc6047aaa:~/scheduler$

@@ -1,0 +1,1046 @@
+[?2004hI have no name!@199a2e4cfacc:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hI have no name!@199a2e4cfacc:~$ clear
+[?2004l[H[J[?2004hI have no name!@199a2e4cfacc:~$ cd /home/user/pipeline
+[?2004l[?2004hI have no name!@199a2e4cfacc:~/pipeline$ ls -la
+[?2004ltotal 24
+drwxrwxrwx 1 1000 1000 4096 May  5 06:08 .
+drwxrwxrwx 1 1000 1000 4096 May  5 06:09 ..
+-rwxrwxrwx 1 1000 1000 2175 May  5 06:08 coordinator.py
+-rwxrwxrwx 1 1000 1000  485 May  5 06:08 run.sh
+-rwxrwxrwx 1 1000 1000 1177 May  5 06:08 single.py
+-rwxrwxrwx 1 1000 1000 1921 May  5 06:08 worker.py
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ cat single.py
+[?2004l#!/usr/bin/env python3
+"""
+Single-threaded reference implementation for tf-idf feature extraction.
+This produces correct output but is slow.
+"""
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+def main():
+    # Load data
+    df = pd.read_parquet("/home/user/data/raw.parquet")
+    print(f"Loaded {len(df)} rows")
+
+    # Compute tf-idf on all data with single vocabulary
+    vectorizer = TfidfVectorizer(max_features=100)
+    texts = df["text"].tolist()
+    tfidf_matrix = vectorizer.fit_transform(texts)
+
+    # Convert to DataFrame
+    feature_names = vectorizer.get_feature_names_out()
+    result_df = pd.DataFrame(
+        tfidf_matrix.toarray(),
+        columns=feature_names
+    )
+
+    # Save
+    result_df.to_parquet("/home/user/data/features_reference.parquet")
+    print(f"Saved {len(result_df)} rows to features_reference.parquet")
+
+    # Verify values are in valid range
+    max_val = result_df.values.max()
+    min_val = result_df.values.min()
+    print(f"Value range: [{min_val}, {max_val}]")
+    assert min_val >= 0.0, "Negative tf-idf values!"
+    assert max_val <= 1.0, "tf-idf values > 1!"
+
+if __name__ == "__main__":
+    main()
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ cat coordinator.py
+[?2004l#!/usr/bin/env python3
+"""
+Coordinator for distributed tf-idf feature extraction.
+Pushes chunks to workers via ZeroMQ, collects results, aggregates.
+"""
+import pickle
+import time
+import zmq
+import pandas as pd
+
+def main():
+    context = zmq.Context()
+
+    # Socket to send work to workers
+    sender = context.socket(zmq.PUSH)
+    sender.bind("tcp://127.0.0.1:5557")
+
+    # Socket to receive results from workers
+    receiver = context.socket(zmq.PULL)
+    receiver.bind("tcp://127.0.0.1:5558")
+
+    # Load data
+    df = pd.read_parquet("/home/user/data/raw.parquet")
+
+    # Split into chunks of 1000 rows
+    chunk_size = 1000
+    chunks = [df.iloc[i:i+chunk_size] for i in range(0, len(df), chunk_size)]
+    num_chunks = len(chunks)
+
+    print(f"Coordinator: Sending {num_chunks} chunks to workers")
+
+    # Send all chunks immediately (BUG: workers may not be connected yet)
+    for chunk_id, chunk in enumerate(chunks):
+        msg = pickle.dumps((chunk_id, chunk))
+        sender.send(msg)
+        print(f"Coordinator: Sent chunk {chunk_id}")
+
+    # Collect results (BUG: using list, not dict - duplicates possible)
+    results = []
+    receiver.setsockopt(zmq.RCVTIMEO, 5000)  # 5 second timeout
+
+    try:
+        while True:
+            try:
+                msg = receiver.recv()
+                chunk_id, result_df = pickle.loads(msg)
+                results.append(result_df)
+                print(f"Coordinator: Received result for chunk {chunk_id}")
+            except zmq.Again:
+                print("Coordinator: Timeout waiting for results, finishing up")
+                break
+    except Exception as e:
+        print(f"Coordinator: Error receiving: {e}")
+
+    # Aggregate results (BUG: concat with misaligned columns from different vocabularies)
+    if results:
+        final_df = pd.concat(results, ignore_index=True)
+        final_df = final_df.fillna(0)
+        final_df.to_parquet("/home/user/data/features.parquet")
+        print(f"Coordinator: Saved {len(final_df)} rows to features.parquet")
+    else:
+        print("Coordinator: No results received!")
+
+    sender.close()
+    receiver.close()
+    context.term()
+
+if __name__ == "__main__":
+    main()
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ cat worker.py
+[?2004l#!/usr/bin/env python3
+"""
+Worker for distributed tf-idf feature extraction.
+Receives chunks from coordinator, computes tf-idf, sends results back.
+"""
+import pickle
+import sys
+import zmq
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+def main():
+    worker_id = sys.argv[1] if len(sys.argv) > 1 else "0"
+
+    context = zmq.Context()
+
+    # Socket to receive work from coordinator
+    receiver = context.socket(zmq.PULL)
+    receiver.connect("tcp://127.0.0.1:5557")
+
+    # Socket to send results to coordinator
+    sender = context.socket(zmq.PUSH)
+    sender.connect("tcp://127.0.0.1:5558")
+
+    print(f"Worker {worker_id}: Started and connected")
+
+    chunks_processed = 0
+
+    # BUG: Each worker creates its own vectorizer with its own vocabulary
+    vectorizer = TfidfVectorizer(max_features=100)
+
+    while True:
+        try:
+            msg = receiver.recv()
+            chunk_id, chunk_df = pickle.loads(msg)
+
+            print(f"Worker {worker_id}: Processing chunk {chunk_id}")
+
+            # Compute tf-idf (BUG: fitting on each chunk independently)
+            texts = chunk_df["text"].tolist()
+            tfidf_matrix = vectorizer.fit_transform(texts)
+
+            # Convert to DataFrame with feature names as columns
+            feature_names = vectorizer.get_feature_names_out()
+            result_df = pd.DataFrame(
+                tfidf_matrix.toarray(),
+                columns=feature_names
+            )
+
+            # Send result back
+            result_msg = pickle.dumps((chunk_id, result_df))
+            sender.send(result_msg)
+
+            chunks_processed += 1
+            print(f"Worker {worker_id}: Processed chunk {chunk_id} (total: {chunks_processed})")
+
+        except Exception as e:
+            print(f"Worker {worker_id}: Error: {e}")
+            break
+
+    receiver.close()
+    sender.close()
+    context.term()
+
+if __name__ == "__main__":
+    main()
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ cat run.sh
+[?2004l#!/bin/bash
+# Run the distributed feature extraction pipeline
+
+cd /home/user/pipeline
+
+# Start coordinator in background
+python3 coordinator.py &
+COORD_PID=$!
+
+# Start 3 workers
+python3 worker.py 1 &
+WORKER1_PID=$!
+python3 worker.py 2 &
+WORKER2_PID=$!
+python3 worker.py 3 &
+WORKER3_PID=$!
+
+# Wait for coordinator to finish
+wait $COORD_PID
+COORD_EXIT=$?
+
+# Kill workers (they spin forever waiting for more work)
+kill $WORKER1_PID $WORKER2_PID $WORKER3_PID 2>/dev/null
+
+exit $COORD_EXIT
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ cp coordinator.py coordinator.py.bak
+[?2004l[?2004hI have no name!@199a2e4cfacc:~/pipeline$ cp worker.py worker.py.bak
+[?2004l[?2004hI have no name!@199a2e4cfacc:~/pipeline$ cat > coordinator.py << 'EOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """
+[?2004l[?2004h> Coordinator for distributed tf-idf feature extraction.
+[?2004l[?2004h> Pushes chunks to workers via ZeroMQ, collects results, aggregates.
+[?2004l[?2004h> """
+[?2004l[?2004h> import pickle
+[?2004l[?2004h> import time
+[?2004l[?2004h> import zmq
+[?2004l[?2004h> import pandas as pd
+[?2004l[?2004h> from sklearn.feature_extraction.text import TfidfVectorizer
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     context = zmq.Context()
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Socket to send work to workers
+[?2004l[?2004h>     sender = context.socket(zmq.PUSH)
+[?2004l[?2004h>     sender.bind("tcp://127.0.0.1:5557")
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Socket to receive results from workers
+[?2004l[?2004h>     receiver = context.socket(zmq.PULL)
+[?2004l[?2004h>     receiver.bind("tcp://127.0.0.1:5558")
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Load data
+[?2004l[?2004h>     df = pd.read_parquet("/home/user/data/raw.parquet")
+[?2004l[?2004h>     print(f"Coordinator: Loaded {len(df)} rows")
+[?2004l[?2004h> 
+[?2004l[?2004h>     # FIX: Fit vectorizer on ALL data to build unified vocabulary
+[?2004l[?2004h>     print("Coordinator: Fitting vectorizer on all data...")
+[?2004l[?2004h>     vectorizer = TfidfVectorizer(max_features=100)
+[?2004l[?2004h>     texts = df["text"].tolist()
+[?2004l[?2004h>     vectorizer.fit(texts)
+[?2004l[?2004h>     print(f"Coordinator: Vocabulary built with {len(vectorizer.vocabulary_)} terms")
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Split into chunks of 1000 rows
+[?2004l[?2004h>     chunk_size = 1000
+[?2004l[?2004h>     chunks = [df.iloc[i:i+chunk_size] for i in range(0, len(df), chunk_size)]
+[?2004l[?2004h>     num_chunks = len(chunks)
+[?2004l[?2004h> 
+[?2004l[?2004h>     print(f"Coordinator: Prepared {num_chunks} chunks")
+[?2004l[?2004h> 
+[?2004l[?2004h>     # FIX: Wait for workers to connect
+[?2004l[?2004h>     print("Coordinator: Waiting 2 seconds for workers to connect...")
+[?2004l[?2004h>     time.sleep(2)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # FIX: Send fitted vectorizer to each worker (send 3 times for 3 workers)
+[?2004l[?2004h>     print("Coordinator: Sending fitted vectorizer to workers...")
+[?2004l[?2004h>     vectorizer_msg = pickle.dumps(("VECTORIZER", vectorizer))
+[?2004l[?2004h>     for i in range(3):
+[?2004l[?2004h>         sender.send(vectorizer_msg)
+[?2004l[?2004h>     time.sleep(0.5)  # Let workers receive and process
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Send all chunks
+[?2004l[?2004h>     print(f"Coordinator: Sending {num_chunks} chunks to workers")
+[?2004l[?2004h>     for chunk_id, chunk in enumerate(chunks):
+[?2004l[?2004h>         msg = pickle.dumps(("CHUNK", chunk_id, chunk))
+[?2004l[?2004h>         sender.send(msg)
+[?2004l[?2004h>         print(f"Coordinator: Sent chunk {chunk_id}")
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Send termination signals (one per worker)
+[?2004l[?2004h>     print("Coordinator: Sending termination signals...")
+[?2004l[?2004h>     for i in range(3):
+[?2004l[?2004h>         sender.send(pickle.dumps(("DONE", None, None)))
+[?2004l[?2004h> 
+[?2004l[?2004h>     # FIX: Collect results using dict to track by chunk_id
+[?2004l[?2004h>     results = {}
+[?2004l[?2004h>     receiver.setsockopt(zmq.RCVTIMEO, 10000)  # 10 second timeout
+[?2004l[?2004h> 
+[?2004l[?2004h>     print(f"Coordinator: Waiting for {num_chunks} results...")
+[?2004l[?2004h>     while len(results) < num_chunks:
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             msg = receiver.recv()
+[?2004l[?2004h>             chunk_id, result_df = pickle.loads(msg)
+[?2004l[?2004h>             results[chunk_id] = result_df
+[?2004l[?2004h>             print(f"Coordinator: Received result for chunk {chunk_id} ({len(results)}/{num_chunks})")
+[?2004l[?2004h>         except zmq.Again:
+[?2004l[?2004h>             print(f"Coordinator: Timeout - received {len(results)}/{num_chunks} chunks")
+[?2004l[?2004h>             break
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Check if we got all results
+[?2004l[?2004h>     if len(results) < num_chunks:
+[?2004l[?2004h>         print(f"WARNING: Only received {len(results)} of {num_chunks} chunks!")
+[?2004l[?2004h>         missing = set(range(num_chunks)) - set(results.keys())
+[?2004l[?2004h>         print(f"Missing chunks: {sorted(missing)}")
+[?2004l[?2004h> 
+[?2004l[?2004h>     # FIX: Aggregate results in correct order
+[?2004l[?2004h>     if results:
+[?2004l[?2004h>         ordered_results = [results[i] for i in sorted(results.keys())]
+[?2004l[?2004h>         final_df = pd.concat(ordered_results, ignore_index=True)
+[?2004l[?2004h>         final_df.to_parquet("/home/user/data/features.parquet")
+[?2004l[?2004h>         print(f"Coordinator: Saved {len(final_df)} rows to features.parquet")
+[?2004l[?2004h>         
+[?2004l[?2004h>         # Verify values
+[?2004l[?2004h>         max_val = final_df.values.max()
+[?2004l[?2004h>         min_val = final_df.values.min()
+[?2004l[?2004h>         print(f"Coordinator: Value range: [{min_val}, {max_val}]")
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         print("Coordinator: No results received!")
+[?2004l[?2004h> 
+[?2004l[?2004h>     sender.close()
+[?2004l[?2004h>     receiver.close()
+[?2004l[?2004h>     context.term()
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     main()
+[?2004l[?2004h> EOF
+[?2004l[?2004hI have no name!@199a2e4cfacc:~/pipeline$ cat > worker.py << 'EOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """
+[?2004l[?2004h> Worker for distributed tf-idf feature extraction.
+[?2004l[?2004h> Receives chunks from coordinator, computes tf-idf, sends results back.
+[?2004l[?2004h> """
+[?2004l[?2004h> import pickle
+[?2004l[?2004h> import sys
+[?2004l[?2004h> import zmq
+[?2004l[?2004h> import pandas as pd
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     worker_id = sys.argv[1] if len(sys.argv) > 1 else "0"
+[?2004l[?2004h> 
+[?2004l[?2004h>     context = zmq.Context()
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Socket to receive work from coordinator
+[?2004l[?2004h>     receiver = context.socket(zmq.PULL)
+[?2004l[?2004h>     receiver.connect("tcp://127.0.0.1:5557")
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Socket to send results to coordinator
+[?2004l[?2004h>     sender = context.socket(zmq.PUSH)
+[?2004l[?2004h>     sender.connect("tcp://127.0.0.1:5558")
+[?2004l[?2004h> 
+[?2004l[?2004h>     print(f"Worker {worker_id}: Started and connected")
+[?2004l[?2004h> 
+[?2004l[?2004h>     # FIX: Wait for fitted vectorizer from coordinator
+[?2004l[?2004h>     print(f"Worker {worker_id}: Waiting for vectorizer...")
+[?2004l[?2004h>     msg = receiver.recv()
+[?2004l[?2004h>     msg_type, vectorizer = pickle.loads(msg)
+[?2004l[?2004h>     
+[?2004l[?2004h>     if msg_type != "VECTORIZER":
+[?2004l[?2004h>         print(f"Worker {worker_id}: ERROR - Expected VECTORIZER, got {msg_type}")
+[?2004l[?2004h>         return
+[?2004l[?2004h>     
+[?2004l[?2004h>     print(f"Worker {worker_id}: Received fitted vectorizer with {len(vectorizer.vocabulary_)} terms")
+[?2004l[?2004h> 
+[?2004l[?2004h>     chunks_processed = 0
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Process chunks until DONE signal
+[?2004l[?2004h>     while True:
+[?2004l[?2004h>         try:
+[?2004l[?2004h>             msg = receiver.recv()
+[?2004l[?2004h>             msg_type, chunk_id, chunk_df = pickle.loads(msg)
+[?2004l[?2004h> 
+[?2004l[?2004h>             if msg_type == "DONE":
+[?2004l[?2004h>                 print(f"Worker {worker_id}: Received termination signal, exiting")
+[?2004l[?2004h>                 break
+[?2004l[?2004h> 
+[?2004l[?2004h>             if msg_type != "CHUNK":
+[?2004l[?2004h>                 print(f"Worker {worker_id}: Unknown message type: {msg_type}")
+[?2004l[?2004h>                 continue
+[?2004l[?2004h> 
+[?2004l[?2004h>             print(f"Worker {worker_id}: Processing chunk {chunk_id}")
+[?2004l[?2004h> 
+[?2004l[?2004h>             # FIX: Use transform() only, not fit_transform()
+[?2004l[?2004h>             texts = chunk_df["text"].tolist()
+[?2004l[?2004h>             tfidf_matrix = vectorizer.transform(texts)
+[?2004l[?2004h> 
+[?2004l[?2004h>             # Convert to DataFrame with feature names as columns
+[?2004l[?2004h>             feature_names = vectorizer.get_feature_names_out()
+[?2004l[?2004h>             result_df = pd.DataFrame(
+[?2004l[?2004h>                 tfidf_matrix.toarray(),
+[?2004l[?2004h>                 columns=feature_names
+[?2004l[?2004h>             )
+[?2004l[?2004h> 
+[?2004l[?2004h>             # Send result back
+[?2004l[?2004h>             result_msg = pickle.dumps((chunk_id, result_df))
+[?2004l[?2004h>             sender.send(result_msg)
+[?2004l[?2004h> 
+[?2004l[?2004h>             chunks_processed += 1
+[?2004l[?2004h>             print(f"Worker {worker_id}: Processed chunk {chunk_id} (total: {chunks_processed})")
+[?2004l[?2004h> 
+[?2004l[?2004h>         except Exception as e:
+[?2004l[?2004h>             print(f"Worker {worker_id}: Error: {e}")
+[?2004l[?2004h>             import traceback
+[?2004l[?2004h>             traceback.print_exc()
+[?2004l[?2004h>             break
+[?2004l[?2004h> 
+[?2004l[?2004h>     print(f"Worker {worker_id}: Shutting down after processing {chunks_processed} chunks")
+[?2004l[?2004h>     receiver.close()
+[?2004l[?2004h>     sender.close()
+[?2004l[?2004h>     context.term()
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     main()
+[?2004l[?2004h> EOF
+[?2004l[?2004hI have no name!@199a2e4cfacc:~/pipeline$ bash run.sh
+[?2004lWorker 1: Started and connected
+Worker 1: Waiting for vectorizer...
+Worker 2: Started and connected
+Worker 2: Waiting for vectorizer...
+Worker 3: Started and connected
+Worker 3: Waiting for vectorizer...
+Coordinator: Loaded 50000 rows
+Coordinator: Fitting vectorizer on all data...
+Coordinator: Vocabulary built with 100 terms
+Coordinator: Prepared 50 chunks
+Coordinator: Waiting 2 seconds for workers to connect...
+Coordinator: Sending fitted vectorizer to workers...
+Coordinator: Sending 50 chunks to workers
+Coordinator: Sent chunk 0
+Coordinator: Sent chunk 1
+Coordinator: Sent chunk 2
+Coordinator: Sent chunk 3
+Coordinator: Sent chunk 4
+Coordinator: Sent chunk 5
+Coordinator: Sent chunk 6
+Coordinator: Sent chunk 7
+Coordinator: Sent chunk 8
+Coordinator: Sent chunk 9
+Coordinator: Sent chunk 10
+Coordinator: Sent chunk 11
+Coordinator: Sent chunk 12
+Coordinator: Sent chunk 13
+Coordinator: Sent chunk 14
+Coordinator: Sent chunk 15
+Coordinator: Sent chunk 16
+Coordinator: Sent chunk 17
+Coordinator: Sent chunk 18
+Coordinator: Sent chunk 19
+Coordinator: Sent chunk 20
+Coordinator: Sent chunk 21
+Coordinator: Sent chunk 22
+Coordinator: Sent chunk 23
+Coordinator: Sent chunk 24
+Coordinator: Sent chunk 25
+Coordinator: Sent chunk 26
+Coordinator: Sent chunk 27
+Coordinator: Sent chunk 28
+Coordinator: Sent chunk 29
+Coordinator: Sent chunk 30
+Coordinator: Sent chunk 31
+Coordinator: Sent chunk 32
+Coordinator: Sent chunk 33
+Coordinator: Sent chunk 34
+Coordinator: Sent chunk 35
+Coordinator: Sent chunk 36
+Coordinator: Sent chunk 37
+Coordinator: Sent chunk 38
+Coordinator: Sent chunk 39
+Coordinator: Sent chunk 40
+Coordinator: Sent chunk 41
+Coordinator: Sent chunk 42
+Coordinator: Sent chunk 43
+Coordinator: Sent chunk 44
+Coordinator: Sent chunk 45
+Coordinator: Sent chunk 46
+Coordinator: Sent chunk 47
+Coordinator: Sent chunk 48
+Coordinator: Sent chunk 49
+Coordinator: Sending termination signals...
+Coordinator: Waiting for 50 results...
+Worker 2: Received fitted vectorizer with 100 terms
+Worker 2: Processing chunk 1
+Worker 2: Processed chunk 1 (total: 1)
+Worker 2: Processing chunk 4
+Coordinator: Received result for chunk 1 (1/50)
+Worker 2: Processed chunk 4 (total: 2)
+Worker 2: Processing chunk 7
+Coordinator: Received result for chunk 4 (2/50)
+Worker 2: Processed chunk 7 (total: 3)
+Worker 2: Processing chunk 10
+Coordinator: Received result for chunk 7 (3/50)
+Worker 2: Processed chunk 10 (total: 4)
+Worker 2: Processing chunk 13
+Coordinator: Received result for chunk 10 (4/50)
+Worker 2: Processed chunk 13 (total: 5)
+Worker 2: Processing chunk 16
+Coordinator: Received result for chunk 13 (5/50)
+Worker 2: Processed chunk 16 (total: 6)
+Worker 2: Processing chunk 19
+Coordinator: Received result for chunk 16 (6/50)
+Worker 2: Processed chunk 19 (total: 7)
+Worker 2: Processing chunk 22
+Coordinator: Received result for chunk 19 (7/50)
+Worker 2: Processed chunk 22 (total: 8)
+Worker 2: Processing chunk 25
+Coordinator: Received result for chunk 22 (8/50)
+Worker 2: Processed chunk 25 (total: 9)
+Worker 2: Processing chunk 28
+Coordinator: Received result for chunk 25 (9/50)
+Worker 2: Processed chunk 28 (total: 10)
+Worker 2: Processing chunk 31
+Coordinator: Received result for chunk 28 (10/50)
+Worker 2: Processed chunk 31 (total: 11)
+Worker 2: Processing chunk 34
+Coordinator: Received result for chunk 31 (11/50)
+Worker 2: Processed chunk 34 (total: 12)
+Worker 2: Processing chunk 37
+Coordinator: Received result for chunk 34 (12/50)
+Worker 2: Processed chunk 37 (total: 13)
+Worker 2: Processing chunk 40
+Coordinator: Received result for chunk 37 (13/50)
+Worker 2: Processed chunk 40 (total: 14)
+Worker 2: Processing chunk 43
+Coordinator: Received result for chunk 40 (14/50)
+Worker 2: Processed chunk 43 (total: 15)
+Worker 2: Processing chunk 46
+Coordinator: Received result for chunk 43 (15/50)
+Worker 2: Processed chunk 46 (total: 16)
+Worker 2: Processing chunk 49
+Coordinator: Received result for chunk 46 (16/50)
+Worker 2: Processed chunk 49 (total: 17)
+Worker 2: Received termination signal, exiting
+Worker 2: Shutting down after processing 17 chunks
+Coordinator: Received result for chunk 49 (17/50)
+Worker 3: Received fitted vectorizer with 100 terms
+Worker 3: Processing chunk 2
+Worker 1: Received fitted vectorizer with 100 terms
+Worker 1: Processing chunk 0
+Worker 3: Processed chunk 2 (total: 1)
+Worker 3: Processing chunk 5
+Coordinator: Received result for chunk 2 (18/50)
+Worker 1: Processed chunk 0 (total: 1)
+Coordinator: Received result for chunk 0 (19/50)
+Worker 1: Processing chunk 3
+Worker 1: Processed chunk 3 (total: 2)
+Worker 1: Processing chunk 6
+Worker 3: Processed chunk 5 (total: 2)
+Coordinator: Received result for chunk 3 (20/50)
+Worker 3: Processing chunk 8
+Coordinator: Received result for chunk 5 (21/50)
+Worker 1: Processed chunk 6 (total: 3)
+Worker 1: Processing chunk 9
+Coordinator: Received result for chunk 6 (22/50)
+Worker 3: Processed chunk 8 (total: 3)
+Worker 3: Processing chunk 11
+Coordinator: Received result for chunk 8 (23/50)
+Worker 1: Processed chunk 9 (total: 4)
+Worker 1: Processing chunk 12
+Coordinator: Received result for chunk 9 (24/50)
+Worker 3: Processed chunk 11 (total: 4)
+Worker 3: Processing chunk 14
+Coordinator: Received result for chunk 11 (25/50)
+Worker 3: Processed chunk 14 (total: 5)
+Worker 3: Processing chunk 17
+Coordinator: Received result for chunk 14 (26/50)
+Worker 1: Processed chunk 12 (total: 5)
+Worker 1: Processing chunk 15
+Coordinator: Received result for chunk 12 (27/50)
+Worker 1: Processed chunk 15 (total: 6)
+Worker 1: Processing chunk 18
+Coordinator: Received result for chunk 15 (28/50)
+Worker 3: Processed chunk 17 (total: 6)
+Worker 3: Processing chunk 20
+Coordinator: Received result for chunk 17 (29/50)
+Worker 3: Processed chunk 20 (total: 7)
+Worker 3: Processing chunk 23
+Worker 1: Processed chunk 18 (total: 7)
+Coordinator: Received result for chunk 20 (30/50)
+Worker 1: Processing chunk 21
+Coordinator: Received result for chunk 18 (31/50)
+Worker 1: Processed chunk 21 (total: 8)
+Worker 1: Processing chunk 24
+Coordinator: Received result for chunk 21 (32/50)
+Worker 3: Processed chunk 23 (total: 8)
+Worker 3: Processing chunk 26
+Coordinator: Received result for chunk 23 (33/50)
+Worker 1: Processed chunk 24 (total: 9)
+Worker 1: Processing chunk 27
+Coordinator: Received result for chunk 24 (34/50)
+Worker 3: Processed chunk 26 (total: 9)
+Worker 3: Processing chunk 29
+Coordinator: Received result for chunk 26 (35/50)
+Worker 1: Processed chunk 27 (total: 10)
+Worker 1: Processing chunk 30
+Coordinator: Received result for chunk 27 (36/50)
+Worker 3: Processed chunk 29 (total: 10)
+Worker 3: Processing chunk 32
+Coordinator: Received result for chunk 29 (37/50)
+Worker 1: Processed chunk 30 (total: 11)
+Worker 1: Processing chunk 33
+Coordinator: Received result for chunk 30 (38/50)
+Worker 3: Processed chunk 32 (total: 11)
+Worker 3: Processing chunk 35
+Coordinator: Received result for chunk 32 (39/50)
+Worker 1: Processed chunk 33 (total: 12)
+Worker 1: Processing chunk 36
+Coordinator: Received result for chunk 33 (40/50)
+Worker 3: Processed chunk 35 (total: 12)
+Worker 3: Processing chunk 38
+Coordinator: Received result for chunk 35 (41/50)
+Worker 1: Processed chunk 36 (total: 13)
+Worker 1: Processing chunk 39
+Coordinator: Received result for chunk 36 (42/50)
+Worker 3: Processed chunk 38 (total: 13)
+Worker 3: Processing chunk 41
+Coordinator: Received result for chunk 38 (43/50)
+Worker 1: Processed chunk 39 (total: 14)
+Worker 1: Processing chunk 42
+Coordinator: Received result for chunk 39 (44/50)
+Worker 3: Processed chunk 41 (total: 14)
+Worker 3: Processing chunk 44
+Coordinator: Received result for chunk 41 (45/50)
+Worker 1: Processed chunk 42 (total: 15)
+Worker 1: Processing chunk 45
+Coordinator: Received result for chunk 42 (46/50)
+Worker 3: Processed chunk 44 (total: 15)
+Worker 3: Processing chunk 47
+Coordinator: Received result for chunk 44 (47/50)
+Worker 1: Processed chunk 45 (total: 16)
+Worker 1: Processing chunk 48
+Coordinator: Received result for chunk 45 (48/50)
+Worker 3: Processed chunk 47 (total: 16)
+Worker 3: Received termination signal, exiting
+Worker 3: Shutting down after processing 16 chunks
+Coordinator: Received result for chunk 47 (49/50)
+Worker 1: Processed chunk 48 (total: 17)
+Worker 1: Received termination signal, exiting
+Worker 1: Shutting down after processing 17 chunks
+Coordinator: Received result for chunk 48 (50/50)
+Coordinator: Saved 50000 rows to features.parquet
+Coordinator: Value range: [0.0, 0.799782289255994]
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ cd /home/user/data
+[?2004l[?2004hI have no name!@199a2e4cfacc:~/data$ ls -lh *.parquet
+[?2004l-rw-r--r-- 1 1000 root  15M May  5 06:11 features.parquet
+-rwxrwxrwx 1 1000 1000 4.8M May  5 06:08 raw.parquet
+[?2004hI have no name!@199a2e4cfacc:~/data$ python3 << 'EOF'
+[?2004l[?2004h> import pandas as pd
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> 
+[?2004l[?2004h> # Load the distributed output
+[?2004l[?2004h> df = pd.read_parquet('features.parquet')
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"Row count: {len(df)}")
+[?2004l[?2004h> print(f"Column count: {len(df.columns)}")
+[?2004l[?2004h> print(f"Columns: {list(df.columns)[:10]}...")  # Show first 10 feature names
+[?2004l[?2004h> 
+[?2004l[?2004h> # Check value ranges
+[?2004l[?2004h> min_val = df.values.min()
+[?2004l[?2004h> max_val = df.values.max()
+[?2004l[?2004h> print(f"\nValue range: [{min_val}, {max_val}]")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Verify all values are valid
+[?2004l[?2004h> if min_val < 0:
+[?2004l[?2004h>     print("ERROR: Found negative tf-idf values!")
+[?2004l[?2004h> else:
+[?2004l[?2004h>     print("✓ All values >= 0")
+[?2004l[?2004h> 
+[?2004l[?2004h> if max_val > 1.0:
+[?2004l[?2004h>     print("ERROR: Found tf-idf values > 1!")
+[?2004l[?2004h> else:
+[?2004l[?2004h>     print("✓ All values <= 1")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Check for NaN values
+[?2004l[?2004h> nan_count = df.isna().sum().sum()
+[?2004l[?2004h> print(f"\nNaN count: {nan_count}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Show sample statistics
+[?2004l[?2004h> print(f"\nSample statistics:")
+[?2004l[?2004h> print(f"Mean: {df.values.mean():.6f}")
+[?2004l[?2004h> print(f"Std: {df.values.std():.6f}")
+[?2004l[?2004h> print(f"Non-zero values: {np.count_nonzero(df.values)} / {df.size} ({100*np.count_nonzero(df.values)/df.size:.2f}%)")
+[?2004l[?2004h> 
+[?2004l[?2004h> print("\n✓ Distributed pipeline output looks correct!")
+[?2004l[?2004h> EOF
+[?2004lRow count: 50000
+Column count: 100
+Columns: ['accuracy', 'activation', 'alerting', 'algorithm', 'analysis', 'api', 'authentication', 'authorization', 'batch', 'business']...
+
+Value range: [0.0, 0.799782289255994]
+✓ All values >= 0
+✓ All values <= 1
+
+NaN count: 0
+
+Sample statistics:
+Mean: 0.046741
+Std: 0.088404
+Non-zero values: 1263973 / 5000000 (25.28%)
+
+✓ Distributed pipeline output looks correct!
+[?2004hI have no name!@199a2e4cfacc:~/data$ cd /home/user/pipeline
+[?2004l[?2004hI have no name!@199a2e4cfacc:~/pipeline$ python3 single.py
+[?2004lLoaded 50000 rows
+Saved 50000 rows to features_reference.parquet
+Value range: [0.0, 0.799782289255994]
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ python3 << 'EOF'
+[?2004l\n✓✓✓ PERFECT MATCH! Distributed and reference outputs are identical.")
+    elif max_diff < 1e-6:
+        print("\n✓✓ Excellent match (within floating point precision)")
+    else:
+        print(f"\n⚠ Some differences found (max: {max_diff})")
+else:
+    print("✗ Column names don't match!")
+    print(f"Distributed only: {set(df_distributed.columns) - set(df_reference.columns)}")
+    print(f"Reference only: {set(df_reference.columns) - set(df_distributed.columns)}")
+EOF
+[?2004h> import pandas as pd
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> 
+[?2004l[?2004h> # Load both outputs
+[?2004l[?2004h> df_distributed = pd.read_parquet('/home/user/data/features.parquet')
+[?2004l[?2004h> df_reference = pd.read_parquet('/home/user/data/features_reference.parquet')
+[?2004l[?2004h> 
+[?2004l[?2004h> print("Comparing distributed vs reference implementation:")
+[?2004l[?2004h> print(f"Distributed: {len(df_distributed)} rows, {len(df_distributed.columns)} columns")
+[?2004l[?2004h> print(f"Reference:   {len(df_reference)} rows, {len(df_reference.columns)} columns")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Check if columns match
+[?2004l[?2004h> if set(df_distributed.columns) == set(df_reference.columns):
+[?2004l[?2004h>     print("✓ Column names match")
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Reorder distributed to match reference column order
+[?2004l[?2004h>     df_distributed = df_distributed[df_reference.columns]
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Compare values
+[?2004l[?2004h>     diff = np.abs(df_distributed.values - df_reference.values)
+[?2004l[?2004h>     max_diff = diff.max()
+[?2004l[?2004h>     mean_diff = diff.mean()
+[?2004l[?2004h>     
+[?2004l[?2004h>     print(f"\nValue differences:")
+[?2004l[?2004h>     print(f"Max difference: {max_diff:.10f}")
+[?2004l[?2004h>     print(f"Mean difference: {mean_diff:.10f}")
+[?2004l[?2004h>     
+[?2004l[?2004h>     if max_diff < 1e-10:
+[?2004l[?2004h>         print("\n✓✓✓ PERFECT MATCH! Distributed and reference outputs are identical.")
+[?2004l[?2004h>     elif max_diff < 1e-6:
+[?2004l[?2004h>         print("\n✓✓ Excellent match (within floating point precision)")
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         print(f"\n⚠ Some differences found (max: {max_diff})")
+[?2004l[?2004h> else:
+[?2004l[?2004h>     print("✗ Column names don't match!")
+[?2004l[?2004h>     print(f"Distributed only: {set(df_distributed.columns) - set(df_reference.columns)}")
+[?2004l[?2004h>     print(f"Reference only: {set(df_reference.columns) - set(df_distributed.columns)}")
+[?2004l[?2004h> EOF
+[?2004lComparing distributed vs reference implementation:
+Distributed: 50000 rows, 100 columns
+Reference:   50000 rows, 100 columns
+✓ Column names match
+
+Value differences:
+Max difference: 0.0000000000
+Mean difference: 0.0000000000
+
+✓✓✓ PERFECT MATCH! Distributed and reference outputs are identical.
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ cat > BUGFIX_SUMMARY.md << 'EOF'
+[?2004lts = df["text"].tolist()
+vectorizer.fit(texts)  # Build vocabulary from all 50k documents
+
+# Send fitted vectorizer to all workers
+for i in range(3):
+    sender.send(pickle.dumps(("VECTORIZER", vectorizer)))
+```
+
+### Fix 2: Transform-Only in Workers (worker.py)
+```python
+# Receive fitted vectorizer from coordinator
+msg_type, vectorizer = pickle.loads(receiver.recv())
+
+# Use transform() only - don't fit!
+tfidf_matrix = vectorizer.transform(texts)  # Uses shared vocabulary
+```
+
+### Fix 3: Startup Synchronization (coordinator.py)
+```python
+# Wait for workers to connect
+time.sleep(2)
+
+# Send vectorizer first
+for i in range(3):
+    sender.send(vectorizer_msg)
+time.sleep(0.5)
+
+# Then send chunks
+for chunk_id, chunk in enumerate(chunks):
+    sender.send(chunk_msg)
+```
+
+### Fix 4: Proper Result Tracking (coordinator.py)
+```python
+# Use dict to track results by chunk_id
+results = {}
+while len(results) < num_chunks:
+    chunk_id, result_df = pickle.loads(receiver.recv())
+    results[chunk_id] = result_df
+
+# Check for missing chunks
+if len(results) < num_chunks:
+    missing = set(range(num_chunks)) - set(results.keys())
+    print(f"Missing chunks: {missing}")
+
+# Aggregate in correct order
+ordered_results = [results[i] for i in sorted(results.keys())]
+final_df = pd.concat(ordered_results, ignore_index=True)
+```
+
+### Fix 5: Proper Termination (both files)
+```python
+# Coordinator sends DONE signals
+for i in range(3):
+    sender.send(pickle.dumps(("DONE", None, None)))
+
+# Workers handle DONE signal
+if msg_type == "DONE":
+    break
+```
+
+## Results
+
+**Before fixes:**
+- Output: 12,000 rows
+- Value range: [0.0, >1.0] ❌
+- Comparison to reference: Failed
+
+**After fixes:**
+- Output: 50,000 rows ✓
+- Value range: [0.0, 0.7998] ✓
+- Comparison to reference: **PERFECT MATCH (0.0 difference)** ✓
+
+## Key Lesson
+
+For distributed TF-IDF (or any ML feature extraction):
+1. **Fit once on all data** to build vocabulary/statistics
+2. **Share the fitted model** with all workers
+3. **Workers only transform** using the shared model
+4. Never fit on subsets - it breaks the mat[?2004h> # Distributed TF-IDF Pipeline Bug Fix Summary
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Problem
+[?2004l[?2004h> The distributed feature extraction pipeline was producing incorrect output:
+[?2004l[?2004h> - Only 12k rows instead of 50k (missing data)
+[?2004l[?2004h> - Invalid tf-idf scores > 1.0 (mathematically impossible)
+[?2004l[?2004h> - No errors or crashes (silent data corruption)
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Root Causes Identified
+[?2004l[?2004h> 
+[?2004l[?2004h> ### 1. **Incorrect Vocabulary Management (CRITICAL)**
+[?2004l[?2004h> Each worker was calling `vectorizer.fit_transform()` on individual chunks:
+[?2004l[?2004h> ```python
+[?2004l[?2004h> # WRONG - each chunk gets its own vocabulary
+[?2004l[?2004h> vectorizer = TfidfVectorizer(max_features=100)
+[?2004l[?2004h> tfidf_matrix = vectorizer.fit_transform(texts)  # Fits on chunk only!
+[?2004l[?2004h> ```
+[?2004l[?2004h> 
+[?2004l[?2004h> **Why this caused invalid scores:**
+[?2004l[?2004h> - TF-IDF requires a unified vocabulary across ALL documents
+[?2004l[?2004h> - Each chunk built its own vocabulary with different terms
+[?2004l[?2004h> - IDF (inverse document frequency) was calculated only within each chunk
+[?2004l[?2004h> - This produced invalid scores and incompatible feature columns
+[?2004l[?2004h> 
+[?2004l[?2004h> ### 2. **Column Misalignment**
+[?2004l[?2004h> Workers returned DataFrames with different column names (different vocabularies):
+[?2004l[?2004h> - Worker 1 chunk: columns ['apple', 'banana', 'cherry', ...]
+[?2004l[?2004h> - Worker 2 chunk: columns ['dog', 'elephant', 'fox', ...]
+[?2004l[?2004h> - Coordinator's `pd.concat()` created union of all columns, filling missing values
+[?2004l[?2004h> - Result: sparse, misaligned data with wrong dimensions
+[?2004l[?2004h> 
+[?2004l[?2004h> ### 3. **Message Loss at Startup**
+[?2004l[?2004h> Coordinator sent chunks immediately after binding sockets:
+[?2004l[?2004h> ```python
+[?2004l[?2004h> sender.bind("tcp://127.0.0.1:5557")
+[?2004l[?2004h> # Immediately sends chunks - workers not connected yet!
+[?2004l[?2004h> for chunk in chunks:
+[?2004l[?2004h>     sender.send(chunk)
+[?2004l[?2004h> ```
+[?2004l[?2004h> ZeroMQ PUSH sockets can drop messages if no PULL sockets are connected.
+[?2004l[?2004h> 
+[?2004l[?2004h> ### 4. **Poor Result Tracking**
+[?2004l[?2004h> Coordinator used a list instead of dict for results:
+[?2004l[?2004h> ```python
+[?2004l[?2004h> results = []  # Can't detect missing chunks
+[?2004l[?2004h> results.append(result_df)  # No chunk ID tracking
+[?2004l[?2004h> ```
+[?2004l[?2004h> Timeout-based completion meant lost chunks went undetected.
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Fixes Applied
+[?2004l[?2004h> 
+[?2004l[?2004h> ### Fix 1: Unified Vocabulary (coordinator.py)
+[?2004l[?2004h> ```python
+[?2004l[?2004h> # Fit vectorizer on ALL data ONCE
+[?2004l[?2004h> vectorizer = TfidfVectorizer(max_features=100)
+[?2004l[?2004h> texts = df["text"].tolist()
+[?2004l[?2004h> vectorizer.fit(texts)  # Build vocabulary from all 50k documents
+[?2004l[?2004h> 
+[?2004l[?2004h> # Send fitted vectorizer to all workers
+[?2004l[?2004h> for i in range(3):
+[?2004l[?2004h>     sender.send(pickle.dumps(("VECTORIZER", vectorizer)))
+[?2004l[?2004h> ```
+[?2004l[?2004h> 
+[?2004l[?2004h> ### Fix 2: Transform-Only in Workers (worker.py)
+[?2004l[?2004h> ```python
+[?2004l[?2004h> # Receive fitted vectorizer from coordinator
+[?2004l[?2004h> msg_type, vectorizer = pickle.loads(receiver.recv())
+[?2004l[?2004h> 
+[?2004l[?2004h> # Use transform() only - don't fit!
+[?2004l[?2004h> tfidf_matrix = vectorizer.transform(texts)  # Uses shared vocabulary
+[?2004l[?2004h> ```
+[?2004l[?2004h> 
+[?2004l[?2004h> ### Fix 3: Startup Synchronization (coordinator.py)
+[?2004l[?2004h> ```python
+[?2004l[?2004h> # Wait for workers to connect
+[?2004l[?2004h> time.sleep(2)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Send vectorizer first
+[?2004l[?2004h> for i in range(3):
+[?2004l[?2004h>     sender.send(vectorizer_msg)
+[?2004l[?2004h> time.sleep(0.5)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Then send chunks
+[?2004l[?2004h> for chunk_id, chunk in enumerate(chunks):
+[?2004l[?2004h>     sender.send(chunk_msg)
+[?2004l[?2004h> ```
+[?2004l[?2004h> 
+[?2004l[?2004h> ### Fix 4: Proper Result Tracking (coordinator.py)
+[?2004l[?2004h> ```python
+[?2004l[?2004h> # Use dict to track results by chunk_id
+[?2004l[?2004h> results = {}
+[?2004l[?2004h> while len(results) < num_chunks:
+[?2004l[?2004h>     chunk_id, result_df = pickle.loads(receiver.recv())
+[?2004l[?2004h>     results[chunk_id] = result_df
+[?2004l[?2004h> 
+[?2004l[?2004h> # Check for missing chunks
+[?2004l[?2004h> if len(results) < num_chunks:
+[?2004l[?2004h>     missing = set(range(num_chunks)) - set(results.keys())
+[?2004l[?2004h>     print(f"Missing chunks: {missing}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Aggregate in correct order
+[?2004l[?2004h> ordered_results = [results[i] for i in sorted(results.keys())]
+[?2004l[?2004h> final_df = pd.concat(ordered_results, ignore_index=True)
+[?2004l[?2004h> ```
+[?2004l[?2004h> 
+[?2004l[?2004h> ### Fix 5: Proper Termination (both files)
+[?2004l[?2004h> ```python
+[?2004l[?2004h> # Coordinator sends DONE signals
+[?2004l[?2004h> for i in range(3):
+[?2004l[?2004h>     sender.send(pickle.dumps(("DONE", None, None)))
+[?2004l[?2004h> 
+[?2004l[?2004h> # Workers handle DONE signal
+[?2004l[?2004h> if msg_type == "DONE":
+[?2004l[?2004h>     break
+[?2004l[?2004h> ```
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Results
+[?2004l[?2004h> 
+[?2004l[?2004h> **Before fixes:**
+[?2004l[?2004h> - Output: 12,000 rows
+[?2004l[?2004h> - Value range: [0.0, >1.0] ❌
+[?2004l[?2004h> - Comparison to reference: Failed
+[?2004l[?2004h> 
+[?2004l[?2004h> **After fixes:**
+[?2004l[?2004h> - Output: 50,000 rows ✓
+[?2004l[?2004h> - Value range: [0.0, 0.7998] ✓
+[?2004l[?2004h> - Comparison to reference: **PERFECT MATCH (0.0 difference)** ✓
+[?2004l[?2004h> 
+[?2004l[?2004h> ## Key Lesson
+[?2004l[?2004h> 
+[?2004l[?2004h> For distributed TF-IDF (or any ML feature extraction):
+[?2004l[?2004h> 1. **Fit once on all data** to build vocabulary/statistics
+[?2004l[?2004h> 2. **Share the fitted model** with all workers
+[?2004l[?2004h> 3. **Workers only transform** using the shared model
+[?2004l[?2004h> 4. Never fit on subsets - it breaks the mathematical assumptions!
+[?2004l[?2004h> EOF
+[?2004l[?2004hI have no name!@199a2e4cfacc:~/pipeline$ ls -la
+[?2004ltotal 48
+drwxrwxrwx 1 1000 1000 4096 May  5 06:12 .
+drwxrwxrwx 1 1000 1000 4096 May  5 06:09 ..
+-rw-r--r-- 1 1000 root 4118 May  5 06:12 BUGFIX_SUMMARY.md
+-rwxrwxrwx 1 1000 1000 3689 May  5 06:10 coordinator.py
+-rwxr-xr-x 1 1000 root 2175 May  5 06:10 coordinator.py.bak
+-rwxrwxrwx 1 1000 1000  485 May  5 06:08 run.sh
+-rwxrwxrwx 1 1000 1000 1177 May  5 06:08 single.py
+-rwxrwxrwx 1 1000 1000 2634 May  5 06:10 worker.py
+-rwxr-xr-x 1 1000 root 1921 May  5 06:10 worker.py.bak
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo '=== FINAL VERIFICATION ==='
+[?2004l=== FINAL VERIFICATION ===
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo 'Testing the fixed distributed pipeline...'
+[?2004lTesting the fixed distributed pipeline...
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ rm -f /home/user/data/features.parquet
+[?2004l[?2004hI have no name!@199a2e4cfacc:~/pipeline$ bash run.sh 2>&1 | grep -E '(Coordinator: (Loaded|Saved|Value range)|Worker.*Shutting down)'
+[?2004lWorker 2: Shutting down after processing 16 chunks
+Worker 1: Shutting down after processing 17 chunks
+Worker 3: Shutting down after processing 17 chunks
+Coordinator: Loaded 50000 rows
+Coordinator: Saved 50000 rows to features.parquet
+Coordinator: Value range: [0.0, 0.799782289255994]
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ ls -lh /home/user/data/features.parquet
+[?2004l-rw-r--r-- 1 1000 root 15M May  5 06:12 /home/user/data/features.parquet
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo ''
+[?2004l
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo '========================================'
+[?2004l========================================
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo 'TASK COMPLETED SUCCESSFULLY'
+[?2004lTASK COMPLETED SUCCESSFULLY
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo '========================================'
+[?2004l========================================
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo ''
+[?2004l
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo 'Fixed Issues:'
+[?2004lFixed Issues:
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo '1. ✓ Unified vocabulary - coordinator fits on all data'
+[?2004l1. ✓ Unified vocabulary - coordinator fits on all data
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo '2. ✓ Workers use transform() only (not fit_transform())'
+[?2004l2. ✓ Workers use transform() only (not fit_transform())
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo '3. ✓ Startup synchronization prevents message loss'
+[?2004l3. ✓ Startup synchronization prevents message loss
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo '4. ✓ Proper chunk tracking with dict (not list)'
+[?2004l4. ✓ Proper chunk tracking with dict (not list)
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo '5. ✓ Clean termination with DONE signals'
+[?2004l5. ✓ Clean termination with DONE signals
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo ''
+[?2004l
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo 'Results:'
+[?2004lResults:
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo '- Output: 50,000 rows (was 12,000)'
+[?2004l- Output: 50,000 rows (was 12,000)
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo '- Value range: [0.0, 0.7998] (was >1.0)'
+[?2004l- Value range: [0.0, 0.7998] (was >1.0)
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo '- Match with reference: PERFECT (0.0 difference)'
+[?2004l- Match with reference: PERFECT (0.0 difference)
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo ''
+[?2004l
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo 'Files modified:'
+[?2004lFiles modified:
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo '- coordinator.py (backed up to coordinator.py.bak)'
+[?2004l- coordinator.py (backed up to coordinator.py.bak)
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo '- worker.py (backed up to worker.py.bak)'
+[?2004l- worker.py (backed up to worker.py.bak)
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo '- Created: BUGFIX_SUMMARY.md'
+[?2004l- Created: BUGFIX_SUMMARY.md
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ echo ''
+[?2004l
+[?2004hI have no name!@199a2e4cfacc:~/pipeline$ 

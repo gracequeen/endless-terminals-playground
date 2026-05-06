@@ -1,0 +1,43 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@c9da50e81b0b:~/infra-configs$ cat .git/hooks/pre-commit
+#!/bin/bash
+# Pre-commit hook to block world-readable private keys
+
+# Get list of staged files
+staged_files=$(git diff --cached --name-only --diff-filter=ACM)
+
+exit_code=0
+
+for file in $staged_files; do
+    # Check if file matches *.pem or *.key
+    if [[ "$file" == *.pem ]] || [[ "$file" == *.key ]]; then
+        # Check if file exists in working tree
+        if [ -f "$file" ]; then
+            # Get file permissions
+            perms=$(stat -c "%a" "$file")
+            # Check if world-readable (mode 0644 or looser)
+            # 0644 = 644, check if group or other have read permissions beyond owner
+            other_read=$((perms % 10))
+            group_read=$(((perms / 10) % 10))
+
+            # If other has read (4, 5, 6, 7) or group has read (4, 5, 6, 7)
+            # and the overall mode is 644 or looser
+            if [ "$perms" -ge 644 ]; then
+                if [ $((other_read & 4)) -ne 0 ] || [ $((group_read & 4)) -ne 0 ]; then
+                    echo "ERROR: $file has world-readable permissions ($perms). Private keys must not be world-readable."
+                    exit_code=1
+                fi
+            fi
+        fi
+    fi
+done
+
+exit $exit_code
+user@c9da50e81b0b:~/infra-configs$ ls -la .git/hooks/pre-commit
+-rwxr-xr-x 1 user user 1181 May  5 23:30 .git/hooks/pre-commit
+user@c9da50e81b0b:~/infra-configs$

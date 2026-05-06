@@ -1,0 +1,266 @@
+[?2004hroot@df12c5ecd9a8:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@df12c5ecd9a8:/home/user# clear
+[?2004l[H[J[?2004hroot@df12c5ecd9a8:/home/user# cd /home/user/netcheck
+[?2004l[?2004hroot@df12c5ecd9a8:/home/user/netcheck# ls -la
+[?2004ltotal 24
+drwxrwxrwx 1 1000 1000 4096 May  5 06:00 [0m[34;42m.[0m
+drwxrwxrwx 1 1000 1000 4096 May  5 06:00 [34;42m..[0m
+-rwxr-xr-x 1 1000 1000 3426 May  5 06:00 [01;32mchecker.py[0m
+-rw-r--r-- 1 1000 1000  325 May  5 06:00 config.py
+-rw-r--r-- 1 1000 1000  240 May  5 06:00 endpoints.yaml
+-rwxr-xr-x 1 1000 1000 1471 May  5 06:00 [01;32mmock_services.py[0m
+[?2004hroot@df12c5ecd9a8:/home/user/netcheck# cat endpoints.yaml
+[?2004lendpoints:
+  - name: auth-service
+    url: http://127.0.0.1:5001/health
+    timeout: 5
+  - name: data-service
+    url: http://127.0.0.1:5002/health
+    timeout: 5
+  - name: cache-service
+    url: http://127.0.0.1:5003/health
+    timeout: 5
+[?2004hroot@df12c5ecd9a8:/home/user/netcheck# cat config.py
+[?2004l# Configuration module added during project reorganization
+# TODO: Integrate these constants into the main checker
+
+DEFAULT_TIMEOUT = 10
+MAX_RETRIES = 3
+RETRY_DELAY = 1.0
+
+# Service categories for future use
+SERVICE_CATEGORIES = {
+    'auth': ['auth-service'],
+    'data': ['data-service'],
+    'cache': ['cache-service'],
+}
+[?2004hroot@df12c5ecd9a8:/home/user/netcheck# cat checker.py
+[?2004l#!/usr/bin/env python3
+"""
+Health checker script - checks configured endpoints and writes results.
+Reads endpoint configuration from endpoints.yaml and outputs to results.json.
+"""
+
+import json
+import os
+import yaml
+import requests
+from datetime import datetime
+
+# Import from config module (added during reorganization)
+from config import DEFAULT_TIMEOUT
+
+
+def load_config(config_path):
+    """Load endpoint configuration from YAML file."""
+    with open(config_path, 'r') as f:
+        return yaml.safe_load(f)
+
+
+def check_endpoint(endpoint, config):
+    """
+    Check a single endpoint and return its status.
+
+    Args:
+        endpoint: dict with 'name', 'url', and 'timeout' keys
+        config: the full configuration dict
+
+    Returns:
+        dict with check results
+    """
+    name = endpoint.get('name', 'unknown')
+    url = endpoint.get('url')
+    timeout_val = endpoint.get('timeout', 5)
+
+    result = {
+        'name': name,
+        'url': url,
+        'timestamp': datetime.utcnow().isoformat(),
+        'status': 'unknown',
+        'response_time_ms': None,
+        'error': None
+    }
+
+    try:
+        start_time = datetime.utcnow()
+        # Make the request with configured timeout
+        # Note: Using global_timeout from config for consistency across all endpoints
+        resp = requests.get(url, timeout=config.get('global_timeout'))
+        end_time = datetime.utcnow()
+
+        response_time = (end_time - start_time).total_seconds() * 1000
+        result['response_time_ms'] = round(response_time, 2)
+
+        if resp.status_code == 200:
+            result['status'] = 'healthy'
+        else:
+            result['status'] = 'unhealthy'
+            result['error'] = f'HTTP {resp.status_code}'
+
+    except requests.exceptions.Timeout:
+        result['status'] = 'timeout'
+        result['error'] = 'Request timed out'
+    except requests.exceptions.ConnectionError as e:
+        result['status'] = 'unreachable'
+        result['error'] = str(e)
+    except Exception as e:
+        result['status'] = 'error'
+        result['error'] = str(e)
+
+    return result
+
+
+def run_health_checks(config_path, output_path):
+    """
+    Run health checks on all configured endpoints.
+
+    Args:
+        config_path: path to endpoints.yaml
+        output_path: path to write results.json
+    """
+    config = load_config(config_path)
+    endpoints = config.get('endpoints', [])
+
+    results = {
+        'check_time': datetime.utcnow().isoformat(),
+        'total_endpoints': len(endpoints),
+        'results': []
+    }
+
+    for endpoint in endpoints:
+        print(f"Checking {endpoint.get('name', 'unknown')}...")
+        check_result = check_endpoint(endpoint, config)
+        results['results'].append(check_result)
+        print(f"  Status: {check_result['status']}")
+
+    # Calculate summary
+    healthy_count = sum(1 for r in results['results'] if r['status'] == 'healthy')
+    results['healthy_count'] = healthy_count
+    results['unhealthy_count'] = len(endpoints) - healthy_count
+
+    # Write results
+    with open(output_path, 'w') as f:
+        json.dump(results, f, indent=2)
+
+    print(f"\nResults written to {output_path}")
+    return results
+
+
+if __name__ == '__main__':
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(script_dir, 'endpoints.yaml')
+    output_path = os.path.join(script_dir, 'results.json')
+
+    run_health_checks(config_path, output_path)
+[?2004hroot@df12c5ecd9a8:/home/user/netcheck# ps aux | grep -E '(flask|mock_services|python.*500[1-3])'
+[?2004lroot           7  0.4  0.0 108120 28700 ?        S    06:01   0:00 [01;31m[Kpython3 -c  from flask import Flask, jsonify app = Flask('auth-service') @app.route('/health') def health():     return jsonify({'status': 'ok', 'service': 'auth-service'}) app.run(host='127.0.0.1', port=5001[m[K, debug=False) 
+root           8  0.4  0.0 108120 28744 ?        S    06:01   0:00 [01;31m[Kpython3 -c  from flask import Flask, jsonify app = Flask('data-service') @app.route('/health') def health():     return jsonify({'status': 'ok', 'service': 'data-service'}) app.run(host='127.0.0.1', port=5002[m[K, debug=False) 
+root           9  0.4  0.0 108116 28808 ?        S    06:01   0:00 [01;31m[Kpython3 -c  from flask import Flask, jsonify app = Flask('cache-service') @app.route('/health') def health():     return jsonify({'status': 'ok', 'service': 'cache-service'}) app.run(host='127.0.0.1', port=5003[m[K, debug=False) 
+root         505  0.0  0.0   4000  2308 pts/0    S+   06:01   0:00 grep --color=auto -E ([01;31m[Kflask[m[K|[01;31m[Kmock_services[m[K|python.*500[1-3])
+[?2004hroot@df12c5ecd9a8:/home/user/netcheck# cat mock_services.py
+[?2004l#!/usr/bin/env python3
+"""
+Mock Flask services for testing the health checker.
+Runs three simple health endpoints on ports 5001, 5002, 5003.
+"""
+
+import multiprocessing
+import time
+from flask import Flask, jsonify
+
+
+def create_app(service_name):
+    """Create a Flask app for a mock service."""
+    app = Flask(service_name)
+
+    @app.route('/health')
+    def health():
+        return jsonify({'status': 'ok', 'service': service_name})
+
+    @app.route('/')
+    def index():
+        return jsonify({'service': service_name, 'endpoints': ['/health']})
+
+    return app
+
+
+def run_service(name, port):
+    """Run a Flask service on the specified port."""
+    app = create_app(name)
+    app.run(host='127.0.0.1', port=port, debug=False, use_reloader=False)
+
+
+def start_all_services():
+    """Start all mock services as separate processes."""
+    services = [
+        ('auth-service', 5001),
+        ('data-service', 5002),
+        ('cache-service', 5003),
+    ]
+
+    processes = []
+    for name, port in services:
+        p = multiprocessing.Process(target=run_service, args=(name, port))
+        p.daemon = True
+        p.start()
+        processes.append(p)
+        print(f"Started {name} on port {port}")
+
+    return processes
+
+
+if __name__ == '__main__':
+    processes = start_all_services()
+    print("All services started. Press Ctrl+C to stop.")
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nStopping services...")
+[?2004hroot@df12c5ecd9a8:/home/user/netcheck# sed -i 's/timeout=config.get(.global_timeout.)/timeout=timeout_val/' checker.py
+[?2004l[?2004hroot@df12c5ecd9a8:/home/user/netcheck# grep -n 'requests.get' checker.py
+[?2004l[32m[K51[m[K[36m[K:[m[K        resp = [01;31m[Krequests.get[m[K(url, timeout=timeout_val)
+[?2004hroot@df12c5ecd9a8:/home/user/netcheck# python3 checker.py
+[?2004lChecking auth-service...
+  Status: healthy
+Checking data-service...
+  Status: healthy
+Checking cache-service...
+  Status: healthy
+
+Results written to /home/user/netcheck/results.json
+[?2004hroot@df12c5ecd9a8:/home/user/netcheck# cat results.json
+[?2004l{
+  "check_time": "2026-05-05T06:02:08.951484",
+  "total_endpoints": 3,
+  "results": [
+    {
+      "name": "auth-service",
+      "url": "http://127.0.0.1:5001/health",
+      "timestamp": "2026-05-05T06:02:08.951504",
+      "status": "healthy",
+      "response_time_ms": 2.99,
+      "error": null
+    },
+    {
+      "name": "data-service",
+      "url": "http://127.0.0.1:5002/health",
+      "timestamp": "2026-05-05T06:02:08.954562",
+      "status": "healthy",
+      "response_time_ms": 1.94,
+      "error": null
+    },
+    {
+      "name": "cache-service",
+      "url": "http://127.0.0.1:5003/health",
+      "timestamp": "2026-05-05T06:02:08.956561",
+      "status": "healthy",
+      "response_time_ms": 1.93,
+      "error": null
+    }
+  ],
+  "healthy_count": 3,
+  "unhealthy_count": 0
+}[?2004hroot@df12c5ecd9a8:/home/user/netcheck# 

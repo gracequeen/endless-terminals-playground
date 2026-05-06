@@ -1,0 +1,112 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+root@3d07c991619c:/home/user/project# cat reports/scan-results.json
+{
+  "results": [
+    {
+      "check_id": "python.lang.security.audit.hardcoded-password-default",
+      "path": "src/config/defaults.py",
+      "start": {"line": 12, "col": 1},
+      "end": {"line": 12, "col": 32},
+      "extra": {
+        "message": "Hardcoded password detected",
+        "severity": "WARNING",
+        "metadata": {}
+      }
+    },
+    {
+      "check_id": "python.lang.security.audit.sqli-injection-psycopg2",
+      "path": "src/db/queries.py",
+      "start": {"line": 10, "col": 5},
+      "end": {"line": 10, "col": 65},
+      "extra": {
+        "message": "Possible SQL injection with psycopg2",
+        "severity": "WARNING",
+        "metadata": {}
+      }
+    },
+    {
+      "check_id": "python.lang.security.audit.logging-sensitive-data",
+      "path": "src/utils/logging.py",
+      "start": {"line": 25, "col": 1},
+      "end": {"line": 25, "col": 35},
+      "extra": {
+        "message": "Variable name suggests sensitive data in logs",
+        "severity": "INFO",
+        "metadata": {}
+      }
+    },
+    {
+      "check_id": "python.lang.best-practice.missing-type-hints",
+      "path": "src/utils/helpers.py",
+      "start": {"line": 8, "col": 1},
+      "end": {"line": 10, "col": 50},
+      "extra": {
+        "message": "Function missing type hints",
+        "severity": "INFO",
+        "metadata": {}
+      }
+    }
+  ],
+  "errors": [],
+  "version": "1.45.0"
+}
+root@3d07c991619c:/home/user/project# cat run_scan.sh
+#!/bin/bash
+# SAST scan wrapper script
+# Runs semgrep with our security configuration
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+CONFIG_FILE=".security/scanner-config.yaml"
+REPORT_FILE="reports/scan-results.json"
+
+# Parse config file for settings
+IGNORE_FILE=$(grep -E "^ignore_file:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"' | tr -d "'")
+SEVERITY=$(grep -E "^severity_threshold:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"' | tr -d "'")
+
+echo "Running SAST scan..."
+echo "Config: $CONFIG_FILE"
+echo "Ignore file: $IGNORE_FILE"
+echo "Severity threshold: $SEVERITY"
+
+# Build semgrep command
+SEMGREP_CMD="semgrep --config p/python --json -o $REPORT_FILE"
+
+# Add ignore file if specified
+if [ -n "$IGNORE_FILE" ]; then
+    SEMGREP_CMD="$SEMGREP_CMD --exclude-rules-file $IGNORE_FILE"
+fi
+
+# Add severity threshold
+if [ -n "$SEVERITY" ]; then
+    SEMGREP_CMD="$SEMGREP_CMD --severity $SEVERITY"
+fi
+
+# Add source directory
+SEMGREP_CMD="$SEMGREP_CMD src/"
+
+echo "Executing: $SEMGREP_CMD"
+$SEMGREP_CMD
+
+# Check results
+FINDING_COUNT=$(jq '.results | length' "$REPORT_FILE")
+echo "Scan complete. Found $FINDING_COUNT findings."
+
+# Exit nonzero if there are WARNING or ERROR severity findings
+WARNING_COUNT=$(jq '[.results[] | select(.extra.severity == "WARNING" or .extra.severity == "ERROR")] | length' "$REPORT_FILE")
+if [ "$WARNING_COUNT" -gt 0 ]; then
+    echo "ERROR: $WARNING_COUNT findings at WARNING level or above. Failing scan."
+    exit 1
+fi
+
+echo "Scan passed."
+exit 0
+root@3d07c991619c:/home/user/project#

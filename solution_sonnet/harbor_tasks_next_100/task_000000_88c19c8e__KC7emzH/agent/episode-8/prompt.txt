@@ -1,0 +1,119 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+I have no name!@148def893cbc:~$ cat > pipeline/worker.py << 'EOF'
+feature_names
+                )
+
+                # Send result back
+                result_msg = pickle.dumps((chunk_id, result_df))
+                sender.send(result_msg)
+
+                chunks_processed += 1
+                print(f"Worker {worker_id}: Completed chunk {chunk_id} (total: {chunks_processed})")
+            else:
+                print(f"Worker {worker_id}: Unknown message type: {data[0]}")
+
+        except Exception as e:
+            print(f"Worker {worker_id}: Error: {e}")
+            break
+
+    print(f"Worker {worker_id}: Shutting down after processing {chunks_processed} chunks")
+    receiver.close()
+    sender.close()
+    context.term()
+
+if __name__ == "__main__":
+    main()
+EOF
+> #!/usr/bin/env python3
+> """
+> Worker for distributed tf-idf feature extraction.
+> Receives chunks from coordinator, computes tf-idf, sends results back.
+> """
+> import pickle
+> import sys
+> import zmq
+> import pandas as pd
+>
+> def main():
+>     worker_id = sys.argv[1] if len(sys.argv) > 1 else "0"
+>
+>     context = zmq.Context()
+>
+>     # Socket to receive work from coordinator
+>     receiver = context.socket(zmq.PULL)
+>     receiver.connect("tcp://127.0.0.1:5557")
+>
+>     # Socket to send results to coordinator
+>     sender = context.socket(zmq.PUSH)
+>     sender.connect("tcp://127.0.0.1:5558")
+>
+>     print(f"Worker {worker_id}: Started and connected")
+>
+>     # FIX: Wait to receive the fitted vectorizer first
+>     vectorizer = None
+>     print(f"Worker {worker_id}: Waiting for vectorizer...")
+>
+>     while vectorizer is None:
+>         msg = receiver.recv()
+>         data = pickle.loads(msg)
+>
+>         if data[0] == "VECTORIZER":
+>             vectorizer = data[1]
+>             print(f"Worker {worker_id}: Received fitted vectorizer with {len(vectorizer.get_feature_names_out())} features")
+>             break
+>
+>     chunks_processed = 0
+>
+>     # Process chunks
+>     while True:
+>         try:
+>             msg = receiver.recv()
+>             data = pickle.loads(msg)
+>
+>             if data[0] == "VECTORIZER":
+>                 # Ignore duplicate vectorizer messages
+>                 continue
+>             elif data[0] == "CHUNK":
+>                 chunk_id = data[1]
+>                 chunk_df = data[2]
+>
+>                 print(f"Worker {worker_id}: Processing chunk {chunk_id}")
+>
+>                 # FIX: Use transform() with the shared fitted vectorizer, not fit_transform()
+>                 texts = chunk_df["text"].tolist()
+>                 tfidf_matrix = vectorizer.transform(texts)
+>
+>                 # Convert to DataFrame with feature names as columns
+>                 feature_names = vectorizer.get_feature_names_out()
+>                 result_df = pd.DataFrame(
+>                     tfidf_matrix.toarray(),
+>                     columns=feature_names
+>                 )
+>
+>                 # Send result back
+>                 result_msg = pickle.dumps((chunk_id, result_df))
+>                 sender.send(result_msg)
+>
+>                 chunks_processed += 1
+>                 print(f"Worker {worker_id}: Completed chunk {chunk_id} (total: {chunks_processed})")
+>             else:
+>                 print(f"Worker {worker_id}: Unknown message type: {data[0]}")
+>
+>         except Exception as e:
+>             print(f"Worker {worker_id}: Error: {e}")
+>             break
+>
+>     print(f"Worker {worker_id}: Shutting down after processing {chunks_processed} chunks")
+>     receiver.close()
+>     sender.close()
+>     context.term()
+>
+> if __name__ == "__main__":
+>     main()
+> EOF
+I have no name!@148def893cbc:~$

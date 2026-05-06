@@ -1,0 +1,67 @@
+New Terminal Output:
+
+root@48c8da2125ee:/home/user/services/auth-gateway# cat ./auth-gateway | head -50
+#!/bin/bash
+CONFIG_FILE="${1#-config=}"
+if [ -z "$CONFIG_FILE" ]; then
+    CONFIG_FILE="./config.yaml"
+fi
+if [ "$1" = "-config" ]; then
+    CONFIG_FILE="$2"
+fi
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: auth-gateway starting..."
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: Loading config from $CONFIG_FILE"
+
+SESSION_TTL=$(grep 'session_ttl:' "$CONFIG_FILE" | awk '{print $2}' | tr -d '"' | tr -d "'")
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: Configured session_ttl: $SESSION_TTL"
+
+# Check if session_ttl contains non-numeric characters (the bug)
+if [[ "$SESSION_TTL" =~ [^0-9] ]]; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: Starting health check routine..."
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: Redis connection established"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: Listening on :8080"
+    # Simulate running for a bit then crashing
+    sleep 3
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] FATAL: session pool refresh failed"
+    echo "panic: strconv.Atoi: parsing "$SESSION_TTL": invalid syntax" >&2
+    echo "" >&2
+    echo "goroutine 1 [running]:" >&2
+    echo "main.parseSessionTTL(0xc0000b2000, 0x6, 0x0)" >&2
+    echo "        /app/session/manager.go:147 +0x123" >&2
+    echo "main.refreshSessionPool(0xc0000a4000)" >&2
+    echo "        /app/session/manager.go:89 +0x456" >&2
+    echo "main.main()" >&2
+    echo "        /app/main.go:52 +0x789" >&2
+    exit 1
+fi
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: Starting health check routine..."
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: Redis connection established"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: Listening on :8080"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: Session TTL configured: ${SESSION_TTL}s"
+
+# Keep running
+while true; do
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: Health check OK"
+    sleep 30
+done
+
+# xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+cat: write error: Broken pipe
+root@48c8da2125ee:/home/user/services/auth-gateway#

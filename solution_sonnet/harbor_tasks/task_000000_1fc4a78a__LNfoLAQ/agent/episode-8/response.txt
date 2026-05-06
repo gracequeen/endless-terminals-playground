@@ -1,0 +1,14 @@
+{
+  "analysis": "I've updated check_yaml.py to include a custom DuplicateKeyChecker class that extends yaml.SafeLoader and overrides construct_mapping to detect duplicate keys. However, I need to import collections.abc for the Hashable check. Let me test if this works.",
+  "plan": "I'll add the missing import for collections.abc, then test the updated script with the duplicate key test file to ensure it properly detects duplicate keys.",
+  "commands": [
+    {
+      "keystrokes": "cat > check_yaml.py << 'EOF'\n#!/usr/bin/env python3\nimport sys\nimport yaml\nimport collections.abc\n\nclass DuplicateKeyChecker(yaml.SafeLoader):\n    def construct_mapping(self, node, deep=False):\n        if not isinstance(node, yaml.MappingNode):\n            raise yaml.constructor.ConstructorError(None, None,\n                \"expected a mapping node, but found %s\" % node.id,\n                node.start_mark)\n        mapping = {}\n        for key_node, value_node in node.value:\n            key = self.construct_object(key_node, deep=deep)\n            if not isinstance(key, collections.abc.Hashable):\n                raise yaml.constructor.ConstructorError(\n                    \"while constructing a mapping\", node.start_mark,\n                    \"found unhashable key\", key_node.start_mark)\n            if key in mapping:\n                raise yaml.constructor.ConstructorError(\n                    \"while constructing a mapping\", node.start_mark,\n                    \"found duplicate key (%s)\" % key, key_node.start_mark)\n            value = self.construct_object(value_node, deep=deep)\n            mapping[key] = value\n        return mapping\n\nfor path in sys.argv[1:]:\n    try:\n        with open(path) as f:\n            yaml.load(f, Loader=DuplicateKeyChecker)\n        print(f\"OK: {path}\")\n    except yaml.YAMLError as e:\n        print(f\"ERROR: {path}: {e}\")\n    except Exception as e:\n        print(f\"ERROR: {path}: {e}\")\nEOF\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "python3 check_yaml.py /tmp/test_duplicate.yaml\n",
+      "duration": 0.1
+    }
+  ]
+}

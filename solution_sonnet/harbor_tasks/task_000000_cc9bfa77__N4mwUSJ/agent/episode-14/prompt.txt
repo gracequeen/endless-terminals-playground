@@ -1,0 +1,36 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+> # Let's try a 16-byte repeating XOR key
+> # Key pattern from multiple offsets: d3 a2 ?? ?? 2b ?? ?? ?? ?? ?? ?? ef
+>
+> data = open('primary_wal/000000010000000000000003', 'rb').read()
+>
+> # Try the key: d3a2????2b??????ef (let's guess the missing bytes)
+> # Common pattern might be d3a2d3a22bd3d3ef or similar
+>
+> # Let's look at more known values to derive full key
+> # Check second page (offset 8192) which should have pageaddr 0x3002000
+> page2 = data[8192:8192+16]
+> print(f"Page 2 (offset 8192) first 16 bytes: {page2.hex()}")
+> print(f"Expected pageaddr for page 2: {(0x3000000 + 8192).to_bytes(8, 'little').hex()}")
+>
+> # Page address at offset 8 in each page
+> page2_addr = page2[8:16]
+> expected_addr = (0x3000000 + 8192).to_bytes(8, 'little')
+> print(f"\nPage 2 address bytes: {page2_addr.hex()}")
+> print(f"Expected: {expected_addr.hex()}")
+> xor_derived = bytes([a ^ e for a, e in zip(page2_addr, expected_addr)])
+> print(f"XOR key from page 2: {xor_derived.hex()}")
+> EOF
+Page 2 (offset 8192) first 16 bytes: 6155a925c23efd599400a71351896a7a
+Expected pageaddr for page 2: 0020000300000000
+
+Page 2 address bytes: 9400a71351896a7a
+Expected: 0020000300000000
+XOR key from page 2: 9420a71051896a7a
+user@9365762ea513:~/wal_recovery$

@@ -1,0 +1,37 @@
+New Terminal Output:
+
+root@39d0f02fc2dc:/home/user/data# cat > clean.sql << 'EOF'
+> DROP TABLE IF EXISTS responses_clean;
+> CREATE TABLE responses_clean AS
+> SELECT r.*
+> FROM responses r
+> INNER JOIN (
+>     SELECT email, MIN(submitted_at) as first_sub
+>     FROM responses
+>     WHERE email IS NOT NULL
+>     GROUP BY email
+> ) earliest ON r.email = earliest.email AND r.submitted_at = earliest.first_sub
+> UNION ALL
+> SELECT *
+> FROM responses
+> WHERE email IS NULL;
+> EOF
+root@39d0f02fc2dc:/home/user/data# cat clean.sql
+DROP TABLE IF EXISTS responses_clean;
+CREATE TABLE responses_clean AS
+SELECT r.*
+FROM responses r
+INNER JOIN (
+    SELECT email, MIN(submitted_at) as first_sub
+    FROM responses
+    WHERE email IS NOT NULL
+    GROUP BY email
+) earliest ON r.email = earliest.email AND r.submitted_at = earliest.first_sub
+UNION ALL
+SELECT *
+FROM responses
+WHERE email IS NULL;
+root@39d0f02fc2dc:/home/user/data# sqlite3 survey.db < clean.sql
+root@39d0f02fc2dc:/home/user/data# sqlite3 survey.db "SELECT COUNT(*) FROM responses_clean;"
+312
+root@39d0f02fc2dc:/home/user/data#

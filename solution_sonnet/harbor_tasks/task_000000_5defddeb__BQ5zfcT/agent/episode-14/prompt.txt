@@ -1,0 +1,100 @@
+New Terminal Output:
+
+I have no name!@18793d66b80e:/home/user/backup$ cd /home/user/backup
+I have no name!@18793d66b80e:/home/user/backup$ echo '=== DIFF: OLD vs NEW incremental.sh ==='
+=== DIFF: OLD vs NEW incremental.sh ===
+I have no name!@18793d66b80e:/home/user/backup$ diff -u incremental.sh.backup incremental.sh
+--- incremental.sh.backup       2026-05-06 00:12:43.065459045 +0000
++++ incremental.sh      2026-05-06 00:12:43.185827535 +0000
+@@ -12,8 +12,8 @@
+     find "$SOURCE" -type f -newer "$STATE_DIR/reference" -print0 | \
+         tar --null -T - -czf "$ARCHIVE_DIR/$ARCHIVE_NAME" &
+     TAR_PID=$!
+-    date +%s > "$TIMESTAMP_FILE"
+     wait $TAR_PID
++    date +%s > "$TIMESTAMP_FILE"
+ else
+     # First incremental = full
+     tar -czf "$ARCHIVE_DIR/$ARCHIVE_NAME" "$SOURCE"
+I have no name!@18793d66b80e:/home/user/backup$ echo ''
+
+I have no name!@18793d66b80e:/home/user/backup$ echo '=== FIX SUMMARY ==='
+=== FIX SUMMARY ===
+I have no name!@18793d66b80e:/home/user/backup$ cat > /home/user/backup/FIX_SUMMARY.txt << 'EOF'
+> INCREMENTAL BACKUP FIX - May 6, 2026
+> =====================================
+>
+> PROBLEM:
+> Incremental backups were producing corrupt/incomplete archives due to a race condition.
+> The script was updating the timestamp reference BEFORE tar finished writing the archive.
+>
+> ROOT CAUSE:
+> In incremental.sh, the tar command was backgrounded with '&', then the timestamp was
+> immediately updated with 'date +%s > $TIMESTAMP_FILE', and only AFTER that did the
+> script wait for tar to complete with 'wait $TAR_PID'.
+>
+> This caused the reference time to be updated before tar finished reading all files,
+> leading to:
+> - Missed files in subsequent backups
+> - Inconsistent state tracking
+> - Archives that appeared complete but were missing data
+>
+> SOLUTION:
+> Swapped the order of operations in the incremental branch:
+>   OLD ORDER:
+>     1. Start tar in background
+>     2. Update timestamp  <-- WRONG: happens before tar finishes
+>     3. Wait for tar
+>
+>   NEW ORDER:
+>     1. Start tar in background
+>     2. Wait for tar       <-- CORRECT: wait first
+>     3. Update timestamp  <-- Only update after tar completes
+>
+> VERIFICATION:
+> - Fixed script now produces small incremental archives containing only changed files
+> - Archives extract successfully without corruption
+> - Multiple sequential incrementals work correctly
+>
+> BACKUP:
+> Original script saved as: incremental.sh.backup
+> EOF
+I have no name!@18793d66b80e:/home/user/backup$ cat /home/user/backup/FIX_SUMMARY.txt
+INCREMENTAL BACKUP FIX - May 6, 2026
+=====================================
+
+PROBLEM:
+Incremental backups were producing corrupt/incomplete archives due to a race condition.
+The script was updating the timestamp reference BEFORE tar finished writing the archive.
+
+ROOT CAUSE:
+In incremental.sh, the tar command was backgrounded with '&', then the timestamp was
+immediately updated with 'date +%s > $TIMESTAMP_FILE', and only AFTER that did the
+script wait for tar to complete with 'wait $TAR_PID'.
+
+This caused the reference time to be updated before tar finished reading all files,
+leading to:
+- Missed files in subsequent backups
+- Inconsistent state tracking
+- Archives that appeared complete but were missing data
+
+SOLUTION:
+Swapped the order of operations in the incremental branch:
+  OLD ORDER:
+    1. Start tar in background
+    2. Update timestamp  <-- WRONG: happens before tar finishes
+    3. Wait for tar
+
+  NEW ORDER:
+    1. Start tar in background
+    2. Wait for tar       <-- CORRECT: wait first
+    3. Update timestamp  <-- Only update after tar completes
+
+VERIFICATION:
+- Fixed script now produces small incremental archives containing only changed files
+- Archives extract successfully without corruption
+- Multiple sequential incrementals work correctly
+
+BACKUP:
+Original script saved as: incremental.sh.backup
+I have no name!@18793d66b80e:/home/user/backup$

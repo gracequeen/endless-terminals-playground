@@ -1,0 +1,47 @@
+New Terminal Output:
+
+user@c2405cecf805:~/archive_pipeline$ cat carch_format.md
+# CARCH Archive Format
+
+The `.carch` format is a custom archive bundle that combines metadata with a compressed tar archive.
+
+## Format Structure
+
+```
+[4 bytes]           magic: "CARC" (ASCII)
+[4 bytes]           header_len: uint32 little-endian, length of JSON metadata
+[header_len bytes]  JSON metadata
+[remaining bytes]   tar+zstd compressed payload
+```
+
+## Field Details
+
+### Magic (4 bytes)
+- Fixed ASCII string: `CARC`
+- Used to identify valid .carch files
+
+### Header Length (4 bytes)
+- Unsigned 32-bit integer in little-endian format
+- Specifies the length of the JSON metadata section in bytes
+
+### JSON Metadata (variable length)
+- UTF-8 encoded JSON object
+- Contains:
+  - `source_path`: Original path that was archived
+  - `timestamp`: Unix timestamp when archive was created
+  - `file_count`: Number of files in the archive
+  - `total_size`: Total uncompressed size in bytes
+
+### Payload (remaining bytes)
+- tar archive compressed with zstd
+- Contains the directory tree from source_path
+- Starts at offset: 4 (magic) + 4 (header_len) + header_len (metadata) = 8 + header_len
+
+## Example
+
+For a metadata JSON of 150 bytes:
+- Bytes 0-3: "CARC"
+- Bytes 4-7: 0x96 0x00 0x00 0x00 (150 in little-endian)
+- Bytes 8-157: JSON metadata
+- Bytes 158+: zstd-compressed tar data
+user@c2405cecf805:~/archive_pipeline$

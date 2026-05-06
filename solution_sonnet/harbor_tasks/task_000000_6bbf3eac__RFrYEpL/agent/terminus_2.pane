@@ -1,0 +1,393 @@
+[?2004hroot@e6a52bb2f35d:/# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@e6a52bb2f35d:/# clear
+[?2004l[H[J[?2004hroot@e6a52bb2f35d:/# cd /home/user/etl
+[?2004l[?2004hroot@e6a52bb2f35d:/home/user/etl# ls -la
+[?2004ltotal 120
+drwxrwxrwx 1 root root  4096 May  5 18:58 [0m[34;42m.[0m
+drwxrwxrwx 1 root root  4096 May  5 18:58 [34;42m..[0m
+-rwxrwxrwx 1 root root  1303 May  5 18:58 [01;32mMakefile[0m
+drwxrwxrwx 1 root root  4096 May  5 18:58 [34;42mclean[0m
+drwxrwxrwx 1 root root  4096 May  5 18:58 [34;42mconfig[0m
+drwxrwxrwx 1 root root  4096 May  5 18:58 [34;42mdata[0m
+-rwxrwxrwx 1 root root 86277 May  5 18:58 [01;32mjoined.csv[0m
+drwxrwxrwx 1 root root  4096 May  5 18:58 [34;42mscripts[0m
+-rwxrwxrwx 1 root root   185 May  5 18:58 [01;32msummary.csv[0m
+[?2004hroot@e6a52bb2f35d:/home/user/etl# cat Makefile
+[?2004l# ETL Pipeline Makefile
+# Cleans CSVs, joins them, and generates summary
+
+SHELL := /bin/bash
+
+# Source files
+SOURCES := $(wildcard data/*.csv)
+# Derive clean targets from sources
+CLEAN_TARGETS := $(patsubst data/%.csv,clean/%.csv,$(SOURCES))
+
+.PHONY: all clean
+
+all: summary.csv
+
+# Pattern rule for cleaning - uses $$@ for secondary expansion but directive is MISSING
+# BUG #1: $$@ without .SECONDEXPANSION means it's interpreted as literal $@ in first pass
+clean/%.csv: data/%.csv
+	@mkdir -p clean
+	python3 scripts/clean.py $< $$@
+
+# Generate manifest of cleaned files
+clean/manifest.txt:
+	@mkdir -p clean
+	@ls clean/*.csv 2>/dev/null > clean/manifest.txt || touch clean/manifest.txt
+
+# BUG #2: $(wildcard clean/*.csv) is evaluated at Makefile parse time
+# On first run when clean/ is empty, this evaluates to nothing
+# So joined.csv has NO dependencies after first run
+# BUG #3: Missing dependency on clean/manifest.txt - race condition with -j4
+joined.csv: $(wildcard clean/*.csv)
+	python3 scripts/join.py clean/manifest.txt joined.csv
+
+# BUG #4: Missing dependency on config/params.yaml
+# summarize.py secretly reads this file but it's not listed here
+summary.csv: joined.csv
+	python3 scripts/summarize.py joined.csv summary.csv
+
+clean:
+	rm -rf clean/*.csv clean/manifest.txt joined.csv summary.csv
+[?2004hroot@e6a52bb2f35d:/home/user/etl# ls data/
+[?2004l[0m[01;32minventory.csv[0m  [01;32msales_2023.csv[0m  [01;32msales_2024.csv[0m
+[?2004hroot@e6a52bb2f35d:/home/user/etl# ls clean/
+[?2004l[0m[01;32minventory.csv[0m  [01;32mmanifest.txt[0m  [01;32msales_2023.csv[0m  [01;32msales_2024.csv[0m
+[?2004hroot@e6a52bb2f35d:/home/user/etl# ls config/
+[?2004l[0m[01;32mparams.yaml[0m
+[?2004hroot@e6a52bb2f35d:/home/user/etl# cp Makefile Makefile.bak
+[?2004l[?2004hroot@e6a52bb2f35d:/home/user/etl# cat > Makefile << 'EOF'
+[?2004l[?2004h> # ETL Pipeline Makefile
+[?2004l[?2004h> # Cleans CSVs, joins them, and generates summary
+[?2004l[?2004h> 
+[?2004l[?2004h> SHELL := /bin/bash
+[?2004l[?2004h> 
+[?2004l[?2004h> # Source files
+[?2004l[?2004h> SOURCES := $(wildcard data/*.csv)
+[?2004l[?2004h> # Derive clean targets from sources
+[?2004l[?2004h> CLEAN_TARGETS := $(patsubst data/%.csv,clean/%.csv,$(SOURCES))
+[?2004l[?2004h> 
+[?2004l[?2004h> .PHONY: all clean
+[?2004l[?2004h> 
+[?2004l[?2004h> # FIX #1: Add .SECONDEXPANSION directive
+[?2004l[?2004h> .SECONDEXPANSION:
+[?2004l[?2004h> 
+[?2004l[?2004h> all: summary.csv
+[?2004l[?2004h> 
+[?2004l[?2004h> # FIX #1: Changed $$@ to $@ - with .SECONDEXPANSION this works correctly
+[?2004l[?2004h> clean/%.csv: data/%.csv
+[?2004l[?2004h> @mkdir -p clean
+[?2004l[?2004h> python3 scripts/clean.py $< $@
+[?2004l[?2004h> 
+[?2004l[?2004h> # FIX #3: Make manifest depend on cleaned files to avoid race condition
+[?2004l[?2004h> clean/manifest.txt: $(CLEAN_TARGETS)
+[?2004l[?2004h> @mkdir -p clean
+[?2004l[?2004h> @ls clean/*.csv 2>/dev/null > clean/manifest.txt || touch clean/manifest.txt
+[?2004l[?2004h> 
+[?2004l[?2004h> # FIX #2: Use $(CLEAN_TARGETS) instead of $(wildcard) for proper dependency tracking
+[?2004l[?2004h> # FIX #3: Add clean/manifest.txt as explicit dependency
+[?2004l[?2004h> joined.csv: $(CLEAN_TARGETS) clean/manifest.txt
+[?2004l[?2004h> python3 scripts/join.py clean/manifest.txt joined.csv
+[?2004l[?2004h> 
+[?2004l[?2004h> # FIX #4: Add config/params.yaml as dependency
+[?2004l[?2004h> summary.csv: joined.csv config/params.yaml
+[?2004l[?2004h> python3 scripts/summarize.py joined.csv summary.csv
+[?2004l[?2004h> 
+[?2004l[?2004h> clean:
+[?2004l[?2004h> rm -rf clean/*.csv clean/manifest.txt joined.csv summary.csv
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@e6a52bb2f35d:/home/user/etl# make clean
+[?2004lMakefile:20: *** missing separator.  Stop.
+[?2004hroot@e6a52bb2f35d:/home/user/etl# ls clean/ 2>/dev/null || echo 'clean/ is empty or does not exist'
+[?2004l[0m[01;32minventory.csv[0m  [01;32mmanifest.txt[0m  [01;32msales_2023.csv[0m  [01;32msales_2024.csv[0m
+[?2004hroot@e6a52bb2f35d:/home/user/etl# cat > Makefile << 'EOF'
+[?2004l[?2004h> # ETL Pipeline Makefile
+[?2004l[?2004h> # Cleans CSVs, joins them, and generates summary
+[?2004l[?2004h> 
+[?2004l[?2004h> SHELL := /bin/bash
+[?2004l[?2004h> 
+[?2004l[?2004h> # Source files
+[?2004l[?2004h> SOURCES := $(wildcard data/*.csv)
+[?2004l[?2004h> # Derive clean targets from sources
+[?2004l[?2004h> CLEAN_TARGETS := $(patsubst data/%.csv,clean/%.csv,$(SOURCES))
+[?2004l[?2004h> 
+[?2004l[?2004h> .PHONY: all clean
+[?2004l[?2004h> 
+[?2004l[?2004h> # FIX #1: Add .SECONDEXPANSION directive
+[?2004l[?2004h> .SECONDEXPANSION:
+[?2004l[?2004h> 
+[?2004l[?2004h> all: summary.csv
+[?2004l[?2004h> 
+[?2004l[?2004h> # FIX #1: Changed $$@ to $@ - with .SECONDEXPANSION this works correctly
+[?2004l[?2004h> clean/%.csv: data/%.csv
+[?2004l[?2004h> @mkdir -p clean
+[?2004l[?2004h> python3 scripts/clean.py $< $@
+[?2004l[?2004h> 
+[?2004l[?2004h> # FIX #3: Make manifest depend on cleaned files to avoid race condition
+[?2004l[?2004h> clean/manifest.txt: $(CLEAN_TARGETS)
+[?2004l[?2004h> @mkdir -p clean
+[?2004l[?2004h> @ls clean/*.csv 2>/dev/null > clean/manifest.txt || touch clean/manifest.txt
+[?2004l[?2004h> 
+[?2004l[?2004h> # FIX #2: Use $(CLEAN_TARGETS) instead of $(wildcard) for proper dependency tracking
+[?2004l[?2004h> # FIX #3: Add clean/manifest.txt as explicit dependency
+[?2004l[?2004h> joined.csv: $(CLEAN_TARGETS) clean/manifest.txt
+[?2004l[?2004h> python3 scripts/join.py clean/manifest.txt joined.csv
+[?2004l[?2004h> 
+[?2004l[?2004h> # FIX #4: Add config/params.yaml as dependency
+[?2004l[?2004h> summary.csv: joined.csv config/params.yaml
+[?2004l[?2004h> python3 scripts/summarize.py joined.csv summary.csv
+[?2004l[?2004h> 
+[?2004l[?2004h> clean:
+[?2004l[?2004h> rm -rf clean/*.csv clean/manifest.txt joined.csv summary.csv
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@e6a52bb2f35d:/home/user/etl# sed -i 's/^@mkdir/\t@mkdir/g' Makefile
+[?2004l[?2004hroot@e6a52bb2f35d:/home/user/etl# sed -i 's/^python3/\tpython3/g' Makefile
+[?2004l[?2004hroot@e6a52bb2f35d:/home/user/etl# sed -i 's/^rm -rf/\trm -rf/g' Makefile
+[?2004l[?2004hroot@e6a52bb2f35d:/home/user/etl# sed -i 's/^@ls clean/\t@ls clean/g' Makefile
+[?2004l[?2004hroot@e6a52bb2f35d:/home/user/etl# make clean
+[?2004lrm -rf clean/*.csv clean/manifest.txt joined.csv summary.csv
+[?2004hroot@e6a52bb2f35d:/home/user/etl# ls clean/ joined.csv summary.csv 2>&1
+[?2004lls: cannot access 'joined.csv': No such file or directory
+ls: cannot access 'summary.csv': No such file or directory
+clean/:
+[?2004hroot@e6a52bb2f35d:/home/user/etl# echo '=== First build from scratch ==='
+[?2004l=== First build from scratch ===
+[?2004hroot@e6a52bb2f35d:/home/user/etl# make all
+[?2004lpython3 scripts/clean.py data/inventory.csv clean/inventory.csv
+Cleaned data/inventory.csv -> clean/inventory.csv (500 rows)
+python3 scripts/clean.py data/sales_2023.csv clean/sales_2023.csv
+Cleaned data/sales_2023.csv -> clean/sales_2023.csv (500 rows)
+python3 scripts/clean.py data/sales_2024.csv clean/sales_2024.csv
+Cleaned data/sales_2024.csv -> clean/sales_2024.csv (500 rows)
+python3 scripts/join.py clean/manifest.txt joined.csv
+Joined 3 files -> joined.csv (1500 rows)
+python3 scripts/summarize.py joined.csv summary.csv
+Summarized joined.csv -> summary.csv (7 metrics)
+[?2004hroot@e6a52bb2f35d:/home/user/etl# echo '=== Testing incremental build - touching data/sales_2023.csv ==='
+[?2004l=== Testing incremental build - touching data/sales_2023.csv ===
+[?2004hroot@e6a52bb2f35d:/home/user/etl# touch data/sales_2023.csv
+[?2004l[?2004hroot@e6a52bb2f35d:/home/user/etl# make all
+[?2004lpython3 scripts/clean.py data/sales_2023.csv clean/sales_2023.csv
+Cleaned data/sales_2023.csv -> clean/sales_2023.csv (500 rows)
+python3 scripts/join.py clean/manifest.txt joined.csv
+Joined 3 files -> joined.csv (1500 rows)
+python3 scripts/summarize.py joined.csv summary.csv
+Summarized joined.csv -> summary.csv (7 metrics)
+[?2004hroot@e6a52bb2f35d:/home/user/etl# echo '=== Testing parallel build (-j4) - touching data/inventory.csv ==='
+[?2004l=== Testing parallel build (-j4) - touching data/inventory.csv ===
+[?2004hroot@e6a52bb2f35d:/home/user/etl# touch data/inventory.csv
+[?2004l[?2004hroot@e6a52bb2f35d:/home/user/etl# make all -j4
+[?2004lpython3 scripts/clean.py data/inventory.csv clean/inventory.csv
+Cleaned data/inventory.csv -> clean/inventory.csv (500 rows)
+python3 scripts/join.py clean/manifest.txt joined.csv
+Joined 3 files -> joined.csv (1500 rows)
+python3 scripts/summarize.py joined.csv summary.csv
+Summarized joined.csv -> summary.csv (7 metrics)
+[?2004hroot@e6a52bb2f35d:/home/user/etl# echo '=== Testing parallel build with multiple source changes ==='
+[?2004l=== Testing parallel build with multiple source changes ===
+[?2004hroot@e6a52bb2f35d:/home/user/etl# touch data/sales_2023.csv data/sales_2024.csv
+[?2004l[?2004hroot@e6a52bb2f35d:/home/user/etl# make all -j4
+[?2004lpython3 scripts/clean.py data/sales_2023.csv clean/sales_2023.csv
+python3 scripts/clean.py data/sales_2024.csv clean/sales_2024.csv
+Cleaned data/sales_2024.csv -> clean/sales_2024.csv (500 rows)
+Cleaned data/sales_2023.csv -> clean/sales_2023.csv (500 rows)
+python3 scripts/join.py clean/manifest.txt joined.csv
+Joined 3 files -> joined.csv (1500 rows)
+python3 scripts/summarize.py joined.csv summary.csv
+Summarized joined.csv -> summary.csv (7 metrics)
+[?2004hroot@e6a52bb2f35d:/home/user/etl# echo '=== Testing config dependency - touching config/params.yaml ==='
+[?2004l=== Testing config dependency - touching config/params.yaml ===
+[?2004hroot@e6a52bb2f35d:/home/user/etl# touch config/params.yaml
+[?2004l[?2004hroot@e6a52bb2f35d:/home/user/etl# make all
+[?2004lpython3 scripts/summarize.py joined.csv summary.csv
+Summarized joined.csv -> summary.csv (7 metrics)
+[?2004hroot@e6a52bb2f35d:/home/user/etl# cat summary.csv
+[?2004lmetric,value
+total_rows,1500
+rows_from_inventory.csv,500
+rows_from_sales_2023.csv,500
+rows_from_sales_2024.csv,500
+total_quantity,52412
+total_price,254105.52
+total_stock,250991
+[?2004hroot@e6a52bb2f35d:/home/user/etl# echo '=== Final comprehensive test: clean + parallel build ==='
+[?2004l=== Final comprehensive test: clean + parallel build ===
+[?2004hroot@e6a52bb2f35d:/home/user/etl# make clean && make all -j4
+[?2004lrm -rf clean/*.csv clean/manifest.txt joined.csv summary.csv
+python3 scripts/clean.py data/inventory.csv clean/inventory.csv
+python3 scripts/clean.py data/sales_2023.csv clean/sales_2023.csv
+python3 scripts/clean.py data/sales_2024.csv clean/sales_2024.csv
+Cleaned data/sales_2023.csv -> clean/sales_2023.csv (500 rows)
+Cleaned data/sales_2024.csv -> clean/sales_2024.csv (500 rows)
+Cleaned data/inventory.csv -> clean/inventory.csv (500 rows)
+python3 scripts/join.py clean/manifest.txt joined.csv
+Joined 3 files -> joined.csv (1500 rows)
+python3 scripts/summarize.py joined.csv summary.csv
+Summarized joined.csv -> summary.csv (7 metrics)
+[?2004hroot@e6a52bb2f35d:/home/user/etl# cat > FIXES.txt << 'EOF'
+[?2004l $(CLEAN_TARGETS)
+   - With -j4, manifest could be generated before all cleaning finished
+   - This caused incomplete manifests and segfaults in join.py
+
+4. BUG #4: Missing config/params.yaml dependency
+   - summary.csv rule didn't list config/params.yaml as dependency
+   - summarize.py reads this file but changes weren't triggering rebuilds
+
+FIXES APPLIED:
+
+1. Added .SECONDEXPANSION: directive at top of Makefile
+   - Changed $$@ to $@ in pattern rule (now expands correctly with .SECONDEXPANSION)
+
+2. Replaced $(wildcard clean/*.csv) with $(CLEAN_TARGETS)
+   - CLEAN_TARGETS is computed from SOURCES, tracks dependencies properly
+   - joined.csv now correctly depends on the variable, not parse-time wildcard
+
+3. Made clean/manifest.txt depend on $(CLEAN_TARGETS)
+   - Ensures manifest is only generated after all cleaning completes
+   - Eliminates race condition in parallel builds
+
+4. Added config/params.yaml to summary.csv dependencies
+   - Changes to config now correctly trigger summary rebuild
+
+TEST RESULTS:
+✓ Clean build works correctly
+✓ Incremental builds work (touch one file, only that chain rebuilds)
+✓ Parallel builds (-j4) work without race conditions or segfaults
+✓ Config changes trigger only summary rebuild
+✓ Multiple simultaneous source changes handled correctly in parallel
+
+The pipeline now works correctly for all scenarios.
+EOF
+[?2004h> ETL Pipeline Makefile Fixes
+[?2004l[?2004h> ============================
+[?2004l[?2004h> 
+[?2004l[?2004h> PROBLEM SUMMARY:
+[?2004l[?2004h> - Incremental builds were broken (touching one source file rebuilt everything)
+[?2004l[?2004h> - Second run after touching files caused segfaults or hangs
+[?2004l[?2004h> - Issues appeared after adding -j4 parallel flag but persisted after removal
+[?2004l[?2004h> 
+[?2004l[?2004h> ROOT CAUSES IDENTIFIED:
+[?2004l[?2004h> 
+[?2004l[?2004h> 1. BUG #1: Pattern rule used $$@ without .SECONDEXPANSION
+[?2004l[?2004h>    - The clean/%.csv rule had "python3 scripts/clean.py $< $$@"
+[?2004l[?2004h>    - Without .SECONDEXPANSION, $$@ was treated as literal "$@" in first expansion
+[?2004l[?2004h>    - This caused incorrect output paths
+[?2004l[?2004h> 
+[?2004l[?2004h> 2. BUG #2: $(wildcard clean/*.csv) evaluated at parse time
+[?2004l[?2004h>    - joined.csv depended on $(wildcard clean/*.csv)
+[?2004l[?2004h>    - Wildcard is evaluated when Makefile is parsed, not when rule runs
+[?2004l[?2004h>    - After first build, this became a fixed list, breaking incremental builds
+[?2004l[?2004h>    - Touching a source file would update clean/*.csv but joined.csv wouldn't rebuild
+[?2004l[?2004h> 
+[?2004l[?2004h> 3. BUG #3: Race condition with parallel builds
+[?2004l[?2004h>    - clean/manifest.txt had no dependency on $(CLEAN_TARGETS)
+[?2004l[?2004h>    - With -j4, manifest could be generated before all cleaning finished
+[?2004l[?2004h>    - This caused incomplete manifests and segfaults in join.py
+[?2004l[?2004h> 
+[?2004l[?2004h> 4. BUG #4: Missing config/params.yaml dependency
+[?2004l[?2004h>    - summary.csv rule didn't list config/params.yaml as dependency
+[?2004l[?2004h>    - summarize.py reads this file but changes weren't triggering rebuilds
+[?2004l[?2004h> 
+[?2004l[?2004h> FIXES APPLIED:
+[?2004l[?2004h> 
+[?2004l[?2004h> 1. Added .SECONDEXPANSION: directive at top of Makefile
+[?2004l[?2004h>    - Changed $$@ to $@ in pattern rule (now expands correctly with .SECONDEXPANSION)
+[?2004l[?2004h> 
+[?2004l[?2004h> 2. Replaced $(wildcard clean/*.csv) with $(CLEAN_TARGETS)
+[?2004l[?2004h>    - CLEAN_TARGETS is computed from SOURCES, tracks dependencies properly
+[?2004l[?2004h>    - joined.csv now correctly depends on the variable, not parse-time wildcard
+[?2004l[?2004h> 
+[?2004l[?2004h> 3. Made clean/manifest.txt depend on $(CLEAN_TARGETS)
+[?2004l[?2004h>    - Ensures manifest is only generated after all cleaning completes
+[?2004l[?2004h>    - Eliminates race condition in parallel builds
+[?2004l[?2004h> 
+[?2004l[?2004h> 4. Added config/params.yaml to summary.csv dependencies
+[?2004l[?2004h>    - Changes to config now correctly trigger summary rebuild
+[?2004l[?2004h> 
+[?2004l[?2004h> TEST RESULTS:
+[?2004l[?2004h> ✓ Clean build works correctly
+[?2004l[?2004h> ✓ Incremental builds work (touch one file, only that chain rebuilds)
+[?2004l[?2004h> ✓ Parallel builds (-j4) work without race conditions or segfaults
+[?2004l[?2004h> ✓ Config changes trigger only summary rebuild
+[?2004l[?2004h> ✓ Multiple simultaneous source changes handled correctly in parallel
+[?2004l[?2004h> 
+[?2004l[?2004h> The pipeline now works correctly for all scenarios.
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@e6a52bb2f35d:/home/user/etl# echo '=== Fixes documented in FIXES.txt ==='
+[?2004l=== Fixes documented in FIXES.txt ===
+[?2004hroot@e6a52bb2f35d:/home/user/etl# cat FIXES.txt
+[?2004lETL Pipeline Makefile Fixes
+============================
+
+PROBLEM SUMMARY:
+- Incremental builds were broken (touching one source file rebuilt everything)
+- Second run after touching files caused segfaults or hangs
+- Issues appeared after adding -j4 parallel flag but persisted after removal
+
+ROOT CAUSES IDENTIFIED:
+
+1. BUG #1: Pattern rule used $$@ without .SECONDEXPANSION
+   - The clean/%.csv rule had "python3 scripts/clean.py $< $$@"
+   - Without .SECONDEXPANSION, $$@ was treated as literal "$@" in first expansion
+   - This caused incorrect output paths
+
+2. BUG #2: $(wildcard clean/*.csv) evaluated at parse time
+   - joined.csv depended on $(wildcard clean/*.csv)
+   - Wildcard is evaluated when Makefile is parsed, not when rule runs
+   - After first build, this became a fixed list, breaking incremental builds
+   - Touching a source file would update clean/*.csv but joined.csv wouldn't rebuild
+
+3. BUG #3: Race condition with parallel builds
+   - clean/manifest.txt had no dependency on $(CLEAN_TARGETS)
+   - With -j4, manifest could be generated before all cleaning finished
+   - This caused incomplete manifests and segfaults in join.py
+
+4. BUG #4: Missing config/params.yaml dependency
+   - summary.csv rule didn't list config/params.yaml as dependency
+   - summarize.py reads this file but changes weren't triggering rebuilds
+
+FIXES APPLIED:
+
+1. Added .SECONDEXPANSION: directive at top of Makefile
+   - Changed $$@ to $@ in pattern rule (now expands correctly with .SECONDEXPANSION)
+
+2. Replaced $(wildcard clean/*.csv) with $(CLEAN_TARGETS)
+   - CLEAN_TARGETS is computed from SOURCES, tracks dependencies properly
+   - joined.csv now correctly depends on the variable, not parse-time wildcard
+
+3. Made clean/manifest.txt depend on $(CLEAN_TARGETS)
+   - Ensures manifest is only generated after all cleaning completes
+   - Eliminates race condition in parallel builds
+
+4. Added config/params.yaml to summary.csv dependencies
+   - Changes to config now correctly trigger summary rebuild
+
+TEST RESULTS:
+✓ Clean build works correctly
+✓ Incremental builds work (touch one file, only that chain rebuilds)
+✓ Parallel builds (-j4) work without race conditions or segfaults
+✓ Config changes trigger only summary rebuild
+✓ Multiple simultaneous source changes handled correctly in parallel
+
+The pipeline now works correctly for all scenarios.
+[?2004hroot@e6a52bb2f35d:/home/user/etl# echo '=== Final verification: touch one source, verify incremental rebuild ==='
+[?2004l=== Final verification: touch one source, verify incremental rebuild ===
+[?2004hroot@e6a52bb2f35d:/home/user/etl# touch data/inventory.csv
+[?2004l[?2004hroot@e6a52bb2f35d:/home/user/etl# make all -j4
+[?2004lpython3 scripts/clean.py data/inventory.csv clean/inventory.csv
+Cleaned data/inventory.csv -> clean/inventory.csv (500 rows)
+python3 scripts/join.py clean/manifest.txt joined.csv
+Joined 3 files -> joined.csv (1500 rows)
+python3 scripts/summarize.py joined.csv summary.csv
+Summarized joined.csv -> summary.csv (7 metrics)
+[?2004hroot@e6a52bb2f35d:/home/user/etl# echo '=== Verification complete - summary.csv is correct ==='
+[?2004l=== Verification complete - summary.csv is correct ===
+[?2004hroot@e6a52bb2f35d:/home/user/etl# wc -l summary.csv && echo 'Pipeline working correctly!'
+[?2004l8 summary.csv
+Pipeline working correctly!
+[?2004hroot@e6a52bb2f35d:/home/user/etl# 

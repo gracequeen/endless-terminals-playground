@@ -1,0 +1,127 @@
+[?2004hroot@3fbfc0d9b59d:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@3fbfc0d9b59d:/home/user# clear
+[?2004l[H[J[?2004hroot@3fbfc0d9b59d:/home/user# cd /home/user/monitor
+[?2004l[?2004hroot@3fbfc0d9b59d:/home/user/monitor# ls -la
+[?2004ltotal 20
+drwxrwxrwx 1 root root 4096 May  5 08:45 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 08:45 [34;42m..[0m
+-rwxrwxrwx 1 root root 1992 May  5 08:45 [01;32mcheck_all.py[0m
+-rw-r--r-- 1 root root  361 May  5 08:45 status.json
+[?2004hroot@3fbfc0d9b59d:/home/user/monitor# cat status.json
+[?2004l{
+  "timestamp": "2026-05-05T08:45:30.860330Z",
+  "services": {
+    "inventory": {
+      "status": "degraded",
+      "reason": "unhealthy response"
+    },
+    "pricing": {
+      "status": "degraded",
+      "reason": "unhealthy response"
+    },
+    "fulfillment": {
+      "status": "degraded",
+      "reason": "unhealthy response"
+    }
+  },
+  "healthy": false
+}[?2004hroot@3fbfc0d9b59d:/home/user/monitor# cat check_all.py
+[?2004l#!/usr/bin/env python3
+"""
+Health check dashboard script.
+Polls internal services and writes status report to status.json.
+"""
+
+import json
+import requests
+from datetime import datetime
+
+# Service configuration
+SERVICES = {
+    "inventory": "http://127.0.0.1:8081/health",
+    "pricing": "http://127.0.0.1:8082/health",
+    "fulfillment": "http://127.0.0.1:8083/health",
+}
+
+# Timeout for requests (bumped to 30s to rule out timeout issues)
+REQUEST_TIMEOUT = 30
+
+
+def check_service(name, url):
+    """
+    Check a single service's health endpoint.
+    Returns dict with status information.
+    """
+    try:
+        response = requests.get(url, timeout=REQUEST_TIMEOUT)
+        # TODO: also check X-Service-Ready header
+        if response.status_code == 200:
+            data = response.json()
+            # Check if service reports healthy state
+            if data.get("state") == "ok":
+                return {"status": "healthy", "response_time_ms": response.elapsed.total_seconds() * 1000}
+        return {"status": "degraded", "reason": "unhealthy response"}
+    except requests.exceptions.Timeout:
+        return {"status": "degraded", "reason": "timeout"}
+    except requests.exceptions.ConnectionError:
+        return {"status": "degraded", "reason": "connection_failed"}
+    except Exception as e:
+        return {"status": "degraded", "reason": str(e)}
+
+
+def main():
+    """Main entry point - check all services and write report."""
+    results = {}
+    all_healthy = True
+
+    for name, url in SERVICES.items():
+        result = check_service(name, url)
+        results[name] = result
+        if result["status"] != "healthy":
+            all_healthy = False
+
+    report = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "services": results,
+        "healthy": all_healthy,
+    }
+
+    with open("/home/user/monitor/status.json", "w") as f:
+        json.dump(report, f, indent=2)
+
+    return 0 if all_healthy else 1
+
+
+if __name__ == "__main__":
+    exit(main())
+[?2004hroot@3fbfc0d9b59d:/home/user/monitor# curl -s http://127.0.0.1:8081/health
+[?2004l{"status":"ok"}
+[?2004hroot@3fbfc0d9b59d:/home/user/monitor# curl -s http://127.0.0.1:8082/health
+[?2004l{"status":"ok"}
+[?2004hroot@3fbfc0d9b59d:/home/user/monitor# curl -s http://127.0.0.1:8083/health
+[?2004l{"status":"ok"}
+[?2004hroot@3fbfc0d9b59d:/home/user/monitor# sed -i "s/data.get(\"state\")/data.get(\"status\")/" check_all.py
+[?2004l[?2004hroot@3fbfc0d9b59d:/home/user/monitor# grep -n 'data.get' check_all.py
+[?2004l[32m[K33[m[K[36m[K:[m[K            if [01;31m[Kdata.get[m[K("status") == "ok":
+[?2004hroot@3fbfc0d9b59d:/home/user/monitor# python3 check_all.py
+[?2004l[?2004hroot@3fbfc0d9b59d:/home/user/monitor# cat status.json
+[?2004l{
+  "timestamp": "2026-05-05T08:46:44.171296Z",
+  "services": {
+    "inventory": {
+      "status": "healthy",
+      "response_time_ms": 1.843
+    },
+    "pricing": {
+      "status": "healthy",
+      "response_time_ms": 1.58
+    },
+    "fulfillment": {
+      "status": "healthy",
+      "response_time_ms": 1.5230000000000001
+    }
+  },
+  "healthy": true
+}[?2004hroot@3fbfc0d9b59d:/home/user/monitor# 

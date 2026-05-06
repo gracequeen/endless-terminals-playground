@@ -1,0 +1,106 @@
+[?2004hroot@29271a400b20:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@29271a400b20:/home/user# clear
+[?2004l[H[J[?2004hroot@29271a400b20:/home/user# cd /home/user/audit
+[?2004l[?2004hroot@29271a400b20:/home/user/audit# ls -la
+[?2004ltotal 660
+drwxrwxrwx 1 root root   4096 May  5 21:18 [0m[34;42m.[0m
+drwxrwxrwx 1 root root   4096 May  5 21:18 [34;42m..[0m
+-rw-rw-rw- 1 root root 610000 May  5 21:18 breach_hashes.txt
+-rwxr-xr-x 1 root root   1044 May  5 21:18 [01;32mscan.py[0m
+-rw-rw-rw- 1 root root  53248 May  5 21:18 users.db
+[?2004hroot@29271a400b20:/home/user/audit# cat scan.py
+[?2004l#!/usr/bin/env python3
+import sqlite3
+
+def load_breach_hashes(path):
+    with open(path, 'r') as f:
+        return set(f.readlines())  # BUG: readlines() preserves \n
+
+def scan_users(db_path, breach_set):
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute("SELECT uid, email, password_hash FROM accounts")
+    compromised = []
+    for uid, email, pw_hash in cur.fetchall():
+        # normalize email for domain check (case insensitive)
+        email_lower = email.lower()
+        if pw_hash in breach_set:
+            compromised.append(uid)
+    conn.close()
+    return compromised
+
+def main():
+    breach_set = load_breach_hashes('/home/user/audit/breach_hashes.txt')
+    print(f"Checking {len(breach_set)} hashes...")
+    compromised = scan_users('/home/user/audit/users.db', breach_set)
+    print(f"Found {len(compromised)} compromised accounts")
+    with open('/home/user/audit/compromised_uids.txt', 'w') as f:
+        for uid in compromised:
+            f.write(f"{uid}\n")
+
+if __name__ == '__main__':
+    main()
+[?2004hroot@29271a400b20:/home/user/audit# head -3 breach_hashes.txt
+[?2004l$2b$12$mh.B1keV6mljuMIECDIVSmGeBMk/82mUfG7lkv/yFbLT60cUgret7
+$2b$12$e/lh4J5UqxjE/9ihP.OO8slxBCyTrUE1sYLucaOD1IftnC7rd4Ccf
+$2b$12$OTQwFOeexjHt4w0mPY1wamIQVYEtf1iLigkmpddWF2YKlb4ZAvV7d
+[?2004hroot@29271a400b20:/home/user/audit# sqlite3 users.db "SELECT uid, email, password_hash FROM accounts LIMIT 3;"
+[?2004l1|mypcophb@company.net|$2b$12$Qhu6qenBmU0ZEfbialjnNMGEFqncPFPY1j0THwDAfRpbLP9BTWka6
+2|xgvtbofu@mail.io|$2b$12$GRzIRlAh12iDMpDy3gS85ACvx0KrnbVaDmsSDUAfrOqv2BnZ/n/pT
+3|zfzgkogz@company.net|$2b$12$9v/LpfcHxepJsQNId8hrKeWLGKSzqmd9SDR4TOu.qZR69RE2HwxMI
+[?2004hroot@29271a400b20:/home/user/audit# cp scan.py scan.py.backup
+[?2004l[?2004hroot@29271a400b20:/home/user/audit# cat > scan.py << 'EOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> import sqlite3
+[?2004l[?2004h> 
+[?2004l[?2004h> def load_breach_hashes(path):
+[?2004l[?2004h>     with open(path, 'r') as f:
+[?2004l[?2004h>         return set(line.strip() for line in f.readlines())
+[?2004l[?2004h> 
+[?2004l[?2004h> def scan_users(db_path, breach_set):
+[?2004l[?2004h>     conn = sqlite3.connect(db_path)
+[?2004l[?2004h>     cur = conn.cursor()
+[?2004l[?2004h>     cur.execute("SELECT uid, email, password_hash FROM accounts")
+[?2004l[?2004h>     compromised = []
+[?2004l[?2004h>     for uid, email, pw_hash in cur.fetchall():
+[?2004l[?2004h>         # normalize email for domain check (case insensitive)
+[?2004l[?2004h>         email_lower = email.lower()
+[?2004l[?2004h>         if pw_hash in breach_set:
+[?2004l[?2004h>             compromised.append(uid)
+[?2004l[?2004h>     conn.close()
+[?2004l[?2004h>     return compromised
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     breach_set = load_breach_hashes('/home/user/audit/breach_hashes.txt')
+[?2004l[?2004h>     print(f"Checking {len(breach_set)} hashes...")
+[?2004l[?2004h>     compromised = scan_users('/home/user/audit/users.db', breach_set)
+[?2004l[?2004h>     print(f"Found {len(compromised)} compromised accounts")
+[?2004l[?2004h>     with open('/home/user/audit/compromised_uids.txt', 'w') as f:
+[?2004l[?2004h>         for uid in compromised:
+[?2004l[?2004h>             f.write(f"{uid}\n")
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == '__main__':
+[?2004l[?2004h>     main()
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@29271a400b20:/home/user/audit# python3 scan.py
+[?2004lChecking 10000 hashes...
+Found 7 compromised accounts
+[?2004hroot@29271a400b20:/home/user/audit# cat compromised_uids.txt
+[?2004l23
+89
+156
+234
+312
+401
+478
+[?2004hroot@29271a400b20:/home/user/audit# wc -l compromised_uids.txt
+[?2004l7 compromised_uids.txt
+[?2004hroot@29271a400b20:/home/user/audit# sqlite3 users.db "SELECT uid, email, password_hash FROM accounts WHERE uid = 23;"
+[?2004l23|shsswpjk@service.co|$2b$12$ObroVR5fBbnGbmPIoLZaZSvj9vfg2MZUI.yJ1N3KTcosfogrOxxnr
+[?2004hroot@29271a400b20:/home/user/audit# sqlite3 users.db "SELECT password_hash FROM accounts WHERE uid = 23;" | grep -F -f - breach_hashes.txt | head -1
+[?2004l$2b$12$ObroVR5fBbnGbmPIoLZaZSvj9vfg2MZUI.yJ1N3KTcosfogrOxxnr
+[?2004hroot@29271a400b20:/home/user/audit# echo "Fix Summary: Changed line 6 in scan.py from 'return set(f.readlines())' to 'return set(line.strip() for line in f.readlines())' to remove trailing newlines from breach hashes, allowing proper comparison with database hashes."
+[?2004lFix Summary: Changed line 6 in scan.py from 'return set(f.readlines())' to 'return set(line.strip() for line in f.readlines())' to remove trailing newlines from breach hashes, allowing proper comparison with database hashes.
+[?2004hroot@29271a400b20:/home/user/audit# 

@@ -1,0 +1,113 @@
+[?2004huser@621080ab1af0:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004huser@621080ab1af0:~$ clear
+[?2004l[H[J[?2004huser@621080ab1af0:~$ cd /home/user/backup-check
+[?2004l[?2004huser@621080ab1af0:~/backup-check$ ls -la
+[?2004ltotal 20
+drwxrwxrwx 1 user user 4096 May  5 07:40 .
+drwxrwxrwx 1 user user 4096 May  5 07:41 ..
+drwxrwxrwx 1 user user 4096 May  5 07:40 data
+-rwxrwxrwx 1 user user  689 May  5 07:40 manifest.txt
+-rwxrwxrwx 1 user user 1370 May  5 07:40 verify.sh
+[?2004huser@621080ab1af0:~/backup-check$ cat manifest.txt
+[?2004l945f85cadf9dbab38ade8da5182f8a12f0abd31d75380ea1de5ccfbf1ae32a0b  data/config.json
+fded444d160bfdf81d187560c77b7a60d26f61bca6c30993846db9ca62202555  data/database.sql
+71fdee5a7c9e32e6edaea288d1350cceeff8acc4654dcce614b70b67908f9f97  data/logs/app.log
+690a02f2647955fea66183e6c91cdcc2f5e5c21e5bc7e4c86d240ad9d5e952e6  data/logs/error.log
+780dc85d14e3e53ac2e7089b8a219a675d60042042b9f192199b3f475bcc074b  data/assets/logo.png
+bb41238fb7a7c83c6bbd0c087f408f0c4febb91f4ae96a925a5c483502a331d9  data/assets/style.css
+d8c69fd09136e7c089cc83c67ac1a76ae705da9d2813d2f1cd60984f6e7c7f02  data/readme.txt
+0108b80853e3c7e30e35f028baa67f9631d795489e3f96304080c93e875aa7d5  data/backup_meta.xml
+[?2004huser@621080ab1af0:~/backup-check$ cat -A manifest.txt | head -20
+[?2004l945f85cadf9dbab38ade8da5182f8a12f0abd31d75380ea1de5ccfbf1ae32a0b  data/config.json^M$
+fded444d160bfdf81d187560c77b7a60d26f61bca6c30993846db9ca62202555  data/database.sql^M$
+71fdee5a7c9e32e6edaea288d1350cceeff8acc4654dcce614b70b67908f9f97  data/logs/app.log^M$
+690a02f2647955fea66183e6c91cdcc2f5e5c21e5bc7e4c86d240ad9d5e952e6  data/logs/error.log^M$
+780dc85d14e3e53ac2e7089b8a219a675d60042042b9f192199b3f475bcc074b  data/assets/logo.png^M$
+bb41238fb7a7c83c6bbd0c087f408f0c4febb91f4ae96a925a5c483502a331d9  data/assets/style.css^M$
+d8c69fd09136e7c089cc83c67ac1a76ae705da9d2813d2f1cd60984f6e7c7f02  data/readme.txt^M$
+0108b80853e3c7e30e35f028baa67f9631d795489e3f96304080c93e875aa7d5  data/backup_meta.xml^M$
+[?2004huser@621080ab1af0:~/backup-check$ cat verify.sh
+[?2004l#!/bin/bash
+
+# Backup verification script
+# Reads manifest.txt and verifies SHA256 checksums of files
+
+MANIFEST_FILE="/home/user/backup-check/manifest.txt"
+BASE_DIR="/home/user/backup-check"
+ERRORS=0
+
+echo "Starting backup verification..."
+echo "Reading manifest: $MANIFEST_FILE"
+echo ""
+
+while IFS= read -r line || [ -n "$line" ]; do
+    # Skip empty lines
+    if [ -z "$line" ]; then
+        continue
+    fi
+
+    # Extract expected hash (first 64 characters)
+    expected=$(echo "$line" | cut -c1-64)
+
+    # Extract file path (after two spaces following the hash)
+    filepath=$(echo "$line" | cut -c67-)
+
+    # Full path to file
+    fullpath="$BASE_DIR/$filepath"
+
+    # Check if file exists
+    if [ ! -f "$fullpath" ]; then
+        echo "MISSING: $filepath"
+        ERRORS=$((ERRORS + 1))
+        continue
+    fi
+
+    # Compute actual hash
+    computed=$(sha256sum "$fullpath" | awk '{print $1}')
+
+    # Compare hashes
+    if [ "$expected" != "$computed" ]; then
+        echo "MISMATCH: $filepath"
+        echo "  Expected: $expected"
+        echo "  Computed: $computed"
+        ERRORS=$((ERRORS + 1))
+    else
+        echo "OK: $filepath"
+    fi
+done < "$MANIFEST_FILE"
+
+echo ""
+echo "Verification complete."
+
+if [ $ERRORS -gt 0 ]; then
+    echo "FAILED: $ERRORS file(s) failed verification."
+    exit 1
+else
+    echo "SUCCESS: All files verified."
+    exit 0
+fi
+[?2004huser@621080ab1af0:~/backup-check$ sed -i 's/\r$//' manifest.txt
+[?2004l[?2004huser@621080ab1af0:~/backup-check$ cat -A manifest.txt | head -3
+[?2004l945f85cadf9dbab38ade8da5182f8a12f0abd31d75380ea1de5ccfbf1ae32a0b  data/config.json$
+fded444d160bfdf81d187560c77b7a60d26f61bca6c30993846db9ca62202555  data/database.sql$
+71fdee5a7c9e32e6edaea288d1350cceeff8acc4654dcce614b70b67908f9f97  data/logs/app.log$
+[?2004huser@621080ab1af0:~/backup-check$ ./verify.sh
+[?2004lStarting backup verification...
+Reading manifest: /home/user/backup-check/manifest.txt
+
+OK: data/config.json
+OK: data/database.sql
+OK: data/logs/app.log
+OK: data/logs/error.log
+OK: data/assets/logo.png
+OK: data/assets/style.css
+OK: data/readme.txt
+OK: data/backup_meta.xml
+
+Verification complete.
+SUCCESS: All files verified.
+[?2004huser@621080ab1af0:~/backup-check$ echo $?
+[?2004l0
+[?2004huser@621080ab1af0:~/backup-check$ 

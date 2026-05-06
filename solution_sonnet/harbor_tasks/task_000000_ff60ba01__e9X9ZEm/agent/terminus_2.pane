@@ -1,0 +1,255 @@
+[?2004hI have no name!@4fbb60006c7c:/home/user$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004lTraceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 28, in upgrade
+    self.install_id
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 78, in install_id
+    raise ConfigError('no install ID found')
+asciinema.config.ConfigError: no install ID found
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/bin/asciinema", line 33, in <module>
+    sys.exit(load_entry_point('asciinema==2.1.0', 'console_scripts', 'asciinema')())
+  File "/usr/lib/python3/dist-packages/asciinema/__main__.py", line 34, in main
+    cfg = config.load()
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 185, in load
+    config.upgrade()
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 31, in upgrade
+    self.__save_install_id(id)
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 50, in __save_install_id
+    self.__create_config_home()
+  File "/usr/lib/python3/dist-packages/asciinema/config.py", line 57, in __create_config_home
+    os.makedirs(self.config_home)
+  File "/usr/lib/python3.10/os.py", line 215, in makedirs
+    makedirs(head, exist_ok=exist_ok)
+  File "/usr/lib/python3.10/os.py", line 225, in makedirs
+    mkdir(name, mode)
+PermissionError: [Errno 13] Permission denied: '/.config'
+[?2004hI have no name!@4fbb60006c7c:/home/user$ clear
+[?2004l[H[J[?2004hI have no name!@4fbb60006c7c:/home/user$ cd /home/user/etl-monitor
+[?2004l[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ ls -la
+[?2004ltotal 60
+drwxrwxrwx 1 1000 1000  4096 May  5 19:45 .
+drwxrwxrwx 1 1000 1000  4096 May  5 19:45 ..
+drwxrwxrwx 1 1000 1000  4096 May  5 19:45 config
+drwxrwxrwx 1 1000 1000  4096 May  5 19:45 node_modules
+-rwxrwxrwx 1 1000 1000 29684 May  5 19:45 package-lock.json
+-rwxrwxrwx 1 1000 1000   240 May  5 19:45 package.json
+drwxrwxrwx 1 1000 1000  4096 May  5 19:45 routes
+-rwxrwxrwx 1 1000 1000   554 May  5 19:45 server.js
+[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ cat package.json
+[?2004l{
+  "name": "etl-monitor",
+  "version": "1.0.0",
+  "description": "ETL Pipeline Dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "4.18.2",
+    "js-yaml": "^4.1.0"
+  }
+}
+[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ cat server.js
+[?2004lconst express = require('express');
+const config = require('./config/settings');
+const statusRoutes = require('./routes/status');
+
+const app = express();
+
+app.use('/status', statusRoutes);
+
+app.get('/', (req, res) => {
+  res.json({ message: 'ETL Monitor Dashboard', version: '1.0.0' });
+});
+
+const port = config.server?.port || process.env.PORT || 8080;
+
+const server = app.listen(port, () => {
+  console.log(`ETL Monitor running on port ${port}`);
+});
+
+server.on('error', (err) => {
+  console.error('Server error:', err.message);
+  process.exit(1);
+});
+[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ ls -la config/
+[?2004ltotal 16
+drwxrwxrwx 1 1000 1000 4096 May  5 19:45 .
+drwxrwxrwx 1 1000 1000 4096 May  5 19:45 ..
+-rwxrwxrwx 1 1000 1000  227 May  5 19:45 app.yaml
+-rwxrwxrwx 1 1000 1000  286 May  5 19:45 settings.js
+[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ ls -la routes/
+[?2004ltotal 12
+drwxrwxrwx 1 1000 1000 4096 May  5 19:45 .
+drwxrwxrwx 1 1000 1000 4096 May  5 19:45 ..
+-rwxrwxrwx 1 1000 1000  389 May  5 19:45 status.js
+[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ cat config/settings.js
+[?2004lconst yaml = require('js-yaml');
+const fs = require('fs');
+const path = require('path');
+
+let config;
+
+try {
+    config = yaml.load(fs.readFileSync(path.join(__dirname, 'app.yaml'), 'utf8'));
+} catch (e) {
+    console.log('Config warning');
+    config = {};
+}
+
+module.exports = config;
+[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ cat config/app.yaml
+[?2004lserver:
+  port: 3000
+  host: localhost
+
+app:
+  name: ETL Monitor
+
+database:
+	host: localhost
+	port: 5432
+	name: etl_db
+
+pipelines:
+  - name: daily_batch
+    schedule: "0 2 * * *"
+  - name: hourly_sync
+    schedule: "0 * * * *"
+[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ cat routes/status.js
+[?2004lconst express = require('express');
+const router = express.Router();
+
+router.get('/', (req, res) => {
+  res.json({
+    status: 'ok',
+    pipelines: [
+      { name: 'daily_batch', lastRun: '2024-01-15T02:00:00Z', status: 'completed' },
+      { name: 'hourly_sync', lastRun: '2024-01-15T14:00:00Z', status: 'running' }
+    ],
+    uptime: process.uptime()
+  });
+});
+
+module.exports = router;
+[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ npm start
+[?2004l[1G[0K\[1G[0K
+> etl-monitor@1.0.0 start
+> node server.js
+
+[1G[0K\[1G[0KConfig warning
+ETL Monitor running on port 8080
+^C
+[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ node -e "const yaml = require('js-yaml'); const fs = require('fs'); console.log(yaml.load(fs.readFileSync('cconfig/app.yaml', 'utf8')));"
+[?2004l/home/user/etl-monitor/node_modules/js-yaml/lib/loader.js:203
+  throw generateError(state, message);
+  ^
+
+YAMLException: tab characters must not be used in indentation (9:1)
+
+  6 |   name: ETL Monitor
+  7 | 
+  8 | database:
+  9 | →host: localhost
+------^
+ 10 | →port: 5432
+ 11 | →name: etl_db
+    at generateError [90m(/home/user/etl-monitor/[39mnode_modules/[4mjs-yaml[24m/lib/loader.js:199:10[90m)[39m
+    at throwError [90m(/home/user/etl-monitor/[39mnode_modules/[4mjs-yaml[24m/lib/loader.js:203:9[90m)[39m
+    at readBlockMapping [90m(/home/user/etl-monitor/[39mnode_modules/[4mjs-yaml[24m/lib/loader.js:1068:7[90m)[39m
+    at composeNode [90m(/home/user/etl-monitor/[39mnode_modules/[4mjs-yaml[24m/lib/loader.js:1447:12[90m)[39m
+    at readDocument [90m(/home/user/etl-monitor/[39mnode_modules/[4mjs-yaml[24m/lib/loader.js:1631:3[90m)[39m
+    at loadDocuments [90m(/home/user/etl-monitor/[39mnode_modules/[4mjs-yaml[24m/lib/loader.js:1694:5[90m)[39m
+    at Object.load [90m(/home/user/etl-monitor/[39mnode_modules/[4mjs-yaml[24m/lib/loader.js:1720:19[90m)[39m
+    at [eval]:1:77
+[90m    at runScriptInThisContext (node:internal/vm:143:10)[39m
+[90m    at node:internal/process/execution:100:14[39m {
+  reason: [32m'tab characters must not be used in indentation'[39m,
+  mark: {
+    name: [1mnull[22m,
+    buffer: [32m'server:\n'[39m +
+      [32m'  port: 3000\n'[39m +
+      [32m'  host: localhost\n'[39m +
+      [32m'\n'[39m +
+      [32m'app:\n'[39m +
+      [32m'  name: ETL Monitor\n'[39m +
+      [32m'\n'[39m +
+      [32m'database:\n'[39m +
+      [32m'\thost: localhost\n'[39m +
+      [32m'\tport: 5432\n'[39m +
+      [32m'\tname: etl_db\n'[39m +
+      [32m'\n'[39m +
+      [32m'pipelines:\n'[39m +
+      [32m'  - name: daily_batch\n'[39m +
+      [32m'    schedule: "0 2 * * *"\n'[39m +
+      [32m'  - name: hourly_sync\n'[39m +
+      [32m'    schedule: "0 * * * *"\n'[39m,
+    position: [33m76[39m,
+    line: [33m8[39m,
+    column: [33m0[39m,
+    snippet: [32m'  6 |   name: ETL Monitor\n'[39m +
+      [32m'  7 | \n'[39m +
+      [32m'  8 | database:\n'[39m +
+      [32m'  9 | →host: localhost\n'[39m +
+      [32m'------^\n'[39m +
+      [32m' 10 | →port: 5432\n'[39m +
+      [32m' 11 | →name: etl_db'[39m
+  }
+}
+
+Node.js v18.20.8
+[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ sed -i 's/\t/  /g' config/app.yaml
+[?2004l[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ cat config/app.yaml
+[?2004lserver:
+  port: 3000
+  host: localhost
+
+app:
+  name: ETL Monitor
+
+database:
+  host: localhost
+  port: 5432
+  name: etl_db
+
+pipelines:
+  - name: daily_batch
+    schedule: "0 2 * * *"
+  - name: hourly_sync
+    schedule: "0 * * * *"
+[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ node -e "const yaml = require('js-yaml'); const fs = require('fs'); console.log(yaml.load(fs.readFileSync('cconfig/app.yaml', 'utf8')));"
+[?2004l{
+  server: { port: [33m3000[39m, host: [32m'localhost'[39m },
+  app: { name: [32m'ETL Monitor'[39m },
+  database: { host: [32m'localhost'[39m, port: [33m5432[39m, name: [32m'etl_db'[39m },
+  pipelines: [
+    { name: [32m'daily_batch'[39m, schedule: [32m'0 2 * * *'[39m },
+    { name: [32m'hourly_sync'[39m, schedule: [32m'0 * * * *'[39m }
+  ]
+}
+[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ npm start
+[?2004l[1G[0K\[1G[0K
+> etl-monitor@1.0.0 start
+> node server.js
+
+[1G[0K\[1G[0KETL Monitor running on port 3000
+curl -s http://localhost:3000/
+curl -s http://localhost:3000/status
+C-c
+echo "Fix complete: Replaced tab characters with spaces in config/app.yaml. Server now starts on port 3000."
+^C
+[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ npm start &
+[?2004l[1] 767
+[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ [1G[0K\[1G[0K
+> etl-monitor@1.0.0 start
+> node server.js
+
+[1G[0K\[1G[0KETL Monitor running on port 3000
+curl -s http://localhost:3000/
+[?2004l{"message":"ETL Monitor Dashboard","version":"1.0.0"}[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ curl -s http://localhost:3000/status
+[?2004l{"status":"ok","pipelines":[{"name":"daily_batch","lastRun":"2024-01-15T02:00:00Z","status":"completed"},{"name":"hourly_sync","lastRun":"2024-01-15T14:00:00Z","status":"running"}],"uptime":2.602936125}[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ echo "ETL Dashboard is now running on port 3000. Issue was tab characters in config/app.yaml that prevented  YAML parsing."
+[?2004lETL Dashboard is now running on port 3000. Issue was tab characters in config/app.yaml that prevented YAML parsing.
+[?2004hI have no name!@4fbb60006c7c:/home/user/etl-monitor$ 

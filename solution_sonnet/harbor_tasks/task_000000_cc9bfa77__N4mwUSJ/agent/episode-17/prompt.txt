@@ -1,0 +1,46 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+)}")
+EOF
+> import struct
+>
+> # WAL page header is:
+> # 0-2: magic (uint16)
+> # 2-4: info (uint16)
+> # 4-8: tli (uint32)
+> # 8-16: pageaddr (uint64)
+> # 16-20: xlp_rem_len (uint32)
+>
+> # But for LONG header (first page of segment):
+> # After standard header, there's XLogLongPageHeaderData:
+> # uint64 xlp_sysid
+> # uint32 xlp_seg_size  <- This is what pg_waldump is reading!
+> # uint32 xlp_xlog_blcksz
+>
+> # So xlp_seg_size should be at offset 24 (16 + 8)
+>
+> for seg_name in ['000000010000000000000003', '000000010000000000000004', '000000010000000000000005', '000000010000000000000006']:
+>     try:
+>         data = open(f'primary_wal/{seg_name}', 'rb').read(32)
+>         seg_size_bytes = data[24:28]
+>         seg_size = struct.unpack('<I', seg_size_bytes)[0]
+>         print(f"{seg_name}: seg_size at offset 24 = {seg_size} (0x{seg_size:08x}) [{seg_size_bytes.hex()}]")
+>     except:
+>         print(f"{seg_name}: not found")
+>
+> print(f"\nExpected seg_size: 16777216 (0x{16777216:08x})")
+> print(f"Expected bytes (LE): {struct.pack('<I', 16777216).hex()}")
+> EOF
+000000010000000000000003: seg_size at offset 24 = 3016270355 (0xb3c8a213) [13a2c8b3]
+000000010000000000000004: seg_size at offset 24 = 3506071325 (0xd0fa671d) [1d67fad0]
+000000010000000000000005: seg_size at offset 24 = 1614775644 (0x603f855c) [5c853f60]
+000000010000000000000006: seg_size at offset 24 = 2496269127 (0x94ca0b47) [470bca94]
+
+Expected seg_size: 16777216 (0x01000000)
+Expected bytes (LE): 00000001
+user@9365762ea513:~/wal_recovery$

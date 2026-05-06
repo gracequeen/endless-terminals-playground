@@ -1,0 +1,145 @@
+[?2004huser@6b2a9dfb3a15:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004huser@6b2a9dfb3a15:~$ clear
+[?2004l[H[J[?2004huser@6b2a9dfb3a15:~$ cd /home/user/backup
+[?2004l[?2004huser@6b2a9dfb3a15:~/backup$ ls -la
+[?2004ltotal 20
+drwxrwxrwx 1 root root 4096 May  5 08:17 .
+drwxrwxrwx 1 root root 4096 May  5 08:17 ..
+-rwxr-xr-x 1 user user  194 May  5 08:17 compress.sh
+-r-xr-xr-x 1 root root 1113 May  5 08:17 simulate_remote_extract.sh
+drwxr-xr-x 1 user user 4096 May  5 08:17 testdata
+[?2004huser@6b2a9dfb3a15:~/backup$ cat compress.sh
+[?2004l#!/bin/bash
+set -e
+SRCDIR="${1:-/home/user/backup/testdata}"
+OUTFILE="${2:-/home/user/backup/output.tar.gz}"
+tar -cf - "$SRCDIR" | gzip -9 --rsyncable > "$OUTFILE"
+echo "Compressed to $OUTFILE"
+[?2004huser@6b2a9dfb3a15:~/backup$ cat simulate_remote_extract.sh
+[?2004l#!/bin/bash
+# Simulates the archive server's extraction environment
+# The remote server runs an older gzip that doesn't understand rsyncable format extensions
+# and has a decompression buffer that chokes on rsyncable sync points in large files
+ARCHIVE="$1"
+if [ -z "$ARCHIVE" ]; then
+    echo "Usage: simulate_remote_extract.sh <archive.tar.gz>"
+    exit 1
+fi
+# Check if file has rsyncable markers (sync flush blocks)
+# Rsyncable gzip adds Z_SYNC_FLUSH points which older/minimal gzip implementations
+# may misinterpret as premature stream end when they exceed internal buffer limits
+FILESIZE=$(stat -c%s "$ARCHIVE")
+if [ "$FILESIZE" -gt 2000000 ]; then
+    # Check for rsyncable signature: multiple sync flush points
+    # Rsyncable adds sync points roughly every 4-8KB of input
+    SYNC_POINTS=$(od -A x -t x1 "$ARCHIVE" | grep -c "00 00 ff ff" || true)
+    if [ "$SYNC_POINTS" -gt 10 ]; then
+        echo "gzip: $ARCHIVE: unexpected end of file"
+        exit 1
+    fi
+fi
+# If no rsyncable markers or file is small, extract normally
+tar -xzf "$ARCHIVE" -C /tmp --strip-components=4
+echo "Extraction successful"
+[?2004huser@6b2a9dfb3a15:~/backup$ ls -la testdata/
+[?2004ltotal 8840
+drwxr-xr-x 1 user user   4096 May  5 08:17 .
+drwxrwxrwx 1 root root   4096 May  5 08:17 ..
+-rwxr-xr-x 1 user user 107520 May  5 08:16 binary_file_1.bin
+-rwxr-xr-x 1 user user 153600 May  5 08:16 binary_file_10.bin
+-rwxr-xr-x 1 user user 158720 May  5 08:16 binary_file_11.bin
+-rwxr-xr-x 1 user user 163840 May  5 08:16 binary_file_12.bin
+-rwxr-xr-x 1 user user 168960 May  5 08:16 binary_file_13.bin
+-rwxr-xr-x 1 user user 174080 May  5 08:16 binary_file_14.bin
+-rwxr-xr-x 1 user user 179200 May  5 08:16 binary_file_15.bin
+-rwxr-xr-x 1 user user 184320 May  5 08:16 binary_file_16.bin
+-rwxr-xr-x 1 user user 189440 May  5 08:16 binary_file_17.bin
+-rwxr-xr-x 1 user user 194560 May  5 08:16 binary_file_18.bin
+-rwxr-xr-x 1 user user 199680 May  5 08:16 binary_file_19.bin
+-rwxr-xr-x 1 user user 112640 May  5 08:16 binary_file_2.bin
+-rwxr-xr-x 1 user user 204800 May  5 08:16 binary_file_20.bin
+-rwxr-xr-x 1 user user 209920 May  5 08:16 binary_file_21.bin
+-rwxr-xr-x 1 user user 215040 May  5 08:17 binary_file_22.bin
+-rwxr-xr-x 1 user user 220160 May  5 08:17 binary_file_23.bin
+-rwxr-xr-x 1 user user 225280 May  5 08:17 binary_file_24.bin
+-rwxr-xr-x 1 user user 230400 May  5 08:17 binary_file_25.bin
+-rwxr-xr-x 1 user user 117760 May  5 08:16 binary_file_3.bin
+-rwxr-xr-x 1 user user 122880 May  5 08:16 binary_file_4.bin
+-rwxr-xr-x 1 user user 128000 May  5 08:16 binary_file_5.bin
+-rwxr-xr-x 1 user user 133120 May  5 08:16 binary_file_6.bin
+-rwxr-xr-x 1 user user 138240 May  5 08:16 binary_file_7.bin
+-rwxr-xr-x 1 user user 143360 May  5 08:16 binary_file_8.bin
+-rwxr-xr-x 1 user user 148480 May  5 08:16 binary_file_9.bin
+-rwxr-xr-x 1 user user 153000 May  5 08:17 text_file_1.txt
+-rwxr-xr-x 1 user user 180000 May  5 08:17 text_file_10.txt
+-rwxr-xr-x 1 user user 183000 May  5 08:17 text_file_11.txt
+-rwxr-xr-x 1 user user 186000 May  5 08:17 text_file_12.txt
+-rwxr-xr-x 1 user user 189000 May  5 08:17 text_file_13.txt
+-rwxr-xr-x 1 user user 192000 May  5 08:17 text_file_14.txt
+-rwxr-xr-x 1 user user 195000 May  5 08:17 text_file_15.txt
+-rwxr-xr-x 1 user user 198000 May  5 08:17 text_file_16.txt
+-rwxr-xr-x 1 user user 201000 May  5 08:17 text_file_17.txt
+-rwxr-xr-x 1 user user 204000 May  5 08:17 text_file_18.txt
+-rwxr-xr-x 1 user user 207000 May  5 08:17 text_file_19.txt
+-rwxr-xr-x 1 user user 156000 May  5 08:17 text_file_2.txt
+-rwxr-xr-x 1 user user 210000 May  5 08:17 text_file_20.txt
+-rwxr-xr-x 1 user user 213000 May  5 08:17 text_file_21.txt
+-rwxr-xr-x 1 user user 216000 May  5 08:17 text_file_22.txt
+-rwxr-xr-x 1 user user 219000 May  5 08:17 text_file_23.txt
+-rwxr-xr-x 1 user user 222000 May  5 08:17 text_file_24.txt
+-rwxr-xr-x 1 user user 225000 May  5 08:17 text_file_25.txt
+-rwxr-xr-x 1 user user 159000 May  5 08:17 text_file_3.txt
+-rwxr-xr-x 1 user user 162000 May  5 08:17 text_file_4.txt
+-rwxr-xr-x 1 user user 165000 May  5 08:17 text_file_5.txt
+-rwxr-xr-x 1 user user 168000 May  5 08:17 text_file_6.txt
+-rwxr-xr-x 1 user user 171000 May  5 08:17 text_file_7.txt
+-rwxr-xr-x 1 user user 174000 May  5 08:17 text_file_8.txt
+-rwxr-xr-x 1 user user 177000 May  5 08:17 text_file_9.txt
+[?2004huser@6b2a9dfb3a15:~/backup$ ./compress.sh
+[?2004ltar: Removing leading `/' from member names
+Compressed to /home/user/backup/output.tar.gz
+[?2004huser@6b2a9dfb3a15:~/backup$ ls -lh output.tar.gz
+[?2004l-rw-r--r-- 1 user user 4.1M May  5 08:18 output.tar.gz
+[?2004huser@6b2a9dfb3a15:~/backup$ ./simulate_remote_extract.sh output.tar.gz
+[?2004lgzip: output.tar.gz: unexpected end of file
+[?2004huser@6b2a9dfb3a15:~/backup$ cp compress.sh compress.sh.bak
+[?2004l[?2004huser@6b2a9dfb3a15:~/backup$ sed -i 's/gzip -9 --rsyncable/gzip -9/' compress.sh
+[?2004l[?2004huser@6b2a9dfb3a15:~/backup$ cat compress.sh
+[?2004l#!/bin/bash
+set -e
+SRCDIR="${1:-/home/user/backup/testdata}"
+OUTFILE="${2:-/home/user/backup/output.tar.gz}"
+tar -cf - "$SRCDIR" | gzip -9 > "$OUTFILE"
+echo "Compressed to $OUTFILE"
+[?2004huser@6b2a9dfb3a15:~/backup$ rm output.tar.gz
+[?2004l[?2004huser@6b2a9dfb3a15:~/backup$ ./compress.sh
+[?2004ltar: Removing leading `/' from member names
+Compressed to /home/user/backup/output.tar.gz
+[?2004huser@6b2a9dfb3a15:~/backup$ ls -lh output.tar.gz
+[?2004l-rw-r--r-- 1 user user 4.1M May  5 08:18 output.tar.gz
+[?2004huser@6b2a9dfb3a15:~/backup$ ./simulate_remote_extract.sh output.tar.gz
+[?2004lExtraction successful
+[?2004huser@6b2a9dfb3a15:~/backup$ diff compress.sh.bak compress.sh
+[?2004l5c5
+< tar -cf - "$SRCDIR" | gzip -9 --rsyncable > "$OUTFILE"
+---
+> tar -cf - "$SRCDIR" | gzip -9 > "$OUTFILE"
+[?2004huser@6b2a9dfb3a15:~/backup$ tar -tzf output.tar.gz | head -10
+[?2004lhome/user/backup/testdata/
+home/user/backup/testdata/text_file_14.txt
+home/user/backup/testdata/binary_file_17.bin
+home/user/backup/testdata/text_file_4.txt
+home/user/backup/testdata/binary_file_24.bin
+home/user/backup/testdata/text_file_24.txt
+home/user/backup/testdata/binary_file_7.bin
+home/user/backup/testdata/binary_file_9.bin
+home/user/backup/testdata/text_file_13.txt
+home/user/backup/testdata/binary_file_20.bin
+tar: stdout: write error
+[?2004huser@6b2a9dfb3a15:~/backup$ echo 'Fix Summary: Removed --rsyncable flag from gzip command in compress.sh'
+[?2004lFix Summary: Removed --rsyncable flag from gzip command in compress.sh
+[?2004huser@6b2a9dfb3a15:~/backup$ echo 'The --rsyncable flag creates sync points incompatible with older gzip implementations'
+[?2004lThe --rsyncable flag creates sync points incompatible with older gzip implementations
+[?2004huser@6b2a9dfb3a15:~/backup$ 

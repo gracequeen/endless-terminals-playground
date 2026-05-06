@@ -1,0 +1,215 @@
+[?2004hroot@d73f10ce7d36:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@d73f10ce7d36:/home/user# clear
+[?2004l[H[J[?2004hroot@d73f10ce7d36:/home/user# cd /home/user/research
+[?2004l[?2004hroot@d73f10ce7d36:/home/user/research# ls -la
+[?2004ltotal 24
+drwxrwxrwx 1 root root 4096 May  5 20:00 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 20:00 [34;42m..[0m
+drwxrwxrwx 2 root root 4096 May  5 20:00 [34;42moutput[0m
+-rwxrwxrwx 1 root root 1332 May  5 20:00 [01;32mprep_data.py[0m
+drwxrwxrwx 1 root root 4096 May  5 20:00 [34;42mraw[0m
+drwxrwxrwx 1 root root 4096 May  5 20:00 [34;42mutils[0m
+[?2004hroot@d73f10ce7d36:/home/user/research# python3 -c "import numpy; print(f'NumPy version: {numpy.__version__}')"
+[?2004lNumPy version: 1.26.0
+[?2004hroot@d73f10ce7d36:/home/user/research# cat prep_data.py
+[?2004l"""Data preparation script for survey responses."""
+
+import numpy as np
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from utils.converters import standardize_dtypes
+
+
+def load_raw_data(filepath):
+    """Load raw CSV data."""
+    return pd.read_csv(filepath)
+
+
+def clean_numeric_columns(df):
+    """Clean and convert numeric columns."""
+    # Convert score columns to float
+    score_cols = ['satisfaction_score', 'recommendation_score', 'effort_score']
+    for col in score_cols:
+        if col in df.columns:
+            df[col] = df[col].astype(np.float)
+
+    # Convert age to float for handling missing values
+    if 'age' in df.columns:
+        df['age'] = pd.to_numeric(df['age'], errors='coerce').astype(np.float)
+
+    return df
+
+
+def prepare_data():
+    """Main data preparation function."""
+    # Load raw data
+    df = load_raw_data('/home/user/research/raw/survey_responses.csv')
+
+    # Clean numeric columns
+    df = clean_numeric_columns(df)
+
+    # Standardize dtypes using utility functions
+    df = standardize_dtypes(df)
+
+    # Write to parquet
+    output_path = '/home/user/research/output/cleaned_survey.parquet'
+    df.to_parquet(output_path, engine='pyarrow', index=False)
+
+    print(f"Successfully wrote {len(df)} rows to {output_path}")
+
+
+if __name__ == '__main__':
+    prepare_data()
+[?2004hroot@d73f10ce7d36:/home/user/research# cat utils/converters.py
+[?2004l"""Utility functions for data type conversions."""
+
+import numpy as np
+
+
+def convert_to_int_safe(series):
+    """Convert a pandas series to integer, handling NaN values."""
+    return series.fillna(0).astype(np.int)
+
+
+def convert_object_columns(df, columns):
+    """Convert specified columns to object dtype."""
+    for col in columns:
+        if col in df.columns:
+            df[col] = df[col].astype(np.object)
+    return df
+
+
+def convert_bool_column(series):
+    """Convert a series to boolean type."""
+    return series.fillna(False).astype(np.bool)
+
+
+def standardize_dtypes(df):
+    """Standardize dtypes across the dataframe."""
+    # Convert ID columns to int
+    if 'respondent_id' in df.columns:
+        df['respondent_id'] = convert_to_int_safe(df['respondent_id'])
+
+    # Convert text columns to object
+    text_cols = ['comments', 'feedback']
+    df = convert_object_columns(df, text_cols)
+
+    # Convert boolean columns
+    if 'is_complete' in df.columns:
+        df['is_complete'] = convert_bool_column(df['is_complete'])
+
+    return df
+[?2004hroot@d73f10ce7d36:/home/user/research# cp prep_data.py prep_data.py.bak
+[?2004l[?2004hroot@d73f10ce7d36:/home/user/research# cp utils/converters.py utils/converters.py.bak
+[?2004l[?2004hroot@d73f10ce7d36:/home/user/research# cat > prep_data.py << 'EOF'
+[?2004l[?2004h> """Data preparation script for survey responses."""
+[?2004l[?2004h> 
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> import pandas as pd
+[?2004l[?2004h> import pyarrow as pa
+[?2004l[?2004h> import pyarrow.parquet as pq
+[?2004l[?2004h> 
+[?2004l[?2004h> from utils.converters import standardize_dtypes
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def load_raw_data(filepath):
+[?2004l[?2004h>     """Load raw CSV data."""
+[?2004l[?2004h>     return pd.read_csv(filepath)
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def clean_numeric_columns(df):
+[?2004l[?2004h>     """Clean and convert numeric columns."""
+[?2004l[?2004h>     # Convert score columns to float
+[?2004l[?2004h>     score_cols = ['satisfaction_score', 'recommendation_score', 'effort_score']
+[?2004l[?2004h>     for col in score_cols:
+[?2004l[?2004h>         if col in df.columns:
+[?2004l[?2004h>             df[col] = df[col].astype(np.float64)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Convert age to float for handling missing values
+[?2004l[?2004h>     if 'age' in df.columns:
+[?2004l[?2004h>         df['age'] = pd.to_numeric(df['age'], errors='coerce').astype(np.float64)
+[?2004l[?2004h> 
+[?2004l[?2004h>     return df
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def prepare_data():
+[?2004l[?2004h>     """Main data preparation function."""
+[?2004l[?2004h>     # Load raw data
+[?2004l[?2004h>     df = load_raw_data('/home/user/research/raw/survey_responses.csv')
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Clean numeric columns
+[?2004l[?2004h>     df = clean_numeric_columns(df)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Standardize dtypes using utility functions
+[?2004l[?2004h>     df = standardize_dtypes(df)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Write to parquet
+[?2004l[?2004h>     output_path = '/home/user/research/output/cleaned_survey.parquet'
+[?2004l[?2004h>     df.to_parquet(output_path, engine='pyarrow', index=False)
+[?2004l[?2004h> 
+[?2004l[?2004h>     print(f"Successfully wrote {len(df)} rows to {output_path}")
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == '__main__':
+[?2004l[?2004h>     prepare_data()
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@d73f10ce7d36:/home/user/research# cat > utils/converters.py << 'EOF'
+[?2004l[?2004h> """Utility functions for data type conversions."""
+[?2004l[?2004h> 
+[?2004l[?2004h> import numpy as np
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def convert_to_int_safe(series):
+[?2004l[?2004h>     """Convert a pandas series to integer, handling NaN values."""
+[?2004l[?2004h>     return series.fillna(0).astype(np.int64)
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def convert_object_columns(df, columns):
+[?2004l[?2004h>     """Convert specified columns to object dtype."""
+[?2004l[?2004h>     for col in columns:
+[?2004l[?2004h>         if col in df.columns:
+[?2004l[?2004h>             df[col] = df[col].astype(object)
+[?2004l[?2004h>     return df
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def convert_bool_column(series):
+[?2004l[?2004h>     """Convert a series to boolean type."""
+[?2004l[?2004h>     return series.fillna(False).astype(bool)
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def standardize_dtypes(df):
+[?2004l[?2004h>     """Standardize dtypes across the dataframe."""
+[?2004l[?2004h>     # Convert ID columns to int
+[?2004l[?2004h>     if 'respondent_id' in df.columns:
+[?2004l[?2004h>         df['respondent_id'] = convert_to_int_safe(df['respondent_id'])
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Convert text columns to object
+[?2004l[?2004h>     text_cols = ['comments', 'feedback']
+[?2004l[?2004h>     df = convert_object_columns(df, text_cols)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Convert boolean columns
+[?2004l[?2004h>     if 'is_complete' in df.columns:
+[?2004l[?2004h>         df['is_complete'] = convert_bool_column(df['is_complete'])
+[?2004l[?2004h> 
+[?2004l[?2004h>     return df
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@d73f10ce7d36:/home/user/research# python3 prep_data.py
+[?2004lSuccessfully wrote 500 rows to /home/user/research/output/cleaned_survey.parquet
+[?2004hroot@d73f10ce7d36:/home/user/research# ls -lh output/
+[?2004ltotal 20K
+-rw-r--r-- 1 root root 17K May  5 20:01 cleaned_survey.parquet
+[?2004hroot@d73f10ce7d36:/home/user/research# file output/cleaned_survey.parquet
+[?2004lbash: file: command not found
+[?2004hroot@d73f10ce7d36:/home/user/research# echo "Task completed successfully! Fixed numpy compatibility issues:"
+[?2004lTask completed successfully! Fixed numpy compatibility issues:
+[?2004hroot@d73f10ce7d36:/home/user/research# echo "- prep_data.py: np.float → np.float64"
+[?2004l- prep_data.py: np.float → np.float64
+[?2004hroot@d73f10ce7d36:/home/user/research# echo "- utils/converters.py: np.int → np.int64, np.object → object, np.bool → bool"
+[?2004l- utils/converters.py: np.int → np.int64, np.object → object, np.bool → bool
+[?2004hroot@d73f10ce7d36:/home/user/research# echo "Output: 500 rows written to /home/user/research/output/cleaned_survey.parquet (17K)"
+[?2004lOutput: 500 rows written to /home/user/research/output/cleaned_survey.parquet (17K)
+[?2004hroot@d73f10ce7d36:/home/user/research# 

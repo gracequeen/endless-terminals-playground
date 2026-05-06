@@ -1,0 +1,168 @@
+[?2004huser@579a842743e3:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004huser@579a842743e3:~$ clear
+[?2004l[H[J[?2004huser@579a842743e3:~$ ls -la /home/user/
+[?2004ltotal 36
+drwxrwxrwx 1 user user 4096 May  5 04:49 [0m[34;42m.[0m
+drwxr-xr-x 1 root root 4096 May  5 04:49 [01;34m..[0m
+-rw-r--r-- 1 user user  220 Jan  6  2022 .bash_logout
+-rw-r--r-- 1 user user 3771 Jan  6  2022 .bashrc
+drwxr-xr-x 3 user user 4096 May  5 04:49 [01;34m.config[0m
+-rw-r--r-- 1 user user  807 Jan  6  2022 .profile
+drwxr-xr-x 1 user user 4096 May  5 04:49 [01;34mbackups[0m
+drwxr-xr-x 1 user user 4096 May  5 04:49 [01;34mprojects[0m
+[?2004huser@579a842743e3:~$ ls -la /home/user/projects 2>&1 | head -20
+[?2004ltotal 24
+drwxr-xr-x 1 user user 4096 May  5 04:49 .
+drwxrwxrwx 1 user user 4096 May  5 04:49 ..
+drwxr-xr-x 1 user user 4096 May  5 04:49 alpha
+drwx--x--x 1 user user 4096 May  5 04:49 beta
+drwx------ 1 root root 4096 May  5 04:49 delta
+drwxr-xr-x 1 user user 4096 May  5 04:49 gamma
+[?2004huser@579a842743e3:~$ find /home/user/projects -type f -readable 2>/dev/null | head -20
+[?2004l/home/user/projects/beta/notes.txt
+/home/user/projects/beta/data.csv
+/home/user/projects/alpha/config.json
+/home/user/projects/gamma/subdir/deep.txt
+/home/user/projects/gamma/readable.md
+[?2004huser@579a842743e3:~$ cat > /home/user/backup.sh << 'EOF'
+[?2004lroup}" >> "${MANIFEST}"
+    fi
+done
+
+echo "Backup complete. Manifest written to ${MANIFEST}"
+EOF
+[?2004h> #!/bin/bash
+[?2004l[?2004h> 
+[?2004l[?2004h> # Backup script that copies accessible files and creates ownership manifest
+[?2004l[?2004h> 
+[?2004l[?2004h> SOURCE_DIR="/home/user/projects"
+[?2004l[?2004h> BACKUP_DIR="/home/user/backups"
+[?2004l[?2004h> MANIFEST="${BACKUP_DIR}/manifest.txt"
+[?2004l[?2004h> 
+[?2004l[?2004h> # Create backup directory if it doesn't exist
+[?2004l[?2004h> mkdir -p "${BACKUP_DIR}" 2>/dev/null
+[?2004l[?2004h> 
+[?2004l[?2004h> # Clear or create manifest file
+[?2004l[?2004h> > "${MANIFEST}"
+[?2004l[?2004h> 
+[?2004l[?2004h> # Find all readable files and process them
+[?2004l[?2004h> find "${SOURCE_DIR}" -type f -readable 2>/dev/null | while IFS= read -r file; do
+[?2004l[?2004h>     # Get the relative path from source directory
+[?2004l[?2004h>     rel_path="${file#${SOURCE_DIR}/}"
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Destination path
+[?2004l[?2004h>     dest_file="${BACKUP_DIR}/${rel_path}"
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Create destination directory structure
+[?2004l[?2004h>     dest_dir="$(dirname "${dest_file}")"
+[?2004l[?2004h>     mkdir -p "${dest_dir}" 2>/dev/null
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Copy the file
+[?2004l[?2004h>     if cp "${file}" "${dest_file}" 2>/dev/null; then
+[?2004l[?2004h>         # Get owner:group information
+[?2004l[?2004h>         owner_group=$(stat -c '%U:%G' "${file}" 2>/dev/null)
+[?2004l[?2004h>         
+[?2004l[?2004h>         # Write to manifest
+[?2004l[?2004h>         echo "${rel_path} ${owner_group}" >> "${MANIFEST}"
+[?2004l[?2004h>     fi
+[?2004l[?2004h> done
+[?2004l[?2004h> 
+[?2004l[?2004h> echo "Backup complete. Manifest written to ${MANIFEST}"
+[?2004l[?2004h> EOF
+[?2004l[?2004huser@579a842743e3:~$ chmod +x /home/user/backup.sh
+[?2004l[?2004huser@579a842743e3:~$ cat /home/user/backup.sh
+[?2004l#!/bin/bash
+
+# Backup script that copies accessible files and creates ownership manifest
+
+SOURCE_DIR="/home/user/projects"
+BACKUP_DIR="/home/user/backups"
+MANIFEST="${BACKUP_DIR}/manifest.txt"
+
+# Create backup directory if it doesn't exist
+mkdir -p "${BACKUP_DIR}" 2>/dev/null
+
+# Clear or create manifest file
+> "${MANIFEST}"
+
+# Find all readable files and process them
+find "${SOURCE_DIR}" -type f -readable 2>/dev/null | while IFS= read -r file; do
+    # Get the relative path from source directory
+    rel_path="${file#${SOURCE_DIR}/}"
+    
+    # Destination path
+    dest_file="${BACKUP_DIR}/${rel_path}"
+    
+    # Create destination directory structure
+    dest_dir="$(dirname "${dest_file}")"
+    mkdir -p "${dest_dir}" 2>/dev/null
+    
+    # Copy the file
+    if cp "${file}" "${dest_file}" 2>/dev/null; then
+        # Get owner:group information
+        owner_group=$(stat -c '%U:%G' "${file}" 2>/dev/null)
+        
+        # Write to manifest
+        echo "${rel_path} ${owner_group}" >> "${MANIFEST}"
+    fi
+done
+
+echo "Backup complete. Manifest written to ${MANIFEST}"
+[?2004huser@579a842743e3:~$ /home/user/backup.sh
+[?2004lBackup complete. Manifest written to /home/user/backups/manifest.txt
+[?2004huser@579a842743e3:~$ echo "=== Backup directory structure ==="
+[?2004l=== Backup directory structure ===
+[?2004huser@579a842743e3:~$ find /home/user/backups -type f | sort
+[?2004l/home/user/backups/alpha/config.json
+/home/user/backups/beta/data.csv
+/home/user/backups/beta/notes.txt
+/home/user/backups/gamma/readable.md
+/home/user/backups/gamma/subdir/deep.txt
+/home/user/backups/manifest.txt
+[?2004huser@579a842743e3:~$ echo "=== Manifest contents ==="
+[?2004l=== Manifest contents ===
+[?2004huser@579a842743e3:~$ cat /home/user/backups/manifest.txt
+[?2004lbeta/notes.txt user:user
+beta/data.csv user:user
+alpha/config.json user:user
+gamma/subdir/deep.txt user:user
+gamma/readable.md user:user
+[?2004huser@579a842743e3:~$ echo "=== Verifying directory structure preservation ==="
+[?2004l=== Verifying directory structure preservation ===
+[?2004huser@579a842743e3:~$ ls -la /home/user/backups/
+[?2004ltotal 28
+drwxr-xr-x 1 user user 4096 May  5 04:50 [0m[01;34m.[0m
+drwxrwxrwx 1 user user 4096 May  5 04:50 [34;42m..[0m
+drwxr-xr-x 2 user user 4096 May  5 04:50 [01;34malpha[0m
+drwxr-xr-x 2 user user 4096 May  5 04:50 [01;34mbeta[0m
+drwxr-xr-x 3 user user 4096 May  5 04:50 [01;34mgamma[0m
+-rw-r--r-- 1 user user  137 May  5 04:50 manifest.txt
+[?2004huser@579a842743e3:~$ ls -la /home/user/backups/beta/
+[?2004ltotal 16
+drwxr-xr-x 2 user user 4096 May  5 04:50 [0m[01;34m.[0m
+drwxr-xr-x 1 user user 4096 May  5 04:50 [01;34m..[0m
+-rw-r--r-- 1 user user   14 May  5 04:50 data.csv
+-rw-r--r-- 1 user user   10 May  5 04:50 notes.txt
+[?2004huser@579a842743e3:~$ echo "=== Testing script can be run multiple times ==="
+[?2004l=== Testing script can be run multiple times ===
+[?2004huser@579a842743e3:~$ /home/user/backup.sh
+[?2004lBackup complete. Manifest written to /home/user/backups/manifest.txt
+[?2004huser@579a842743e3:~$ wc -l /home/user/backups/manifest.txt
+[?2004l5 /home/user/backups/manifest.txt
+[?2004huser@579a842743e3:~$ echo "=== Final verification ==="
+[?2004l=== Final verification ===
+[?2004huser@579a842743e3:~$ ls -l /home/user/backup.sh
+[?2004l-rwxr-xr-x 1 user user 1081 May  5 04:50 [0m[01;32m/home/user/backup.sh[0m
+[?2004huser@579a842743e3:~$ echo "Files in manifest:"
+[?2004lFiles in manifest:
+[?2004huser@579a842743e3:~$ cat /home/user/backups/manifest.txt
+[?2004lbeta/notes.txt user:user
+beta/data.csv user:user
+alpha/config.json user:user
+gamma/subdir/deep.txt user:user
+gamma/readable.md user:user
+[?2004huser@579a842743e3:~$ echo "\nBackup complete! Script location: /home/user/backup.sh"
+[?2004l\nBackup complete! Script location: /home/user/backup.sh
+[?2004huser@579a842743e3:~$ 

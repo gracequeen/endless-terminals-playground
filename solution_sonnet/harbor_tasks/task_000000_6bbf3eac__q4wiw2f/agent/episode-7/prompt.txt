@@ -1,0 +1,44 @@
+New Terminal Output:
+
+root@3fb5ad662cbe:/home/user/etl# python3 << 'PYEOF'
+> with open('Makefile', 'w') as f:
+>     f.write('''# ETL Pipeline Makefile
+> # Cleans CSVs, joins them, and generates summary
+>
+> SHELL := /bin/bash
+>
+> # Source files
+> SOURCES := $(wildcard data/*.csv)
+> # Derive clean targets from sources
+> CLEAN_TARGETS := $(patsubst data/%.csv,clean/%.csv,$(SOURCES))
+>
+> .PHONY: all clean
+>
+> all: summary.csv
+>
+> # Pattern rule for cleaning - FIX #1: Use $@ instead of $$@
+> clean/%.csv: data/%.csv
+> \t@mkdir -p clean
+> \tpython3 scripts/clean.py $< $@
+>
+> # Generate manifest of cleaned files - FIX #3: Depend on actual clean targets
+> clean/manifest.txt: $(CLEAN_TARGETS)
+> \t@mkdir -p clean
+> \t@ls clean/*.csv 2>/dev/null > clean/manifest.txt || touch clean/manifest.txt
+>
+> # FIX #2: Use $(CLEAN_TARGETS) instead of $(wildcard clean/*.csv)
+> # FIX #3: Add clean/manifest.txt as dependency
+> joined.csv: $(CLEAN_TARGETS) clean/manifest.txt
+> \tpython3 scripts/join.py clean/manifest.txt joined.csv
+>
+> # FIX #4: Add config/params.yaml as dependency
+> summary.csv: joined.csv config/params.yaml
+> \tpython3 scripts/summarize.py joined.csv summary.csv
+>
+> clean:
+> \trm -rf clean/*.csv clean/manifest.txt joined.csv summary.csv
+> ''')
+> PYEOF
+root@3fb5ad662cbe:/home/user/etl# make clean
+rm -rf clean/*.csv clean/manifest.txt joined.csv summary.csv
+root@3fb5ad662cbe:/home/user/etl#

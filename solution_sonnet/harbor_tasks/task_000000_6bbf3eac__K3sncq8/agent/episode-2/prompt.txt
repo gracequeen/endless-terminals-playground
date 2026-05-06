@@ -1,0 +1,43 @@
+New Terminal Output:
+
+root@606f0d4ad24f:/home/user/etl# cat Makefile
+# ETL Pipeline Makefile
+# Cleans CSVs, joins them, and generates summary
+
+SHELL := /bin/bash
+
+# Source files
+SOURCES := $(wildcard data/*.csv)
+# Derive clean targets from sources
+CLEAN_TARGETS := $(patsubst data/%.csv,clean/%.csv,$(SOURCES))
+
+.PHONY: all clean
+
+all: summary.csv
+
+# Pattern rule for cleaning - uses $$@ for secondary expansion but directive is MISSING
+# BUG #1: $$@ without .SECONDEXPANSION means it's interpreted as literal $@ in first pass
+clean/%.csv: data/%.csv
+        @mkdir -p clean
+        python3 scripts/clean.py $< $$@
+
+# Generate manifest of cleaned files
+clean/manifest.txt:
+        @mkdir -p clean
+        @ls clean/*.csv 2>/dev/null > clean/manifest.txt || touch clean/manifest.txt
+
+# BUG #2: $(wildcard clean/*.csv) is evaluated at Makefile parse time
+# On first run when clean/ is empty, this evaluates to nothing
+# So joined.csv has NO dependencies after first run
+# BUG #3: Missing dependency on clean/manifest.txt - race condition with -j4
+joined.csv: $(wildcard clean/*.csv)
+        python3 scripts/join.py clean/manifest.txt joined.csv
+
+# BUG #4: Missing dependency on config/params.yaml
+# summarize.py secretly reads this file but it's not listed here
+summary.csv: joined.csv
+        python3 scripts/summarize.py joined.csv summary.csv
+
+clean:
+        rm -rf clean/*.csv clean/manifest.txt joined.csv summary.csv
+root@606f0d4ad24f:/home/user/etl#

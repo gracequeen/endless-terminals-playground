@@ -1,0 +1,283 @@
+[?2004huser@e1ed81a2c0ee:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004huser@e1ed81a2c0ee:~$ clear
+[?2004l[H[J[?2004huser@e1ed81a2c0ee:~$ cd /home/user/archive_pipeline
+[?2004l[?2004huser@e1ed81a2c0ee:~/archive_pipeline$ ls -la
+[?2004ltotal 24
+drwxrwxrwx 1 user user 4096 May  5 08:31 .
+drwxrwxrwx 1 user user 4096 May  5 08:32 ..
+-rwxrwxrwx 1 user user 1280 May  5 08:31 carch_format.md
+-rwxrwxrwx 1 user user 2696 May  5 08:31 create.py
+-rwxrwxrwx 1 user user 2486 May  5 08:31 extract.py
+-rwxrwxrwx 1 user user 2874 May  5 08:31 run_test.sh
+[?2004huser@e1ed81a2c0ee:~/archive_pipeline$ cat carch_format.md
+[?2004l# CARCH Archive Format
+
+The `.carch` format is a custom archive bundle that combines metadata with a compressed tar archive.
+
+## Format Structure
+
+```
+[4 bytes]           magic: "CARC" (ASCII)
+[4 bytes]           header_len: uint32 little-endian, length of JSON metadata
+[header_len bytes]  JSON metadata
+[remaining bytes]   tar+zstd compressed payload
+```
+
+## Field Details
+
+### Magic (4 bytes)
+- Fixed ASCII string: `CARC`
+- Used to identify valid .carch files
+
+### Header Length (4 bytes)
+- Unsigned 32-bit integer in little-endian format
+- Specifies the length of the JSON metadata section in bytes
+
+### JSON Metadata (variable length)
+- UTF-8 encoded JSON object
+- Contains:
+  - `source_path`: Original path that was archived
+  - `timestamp`: Unix timestamp when archive was created
+  - `file_count`: Number of files in the archive
+  - `total_size`: Total uncompressed size in bytes
+
+### Payload (remaining bytes)
+- tar archive compressed with zstd
+- Contains the directory tree from source_path
+- Starts at offset: 4 (magic) + 4 (header_len) + header_len (metadata) = 8 + header_len
+
+## Example
+
+For a metadata JSON of 150 bytes:
+- Bytes 0-3: "CARC"
+- Bytes 4-7: 0x96 0x00 0x00 0x00 (150 in little-endian)
+- Bytes 8-157: JSON metadata
+- Bytes 158+: zstd-compressed tar data
+[?2004huser@e1ed81a2c0ee:~/archive_pipeline$ cat create.py
+[?2004l#!/usr/bin/env python3
+"""
+create.py - Create a .carch archive bundle
+
+Usage: python3 create.py <source_dir> <output.carch>
+"""
+
+import sys
+import os
+import json
+import struct
+import subprocess
+import time
+
+
+def count_files_and_size(directory):
+    """Count files and total size in directory tree."""
+    file_count = 0
+    total_size = 0
+    for root, dirs, files in os.walk(directory):
+        for f in files:
+            filepath = os.path.join(root, f)
+            if os.path.isfile(filepath):
+                file_count += 1
+                total_size += os.path.getsize(filepath)
+    return file_count, total_size
+
+
+def create_archive(source_dir, output_path):
+    """Create a .carch archive from source directory."""
+    if not os.path.isdir(source_dir):
+        raise ValueError(f"Source directory does not exist: {source_dir}")
+
+    # Build metadata
+    file_count, total_size = count_files_and_size(source_dir)
+    metadata = {
+        "source_path": os.path.abspath(source_dir),
+        "timestamp": int(time.time()),
+        "file_count": file_count,
+        "total_size": total_size
+    }
+
+    metadata_bytes = json.dumps(metadata).encode('utf-8')
+    header_len = len(metadata_bytes)
+
+    with open(output_path, 'wb') as out:
+        # Write magic
+        out.write(b'CARC')
+
+        # Write header length (uint32 little-endian)
+        out.write(struct.pack('<I', header_len))
+
+        # Write metadata
+        out.write(metadata_bytes)
+
+        # Create tar+zstd compressed payload and append
+        # Use tar to archive, pipe through zstd
+        tar_proc = subprocess.Popen(
+            ['tar', '-c', '-C', source_dir, '.'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+
+        zstd_proc = subprocess.Popen(
+            ['zstd', '-c', '-'],
+            stdin=tar_proc.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+
+        tar_proc.stdout.close()
+
+        # Read compressed data and write to output
+        compressed_data, zstd_err = zstd_proc.communicate()
+        tar_proc.wait()
+
+        if tar_proc.returncode != 0:
+            raise RuntimeError(f"tar failed")
+        if zstd_proc.returncode != 0:
+            raise RuntimeError(f"zstd failed: {zstd_err.decode()}")
+
+        out.write(compressed_data)
+
+    print(f"Created archive: {output_path}")
+    print(f"  Files: {file_count}")
+    print(f"  Original size: {total_size} bytes")
+    print(f"  Archive size: {os.path.getsize(output_path)} bytes")
+
+
+if __name__ == '__main__':
+    if len(sys.argv) != 3:
+        print(f"Usage: {sys.argv[0]} <source_dir> <output.carch>")
+        sys.exit(1)
+
+    create_archive(sys.argv[1], sys.argv[2])
+[?2004huser@e1ed81a2c0ee:~/archive_pipeline$ cat extract.py
+[?2004l#!/usr/bin/env python3
+"""
+extract.py - Extract a .carch archive bundle
+
+Usage: python3 extract.py <archive.carch> <dest_dir>
+"""
+
+import sys
+import os
+import json
+import struct
+import subprocess
+
+
+def extract_archive(carch_path, dest_dir):
+    """Extract a .carch archive to destination directory."""
+    if not os.path.isfile(carch_path):
+        raise ValueError(f"Archive does not exist: {carch_path}")
+
+    # Create destination directory if needed
+    os.makedirs(dest_dir, exist_ok=True)
+
+    with open(carch_path, 'rb') as f:
+        # Read and verify magic
+        magic = f.read(4)
+        if magic != b'CARC':
+            raise ValueError(f"Invalid archive: bad magic bytes")
+
+        # Read header length
+        header_len = struct.unpack('<I', f.read(4))[0]
+
+        # Read and parse metadata
+        metadata_bytes = f.read(header_len)
+        metadata = json.loads(metadata_bytes.decode('utf-8'))
+
+        print(f"Extracting archive...")
+        print(f"  Source: {metadata.get('source_path', 'unknown')}")
+        print(f"  Files: {metadata.get('file_count', 'unknown')}")
+        print(f"  Original size: {metadata.get('total_size', 'unknown')} bytes")
+
+        # Calculate payload offset and seek to it
+        # The payload starts after magic + header_len field + metadata
+        payload_offset = header_len
+        f.seek(payload_offset)
+
+        # Read the compressed payload
+        payload = f.read()
+
+        # Decompress with zstd and extract with tar
+        zstd_proc = subprocess.Popen(
+            ['zstd', '-d', '-c'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+
+        tar_proc = subprocess.Popen(
+            ['tar', '-x', '-C', dest_dir],
+            stdin=zstd_proc.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+
+        zstd_proc.stdout.close()
+
+        # Send payload to zstd
+        zstd_proc.stdin.write(payload)
+        zstd_proc.stdin.close()
+
+        # Wait for processes to complete
+        tar_out, tar_err = tar_proc.communicate()
+        zstd_proc.wait()
+
+        # Note: We don't strictly check return codes because zstd/tar
+        # can sometimes return non-zero even on partial success
+
+        print(f"Extracted to: {dest_dir}")
+
+
+if __name__ == '__main__':
+    if len(sys.argv) != 3:
+        print(f"Usage: {sys.argv[0]} <archive.carch> <dest_dir>")
+        sys.exit(1)
+
+    extract_archive(sys.argv[1], sys.argv[2])
+[?2004huser@e1ed81a2c0ee:~/archive_pipeline$ sed -i '41s/payload_offset = header_len/payload_offset = 8 + header_len/' extract.py
+[?2004l[?2004huser@e1ed81a2c0ee:~/archive_pipeline$ grep -n 'payload_offset' extract.py
+[?2004l43:        payload_offset = header_len
+44:        f.seek(payload_offset)
+[?2004huser@e1ed81a2c0ee:~/archive_pipeline$ cat -n extract.py | grep -A 2 -B 2 'payload_offset'
+[?2004l    41	        # Calculate payload offset and seek to it
+    42	        # The payload starts after magic + header_len field + metadata
+    43	        payload_offset = header_len
+    44	        f.seek(payload_offset)
+    45	
+    46	        # Read the compressed payload
+[?2004huser@e1ed81a2c0ee:~/archive_pipeline$ sed -i '43s/= header_len$/= 8 + header_len/' extract.py
+[?2004l[?2004huser@e1ed81a2c0ee:~/archive_pipeline$ cat -n extract.py | grep -A 2 -B 2 'payload_offset'
+[?2004l    41	        # Calculate payload offset and seek to it
+    42	        # The payload starts after magic + header_len field + metadata
+    43	        payload_offset = 8 + header_len
+    44	        f.seek(payload_offset)
+    45	
+    46	        # Read the compressed payload
+[?2004huser@e1ed81a2c0ee:~/archive_pipeline$ ./run_test.sh
+[?2004l=== Creating test source tree ===
+Created 52 files in test source
+
+=== Computing source checksums ===
+
+=== Creating archive ===
+Created archive: /tmp/test.carch
+  Files: 52
+  Original size: 7211515 bytes
+  Archive size: 7225108 bytes
+
+=== Extracting archive ===
+Extracting archive...
+  Source: /tmp/test_src
+  Files: 52
+  Original size: 7211515 bytes
+Extracted to: /tmp/test_dst
+
+=== Computing destination checksums ===
+
+=== Comparing checksums ===
+SUCCESS: All file checksums match!
+Verified 52 files
+[?2004huser@e1ed81a2c0ee:~/archive_pipeline$ 

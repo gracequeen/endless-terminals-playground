@@ -1,0 +1,3 @@
+Dashboard at /home/user/monitor/dashboard.py pulls metrics from three upstream services and renders a summary. It's been throwing checksum errors on startup for the past hour — something about manifest integrity. The services themselves are fine (checked manually), so it's something in how we're validating or caching the schemas locally.
+
+Config lives in /home/user/monitor/config/ and there's a manifest.json in there that I think gets verified against checksums in checksums.sha256. Not sure if something got out of sync or if the verification logic itself is wrong. Either way I need the dashboard to start clean — `python3 /home/user/monitor/dashboard.py` should print the metrics summary without any integrity errors.

@@ -1,0 +1,59 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+ 0:
+            xor_key[i % key_len] = data[i] ^ expected[i]
+    print(f"Key length {key_len:2d}: {xor_key.hex()}")
+EOF
+> import struct
+>
+> data = open('primary_wal/000000010000000000000003', 'rb').read(32)
+> print(f"First 32 bytes: {data.hex()}")
+>
+> # Expected values for WAL segment 3, page 0:
+> # Offset 0-2: magic 0xD097 (little-endian: 97 D0)
+> # Offset 4-8: timeline ID 1 (little-endian: 01 00 00 00)
+> # Offset 8-16: pageaddr 0x3000000 (little-endian: 00 00 00 03 00 00 00 00)
+>
+> expected = bytearray(32)
+> expected[0:2] = [0x97, 0xD0]  # magic
+> expected[4:8] = [0x01, 0x00, 0x00, 0x00]  # timeline
+> expected[8:16] = [0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00]  # pageaddr
+>
+> print(f"Expected pattern: {expected.hex()}")
+> print("\nXOR key derivation:")
+> for i in range(16):
+>     if expected[i] != 0:
+>         xor_val = data[i] ^ expected[i]
+>         print(f"Offset {i:2d}: {data[i]:02x} ^ {expected[i]:02x} = {xor_val:02x}")
+>
+> # Check for repeating pattern
+> print("\nLooking for repeating XOR key pattern...")
+> key_candidates = []
+> for key_len in [1, 2, 4, 8, 16]:
+>     xor_key = bytearray(key_len)
+>     for i in range(16):
+>         if expected[i] != 0:
+>             xor_key[i % key_len] = data[i] ^ expected[i]
+>     print(f"Key length {key_len:2d}: {xor_key.hex()}")
+> EOF
+First 32 bytes: 4472c3072a4699225666a1ec3b14765d99ffef5a503a10cd13a2c8b3dd65d92d
+Expected pattern: 97d0000001000000000000030000000000000000000000000000000000000000
+
+XOR key derivation:
+Offset  0: 44 ^ 97 = d3
+Offset  1: 72 ^ d0 = a2
+Offset  4: 2a ^ 01 = 2b
+Offset 11: ec ^ 03 = ef
+
+Looking for repeating XOR key pattern...
+Key length  1: ef
+Key length  2: 2bef
+Key length  4: 2ba200ef
+Key length  8: d3a200ef2b000000
+Key length 16: d3a200002b000000000000ef00000000
+user@9365762ea513:~/wal_recovery$

@@ -1,0 +1,39 @@
+New Terminal Output:
+
+root@6611b8bbd090:/home/user/pipeline# echo "=== Step 2: Resume from checkpoint (should process remaining 30000 lines) ==="
+=== Step 2: Resume from checkpoint (should process remaining 30000 lines) ===
+root@6611b8bbd090:/home/user/pipeline# python3 process.py
+root@6611b8bbd090:/home/user/pipeline# python3 << 'EOF'
+> import sqlite3
+> conn = sqlite3.connect('output/summary.db')
+> result = conn.execute('SELECT SUM(count) FROM summary').fetchone()
+> print(f"\n=== FINAL RESULTS ===")
+> print(f"Total records in DB: {result[0]}")
+> print(f"Expected: 50000")
+> print(f"Status: {'SUCCESS - Resume working correctly!' if result[0] == 50000 else 'FAILED - Data mismatch'}")
+> print(f"\nCheckpoint: {open('.checkpoint').read()}")
+> print("\nCategory breakdown:")
+> for row in conn.execute('SELECT category, count FROM summary ORDER BY category'):
+>     print(f"  {row[0]}: {row[1]} records")
+> conn.close()
+> EOF
+
+=== FINAL RESULTS ===
+Total records in DB: 50000
+Expected: 50000
+Status: SUCCESS - Resume working correctly!
+
+Checkpoint: {"last_line": 50000}
+
+Category breakdown:
+  analytics: 4927 records
+  api: 5035 records
+  auth: 5135 records
+  batch: 4917 records
+  mobile: 5052 records
+  notification: 5018 records
+  payment: 5040 records
+  storage: 5006 records
+  streaming: 4962 records
+  web: 4908 records
+root@6611b8bbd090:/home/user/pipeline#

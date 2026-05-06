@@ -1,0 +1,58 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+root@3d07c991619c:/home/user/project# cat -n run_scan.sh
+     1  #!/bin/bash
+     2  # SAST scan wrapper script
+     3  # Runs semgrep with our security configuration
+     4
+     5  set -e
+     6
+     7  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+     8  cd "$SCRIPT_DIR"
+     9
+    10  CONFIG_FILE=".security/scanner-config.yaml"
+    11  REPORT_FILE="reports/scan-results.json"
+    12
+    13  # Parse config file for settings
+    14  IGNORE_FILE=$(grep -E "^ignore_file:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"' | tr -d "'")
+    15  SEVERITY=$(grep -E "^severity_threshold:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"' | tr -d "'")
+    16
+    17  echo "Running SAST scan..."
+    18  echo "Config: $CONFIG_FILE"
+    19  echo "Ignore file: $IGNORE_FILE"
+    20  echo "Severity threshold: $SEVERITY"
+    21
+    22  # Build semgrep command
+    23  SEMGREP_CMD="semgrep --config p/python --json -o $REPORT_FILE"
+    24
+    25  # Add ignore file if specified
+    26  if [ -n "$IGNORE_FILE" ]; then
+    27  # Add severity threshold
+    28  if [ -n "$SEVERITY" ]; then
+    29      SEMGREP_CMD="$SEMGREP_CMD --severity $SEVERITY"
+    30  fi
+    31
+    32  # Add source directory
+    33  SEMGREP_CMD="$SEMGREP_CMD src/"
+    34
+    35  echo "Executing: $SEMGREP_CMD"
+    36  $SEMGREP_CMD
+    37
+    38  # Check results
+    39  FINDING_COUNT=$(jq '.results | length' "$REPORT_FILE")
+    40  echo "Scan complete. Found $FINDING_COUNT findings."
+    41
+    42  # Exit nonzero if there are WARNING or ERROR severity findings
+    43  WARNING_COUNT=$(jq '[.results[] | select(.extra.severity == "WARNING" or .extra.severity == "ERROR")] | length' "$REPORT_FILE")
+    44  if [ "$WARNING_COUNT" -gt 0 ]; then
+    45      echo "ERROR: $WARNING_COUNT findings at WARNING level or above. Failing scan."
+    46      exit 1
+    47  fi
+    48
+    49  echo "Scan passed."
+    50  exit 0
+root@3d07c991619c:/home/user/project#

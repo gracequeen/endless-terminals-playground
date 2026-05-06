@@ -1,0 +1,125 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+root@df12c5ecd9a8:/home/user/netcheck# cat checker.py
+#!/usr/bin/env python3
+"""
+Health checker script - checks configured endpoints and writes results.
+Reads endpoint configuration from endpoints.yaml and outputs to results.json.
+"""
+
+import json
+import os
+import yaml
+import requests
+from datetime import datetime
+
+# Import from config module (added during reorganization)
+from config import DEFAULT_TIMEOUT
+
+
+def load_config(config_path):
+    """Load endpoint configuration from YAML file."""
+    with open(config_path, 'r') as f:
+        return yaml.safe_load(f)
+
+
+def check_endpoint(endpoint, config):
+    """
+    Check a single endpoint and return its status.
+
+    Args:
+        endpoint: dict with 'name', 'url', and 'timeout' keys
+        config: the full configuration dict
+
+    Returns:
+        dict with check results
+    """
+    name = endpoint.get('name', 'unknown')
+    url = endpoint.get('url')
+    timeout_val = endpoint.get('timeout', 5)
+
+    result = {
+        'name': name,
+        'url': url,
+        'timestamp': datetime.utcnow().isoformat(),
+        'status': 'unknown',
+        'response_time_ms': None,
+        'error': None
+    }
+
+    try:
+        start_time = datetime.utcnow()
+        # Make the request with configured timeout
+        # Note: Using global_timeout from config for consistency across all endpoints
+        resp = requests.get(url, timeout=config.get('global_timeout'))
+        end_time = datetime.utcnow()
+
+        response_time = (end_time - start_time).total_seconds() * 1000
+        result['response_time_ms'] = round(response_time, 2)
+
+        if resp.status_code == 200:
+            result['status'] = 'healthy'
+        else:
+            result['status'] = 'unhealthy'
+            result['error'] = f'HTTP {resp.status_code}'
+
+    except requests.exceptions.Timeout:
+        result['status'] = 'timeout'
+        result['error'] = 'Request timed out'
+    except requests.exceptions.ConnectionError as e:
+        result['status'] = 'unreachable'
+        result['error'] = str(e)
+    except Exception as e:
+        result['status'] = 'error'
+        result['error'] = str(e)
+
+    return result
+
+
+def run_health_checks(config_path, output_path):
+    """
+    Run health checks on all configured endpoints.
+
+    Args:
+        config_path: path to endpoints.yaml
+        output_path: path to write results.json
+    """
+    config = load_config(config_path)
+    endpoints = config.get('endpoints', [])
+
+    results = {
+        'check_time': datetime.utcnow().isoformat(),
+        'total_endpoints': len(endpoints),
+        'results': []
+    }
+
+    for endpoint in endpoints:
+        print(f"Checking {endpoint.get('name', 'unknown')}...")
+        check_result = check_endpoint(endpoint, config)
+        results['results'].append(check_result)
+        print(f"  Status: {check_result['status']}")
+
+    # Calculate summary
+    healthy_count = sum(1 for r in results['results'] if r['status'] == 'healthy')
+    results['healthy_count'] = healthy_count
+    results['unhealthy_count'] = len(endpoints) - healthy_count
+
+    # Write results
+    with open(output_path, 'w') as f:
+        json.dump(results, f, indent=2)
+
+    print(f"\nResults written to {output_path}")
+    return results
+
+
+if __name__ == '__main__':
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(script_dir, 'endpoints.yaml')
+    output_path = os.path.join(script_dir, 'results.json')
+
+    run_health_checks(config_path, output_path)
+root@df12c5ecd9a8:/home/user/netcheck#

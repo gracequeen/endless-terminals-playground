@@ -1,0 +1,40 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+root@157ea64d3f72:/home/user/deploy# cat sync-manifests.sh
+#!/bin/bash
+
+MANIFESTS_DIR="/home/user/deploy/manifests"
+changed_count=0
+applied_count=0
+
+echo "Starting manifest sync..."
+
+for manifest in "$MANIFESTS_DIR"/*.yaml; do
+    if [[ ! -f "$manifest" ]]; then
+        continue
+    fi
+
+    filename=$(basename "$manifest")
+    echo "Checking $filename..."
+
+    kubectl diff -f "$manifest" > /dev/null 2>&1
+    diff_exit=$?
+
+    if [[ $diff_exit -ne 0 ]]; then
+        echo "  Changes detected in $filename, applying..."
+        kubectl apply -f "$manifest"
+        ((changed_count++))
+        ((applied_count++))
+    else
+        echo "  No changes in $filename, skipping."
+    fi
+done
+
+echo ""
+echo "$changed_count manifests changed"
+echo "Sync complete. Applied $applied_count manifests."
+root@157ea64d3f72:/home/user/deploy#

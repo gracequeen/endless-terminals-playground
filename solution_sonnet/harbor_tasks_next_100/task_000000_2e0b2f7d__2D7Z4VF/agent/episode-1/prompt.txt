@@ -1,0 +1,92 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+
+New Terminal Output:
+
+I have no name!@2a629e2e56cf:/home/user$ cd /home/user/release
+I have no name!@2a629e2e56cf:/home/user/release$ ls -la
+total 28
+drwxrwxrwx 1 1000 1000 4096 May  5 23:31 .
+drwxrwxrwx 1 root root 4096 May  5 23:31 ..
+drwxrwxrwx 1 1000 1000 4096 May  5 23:31 app
+drwxrwxrwx 1 1000 1000 4096 May  5 23:31 checks
+drwxrwxrwx 1 1000 1000 4096 May  5 23:31 conf.d
+-rwxrwxrwx 1 1000 1000 1592 May  5 23:31 deploy.sh
+drwxrwxrwx 1 1000 1000 4096 May  5 23:31 staging
+I have no name!@2a629e2e56cf:/home/user/release$ cat deploy.sh
+#!/bin/bash
+# Deploy script for myapp
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONF_DIR="${SCRIPT_DIR}/conf.d"
+CHECKS_DIR="${SCRIPT_DIR}/checks"
+
+echo "=== Starting deployment ==="
+echo "Loading configuration..."
+
+# Source all config files in order
+for conf in "${CONF_DIR}"/*.conf; do
+    if [ -f "$conf" ]; then
+        echo "  Sourcing $(basename "$conf")..."
+        source "$conf"
+    fi
+done
+
+echo "Configuration loaded."
+echo "  APP_NAME: $APP_NAME"
+echo "  VERSION: $VERSION"
+
+echo ""
+echo "Running preflight checks..."
+
+# Run all check scripts
+for check in "${CHECKS_DIR}"/*.sh; do
+    if [ -f "$check" ]; then
+        echo "  Running $(basename "$check")..."
+        bash "$check"
+    fi
+done
+
+echo "Preflight checks complete."
+echo ""
+echo "Creating deployment package..."
+
+# Create tarball
+TARBALL="/tmp/deploy-${APP_NAME}-${VERSION}.tar.gz"
+tar -czf "$TARBALL" -C "${SCRIPT_DIR}" app/
+
+echo "  Created: $TARBALL"
+
+echo ""
+echo "Deploying to staging..."
+
+# Copy to staging
+mkdir -p "${SCRIPT_DIR}/staging"
+cp "$TARBALL" "${SCRIPT_DIR}/staging/"
+tar -xzf "${SCRIPT_DIR}/staging/$(basename "$TARBALL")" -C "${SCRIPT_DIR}/staging/"
+
+echo "  Copied to staging"
+
+echo ""
+echo "Writing manifest..."
+
+# Write manifest
+MANIFEST="${SCRIPT_DIR}/staging/manifest.txt"
+cat > "$MANIFEST" <<MANIFEST_EOF
+APP_NAME: ${APP_NAME}
+VERSION: ${VERSION}
+DEPLOYED_AT: $(date -Iseconds)
+DEPLOYED_BY: ${USER:-unknown}
+SERVICES: ${SERVICE_LIST[*]}
+MANIFEST_EOF
+
+echo "  Manifest written to $MANIFEST"
+
+# Cleanup
+rm -f "$TARBALL"
+
+echo ""
+echo "=== Deployment complete ==="
+exit 0
+I have no name!@2a629e2e56cf:/home/user/release$

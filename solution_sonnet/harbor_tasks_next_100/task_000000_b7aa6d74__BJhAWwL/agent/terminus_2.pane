@@ -1,0 +1,276 @@
+[?2004hroot@2d7087953cba:/# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@2d7087953cba:/# clear
+[?2004l[H[J[?2004hroot@2d7087953cba:/# cd /home/user/audit
+[?2004l[?2004hroot@2d7087953cba:/home/user/audit# ls -la
+[?2004ltotal 20
+drwxrwxrwx 1 1000 1000 4096 May  5 18:10 [0m[34;42m.[0m
+drwxrwxrwx 1 1000 1000 4096 May  5 18:10 [34;42m..[0m
+-rwxr-xr-x 1 1000 1000 2910 May  5 18:10 [01;32mcollect.py[0m
+-rw-rw-rw- 1 1000 1000   98 May  5 18:10 report.json
+[?2004hroot@2d7087953cba:/home/user/audit# cat collect.py
+[?2004l#!/usr/bin/env python3
+"""
+Compliance audit metrics collector.
+Pulls metrics from auth, billing, and inventory services and produces a consolidated report.
+"""
+
+import asyncio
+import aiohttp
+import json
+from datetime import datetime
+
+SERVICES = {
+    "auth": "http://localhost:9001/metrics",
+    "billing": "http://localhost:9002/metrics",
+    "inventory": "http://localhost:9003/metrics",
+}
+
+TIMEOUT_SECONDS = 5
+
+
+async def fetch_service_metrics(session, service_name, url):
+    """Fetch metrics from a single service."""
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=TIMEOUT_SECONDS)) as response:
+            if response.status == 200:
+                return await response.json()
+            else:
+                print(f"Error: {service_name} returned status {response.status}")
+                return None
+    except asyncio.TimeoutError:
+        print(f"timeout")
+        return None
+    except Exception as e:
+        print(f"Error fetching {service_name}: {e}")
+        return None
+
+
+def collect_metrics_inner():
+    """Inner collection function that creates its own event loop."""
+    async def do_collection():
+        results = {}
+        # Bug: connector with limit=1 causes connection pool exhaustion
+        # Combined with keep-alive timeout issues
+        connector = aiohttp.TCPConnector(limit=1, force_close=False, enable_cleanup_closed=False)
+        async with aiohttp.ClientSession(connector=connector) as session:
+            for service_name, url in SERVICES.items():
+                data = await fetch_service_metrics(session, service_name, url)
+                results[service_name] = data
+        return results
+
+    # Bug: creating a new event loop here when called from existing loop context
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(do_collection())
+    finally:
+        loop.close()
+
+
+async def main_wrapper():
+    """Async wrapper that calls the collection function."""
+    # This creates the problematic nested loop situation
+    results = collect_metrics_inner()
+    return results
+
+
+def generate_report():
+    """Generate the compliance audit report."""
+    # Bug: using asyncio.run() which creates a loop, then calling function that creates another
+    try:
+        metrics = asyncio.run(main_wrapper())
+    except Exception as e:
+        print(f"Collection failed: {e}")
+        metrics = {"auth": None, "billing": None, "inventory": None}
+
+    report = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "auth": metrics.get("auth"),
+        "billing": metrics.get("billing"),
+        "inventory": metrics.get("inventory"),
+    }
+
+    with open("/home/user/audit/report.json", "w") as f:
+        json.dump(report, f, indent=2)
+
+    return report
+
+
+if __name__ == "__main__":
+    report = generate_report()
+    print(json.dumps(report, indent=2))
+[?2004hroot@2d7087953cba:/home/user/audit# cat report.json
+[?2004l{
+  "timestamp": "2024-01-15T10:30:00Z",
+  "auth": null,
+  "billing": null,
+  "inventory": null
+}
+[?2004hroot@2d7087953cba:/home/user/audit# curl -w '\nTime: %{time_total}s\n' http://localhost:9001/metrics
+[?2004l{"active_sessions":142,"failed_logins":7,"token_refreshes":89}
+
+Time: 0.001152s
+[?2004hroot@2d7087953cba:/home/user/audit# curl -w '\nTime: %{time_total}s\n' http://localhost:9002/metrics
+[?2004l{"refunds":12,"revenue_cents":1547832,"transactions_today":523}
+
+Time: 0.001165s
+[?2004hroot@2d7087953cba:/home/user/audit# curl -w '\nTime: %{time_total}s\n' http://localhost:9003/metrics
+[?2004l{"backorders":23,"items_in_stock":8472,"pending_orders":156}
+
+Time: 0.001144s
+[?2004hroot@2d7087953cba:/home/user/audit# cat > collect.py << 'EOF'
+[?2004l       "billing": metrics.get("billing"),
+        "inventory": metrics.get("inventory"),
+    }
+
+    with open("/home/user/audit/report.json", "w") as f:
+        json.dump(report, f, indent=2)
+
+    return report
+
+
+if __name__ == "__main__":
+    report = generate_report()
+    print(json.dumps(report, indent=2))
+EOF
+[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """
+[?2004l[?2004h> Compliance audit metrics collector.
+[?2004l[?2004h> Pulls metrics from auth, billing, and inventory services and produces a consolidated report.
+[?2004l[?2004h> """
+[?2004l[?2004h> 
+[?2004l[?2004h> import asyncio
+[?2004l[?2004h> import aiohttp
+[?2004l[?2004h> import json
+[?2004l[?2004h> from datetime import datetime
+[?2004l[?2004h> 
+[?2004l[?2004h> SERVICES = {
+[?2004l[?2004h>     "auth": "http://localhost:9001/metrics",
+[?2004l[?2004h>     "billing": "http://localhost:9002/metrics",
+[?2004l[?2004h>     "inventory": "http://localhost:9003/metrics",
+[?2004l[?2004h> }
+[?2004l[?2004h> 
+[?2004l[?2004h> TIMEOUT_SECONDS = 5
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> async def fetch_service_metrics(session, service_name, url):
+[?2004l[?2004h>     """Fetch metrics from a single service."""
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         async with session.get(url, timeout=aiohttp.ClientTimeout(total=TIMEOUT_SECONDS)) as response:
+[?2004l[?2004h>             if response.status == 200:
+[?2004l[?2004h>                 return await response.json()
+[?2004l[?2004h>             else:
+[?2004l[?2004h>                 print(f"Error: {service_name} returned status {response.status}")
+[?2004l[?2004h>                 return None
+[?2004l[?2004h>     except asyncio.TimeoutError:
+[?2004l[?2004h>         print(f"timeout")
+[?2004l[?2004h>         return None
+[?2004l[?2004h>     except Exception as e:
+[?2004l[?2004h>         print(f"Error fetching {service_name}: {e}")
+[?2004l[?2004h>         return None
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> async def collect_metrics():
+[?2004l[?2004h>     """Collect metrics from all services concurrently."""
+[?2004l[?2004h>     async with aiohttp.ClientSession() as session:
+[?2004l[?2004h>         # Fetch all services concurrently using asyncio.gather
+[?2004l[?2004h>         tasks = [
+[?2004l[?2004h>             fetch_service_metrics(session, service_name, url)
+[?2004l[?2004h>             for service_name, url in SERVICES.items()
+[?2004l[?2004h>         ]
+[?2004l[?2004h>         results_list = await asyncio.gather(*tasks)
+[?2004l[?2004h>         
+[?2004l[?2004h>         # Map results back to service names
+[?2004l[?2004h>         results = {}
+[?2004l[?2004h>         for service_name, data in zip(SERVICES.keys(), results_list):
+[?2004l[?2004h>             results[service_name] = data
+[?2004l[?2004h>         
+[?2004l[?2004h>         return results
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def generate_report():
+[?2004l[?2004h>     """Generate the compliance audit report."""
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         metrics = asyncio.run(collect_metrics())
+[?2004l[?2004h>     except Exception as e:
+[?2004l[?2004h>         print(f"Collection failed: {e}")
+[?2004l[?2004h>         metrics = {"auth": None, "billing": None, "inventory": None}
+[?2004l[?2004h> 
+[?2004l[?2004h>     report = {
+[?2004l[?2004h>         "timestamp": datetime.utcnow().isoformat() + "Z",
+[?2004l[?2004h>         "auth": metrics.get("auth"),
+[?2004l[?2004h>         "billing": metrics.get("billing"),
+[?2004l[?2004h>         "inventory": metrics.get("inventory"),
+[?2004l[?2004h>     }
+[?2004l[?2004h> 
+[?2004l[?2004h>     with open("/home/user/audit/report.json", "w") as f:
+[?2004l[?2004h>         json.dump(report, f, indent=2)
+[?2004l[?2004h> 
+[?2004l[?2004h>     return report
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     report = generate_report()
+[?2004l[?2004h>     print(json.dumps(report, indent=2))
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@2d7087953cba:/home/user/audit# cat collect.py | head -20
+[?2004l#!/usr/bin/env python3
+"""
+Compliance audit metrics collector.
+Pulls metrics from auth, billing, and inventory services and produces a consolidated report.
+"""
+
+import asyncio
+import aiohttp
+import json
+from datetime import datetime
+
+SERVICES = {
+    "auth": "http://localhost:9001/metrics",
+    "billing": "http://localhost:9002/metrics",
+    "inventory": "http://localhost:9003/metrics",
+}
+
+TIMEOUT_SECONDS = 5
+
+
+[?2004hroot@2d7087953cba:/home/user/audit# python3 collect.py
+[?2004l{
+  "timestamp": "2026-05-05T18:11:28.532294Z",
+  "auth": {
+    "active_sessions": 142,
+    "failed_logins": 7,
+    "token_refreshes": 89
+  },
+  "billing": {
+    "refunds": 12,
+    "revenue_cents": 1547832,
+    "transactions_today": 523
+  },
+  "inventory": {
+    "backorders": 23,
+    "items_in_stock": 8472,
+    "pending_orders": 156
+  }
+}
+[?2004hroot@2d7087953cba:/home/user/audit# cat report.json
+[?2004l{
+  "timestamp": "2026-05-05T18:11:28.532294Z",
+  "auth": {
+    "active_sessions": 142,
+    "failed_logins": 7,
+    "token_refreshes": 89
+  },
+  "billing": {
+    "refunds": 12,
+    "revenue_cents": 1547832,
+    "transactions_today": 523
+  },
+  "inventory": {
+    "backorders": 23,
+    "items_in_stock": 8472,
+    "pending_orders": 156
+  }
+}[?2004hroot@2d7087953cba:/home/user/audit# 

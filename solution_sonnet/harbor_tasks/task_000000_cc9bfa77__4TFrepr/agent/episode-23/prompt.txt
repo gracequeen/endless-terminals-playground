@@ -1,0 +1,78 @@
+New Terminal Output:
+
+user@b01184b52a1a:~/wal_recovery$ python3 << 'EOF'
+l:04x}: {len(pages)} pages valid")
+        if len(pages) <= 10:
+            print(f"    Pages: {pages}")
+        else:
+            print(f"    Pages: {pages[:5]} ... {pages[-5:]}")
+
+    return xor_patterns
+
+pat3 = check_all_pages('primary_wal/000000010000000000000003')
+pat4 = check_all_pages('primary_wal/000000010000000000000004')
+pat5 = check_all_pages('primary_wal/000000010000000000000005')
+EOF
+> import struct
+>
+> def check_all_pages(filename):
+>     with open(filename, 'rb') as f:
+>         data = f.read()
+>
+>     page_size = 8192
+>     total_pages = len(data) // page_size
+>
+>     print(f"\nAnalyzing {filename}: {total_pages} pages")
+>
+>     xor_patterns = {}
+>
+>     for page_num in range(total_pages):
+>         offset = page_num * page_size
+>         page_data = data[offset:offset+page_size]
+>
+>         if len(page_data) < 2:
+>             continue
+>
+>         magic = struct.unpack('<H', page_data[0:2])[0]
+>
+>         # Check various XOR possibilities
+>         for xor_val in [0x0000, 0xFFFF, 0xAAAA, 0x5555, 0xCCCC, 0x3333]:
+>             xor_magic = magic ^ xor_val
+>             if xor_magic in [0xF003, 0xD110, 0xD113]:
+>                 if xor_val not in xor_patterns:
+>                     xor_patterns[xor_val] = []
+>                 xor_patterns[xor_val].append(page_num)
+>                 break
+>
+>     for xor_val, pages in sorted(xor_patterns.items()):
+>         print(f"  XOR 0x{xor_val:04x}: {len(pages)} pages valid")
+>         if len(pages) <= 10:
+>             print(f"    Pages: {pages}")
+>         else:
+>             print(f"    Pages: {pages[:5]} ... {pages[-5:]}")
+>
+>     return xor_patterns
+>
+> pat3 = check_all_pages('primary_wal/000000010000000000000003')
+> pat4 = check_all_pages('primary_wal/000000010000000000000004')
+> pat5 = check_all_pages('primary_wal/000000010000000000000005')
+> EOF
+
+Analyzing primary_wal/000000010000000000000003: 2048 pages
+  XOR 0xaaaa: 1 pages valid
+    Pages: [1141]
+  XOR 0xcccc: 1 pages valid
+    Pages: [1370]
+  XOR 0xffff: 1 pages valid
+    Pages: [0]
+
+Analyzing primary_wal/000000010000000000000004: 2048 pages
+  XOR 0x5555: 1 pages valid
+    Pages: [1886]
+  XOR 0xffff: 1 pages valid
+    Pages: [844]
+
+Analyzing primary_wal/000000010000000000000005: 2048 pages
+  XOR 0x5555: 1 pages valid
+    Pages: [1828]
+user@b01184b52a1a:~/wal_recovery$

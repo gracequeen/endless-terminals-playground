@@ -1,0 +1,530 @@
+[?2004hroot@297d9a4c59fe:/# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@297d9a4c59fe:/# clear
+[?2004l[H[J[?2004hroot@297d9a4c59fe:/# cd /home/user/deploy
+[?2004l[?2004hroot@297d9a4c59fe:/home/user/deploy# ls -la
+[?2004ltotal 20
+drwxrwxrwx 1 root root 4096 May  5 05:15 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 05:15 [34;42m..[0m
+drwxrwxrwx 1 root root 4096 May  5 05:15 [34;42mmanifests[0m
+-rwxrwxrwx 1 root root  734 May  5 05:15 [01;32msync-manifests.sh[0m
+-rwxrwxrwx 1 root root  769 May  5 05:15 [01;32mtest-sync.sh[0m
+[?2004hroot@297d9a4c59fe:/home/user/deploy# cat sync-manifests.sh
+[?2004l#!/bin/bash
+
+MANIFESTS_DIR="/home/user/deploy/manifests"
+changed_count=0
+applied_count=0
+
+echo "Starting manifest sync..."
+
+for manifest in "$MANIFESTS_DIR"/*.yaml; do
+    if [[ ! -f "$manifest" ]]; then
+        continue
+    fi
+
+    filename=$(basename "$manifest")
+    echo "Checking $filename..."
+
+    kubectl diff -f "$manifest" > /dev/null 2>&1
+    diff_exit=$?
+
+    if [[ $diff_exit -ne 0 ]]; then
+        echo "  Changes detected in $filename, applying..."
+        kubectl apply -f "$manifest"
+        ((changed_count++))
+        ((applied_count++))
+    else
+        echo "  No changes in $filename, skipping."
+    fi
+done
+
+echo ""
+echo "$changed_count manifests changed"
+echo "Sync complete. Applied $applied_count manifests."
+[?2004hroot@297d9a4c59fe:/home/user/deploy# cat test-sync.sh
+[?2004l#!/bin/bash
+
+set -e
+
+SCRIPT_DIR="/home/user/deploy"
+SYNC_SCRIPT="$SCRIPT_DIR/sync-manifests.sh"
+
+echo "=== Test: Sync manifests idempotency ==="
+echo ""
+
+# First run - establish baseline (may apply everything)
+echo "--- First run (establishing baseline) ---"
+"$SYNC_SCRIPT"
+echo ""
+
+# Second run - should detect no changes
+echo "--- Second run (should detect no changes) ---"
+output=$("$SYNC_SCRIPT" 2>&1)
+echo "$output"
+echo ""
+
+# Check that second run reports 0 changes
+if echo "$output" | grep -q "0 manifests changed"; then
+    echo "SUCCESS: Second run correctly reported 0 manifests changed"
+    exit 0
+else
+    echo "FAILURE: Second run should have reported '0 manifests changed'"
+    echo "This indicates the diff logic is not working correctly."
+    exit 1
+fi
+[?2004hroot@297d9a4c59fe:/home/user/deploy# ls -la manifests/
+[?2004ltotal 24
+drwxrwxrwx 1 root root 4096 May  5 05:15 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 05:15 [34;42m..[0m
+-rwxrwxrwx 1 root root  190 May  5 05:15 [01;32mconfigmap.yaml[0m
+-rwxrwxrwx 1 root root  388 May  5 05:15 [01;32mdeployment.yaml[0m
+-rwxrwxrwx 1 root root  411 May  5 05:15 [01;32mingress.yaml[0m
+-rwxrwxrwx 1 root root  208 May  5 05:15 [01;32mservice.yaml[0m
+[?2004hroot@297d9a4c59fe:/home/user/deploy# cat /usr/local/bin/kubectl
+[?2004l#!/bin/bash
+
+KUBE_STATE_DIR="/home/user/.kube-state"
+
+get_normalized_name() {
+    local filepath="$1"
+    basename "$filepath"
+}
+
+normalize_yaml() {
+    python3 -c "import yaml, sys; yaml.dump(yaml.safe_load(sys.stdin), sys.stdout, default_flow_style=False, sort_keys=True)"
+}
+
+cmd_apply() {
+    local filepath=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -f)
+                filepath="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$filepath" ]]; then
+        echo "error: must specify -f" >&2
+        exit 1
+    fi
+
+    if [[ ! -f "$filepath" ]]; then
+        echo "error: file not found: $filepath" >&2
+        exit 1
+    fi
+
+    local name
+    name=$(get_normalized_name "$filepath")
+    cp "$filepath" "$KUBE_STATE_DIR/$name"
+    echo "deployment.apps/web-app configured"
+    exit 0
+}
+
+cmd_diff() {
+    local filepath=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -f)
+                filepath="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "$filepath" ]]; then
+        echo "error: must specify -f" >&2
+        exit 1
+    fi
+
+    if [[ ! -f "$filepath" ]]; then
+        echo "error: file not found: $filepath" >&2
+        exit 1
+    fi
+
+    local name
+    name=$(get_normalized_name "$filepath")
+    local stored_path="$KUBE_STATE_DIR/$name"
+
+    if [[ ! -f "$stored_path" ]]; then
+        echo "diff: file does not exist in cluster state"
+        exit 1
+    fi
+
+    # BUG: Only normalize the new file, not the stored one
+    local new_normalized
+    new_normalized=$(cat "$filepath" | normalize_yaml)
+
+    local stored_content
+    stored_content=$(cat "$stored_path")
+
+    if [[ "$new_normalized" == "$stored_content" ]]; then
+        exit 0
+    else
+        echo "diff detected between local and cluster state"
+        exit 1
+    fi
+}
+
+case "$1" in
+    apply)
+        shift
+        cmd_apply "$@"
+        ;;
+    diff)
+        shift
+        cmd_diff "$@"
+        ;;
+    *)
+        echo "fake kubectl: unknown command '$1'" >&2
+        exit 1
+        ;;
+esac
+[?2004hroot@297d9a4c59fe:/home/user/deploy# cd /home/user/deploy
+[?2004l[?2004hroot@297d9a4c59fe:/home/user/deploy# ./test-sync.sh
+[?2004l=== Test: Sync manifests idempotency ===
+
+--- First run (establishing baseline) ---
+Starting manifest sync...
+Checking configmap.yaml...
+  Changes detected in configmap.yaml, applying...
+deployment.apps/web-app configured
+Checking deployment.yaml...
+  Changes detected in deployment.yaml, applying...
+deployment.apps/web-app configured
+Checking ingress.yaml...
+  Changes detected in ingress.yaml, applying...
+deployment.apps/web-app configured
+Checking service.yaml...
+  Changes detected in service.yaml, applying...
+deployment.apps/web-app configured
+
+4 manifests changed
+Sync complete. Applied 4 manifests.
+
+--- Second run (should detect no changes) ---
+Starting manifest sync...
+Checking configmap.yaml...
+  Changes detected in configmap.yaml, applying...
+deployment.apps/web-app configured
+Checking deployment.yaml...
+  Changes detected in deployment.yaml, applying...
+deployment.apps/web-app configured
+Checking ingress.yaml...
+  Changes detected in ingress.yaml, applying...
+deployment.apps/web-app configured
+Checking service.yaml...
+  Changes detected in service.yaml, applying...
+deployment.apps/web-app configured
+
+4 manifests changed
+Sync complete. Applied 4 manifests.
+
+FAILURE: Second run should have reported '0 manifests changed'
+This indicates the diff logic is not working correctly.
+[?2004hroot@297d9a4c59fe:/home/user/deploy# cp /usr/local/bin/kubectl /usr/local/bin/kubectl.bak
+[?2004l[?2004hroot@297d9a4c59fe:/home/user/deploy# cat > /usr/local/bin/kubectl << 'EOF'
+[?2004l[?2004h> #!/bin/bash
+[?2004l[?2004h> 
+[?2004l[?2004h> KUBE_STATE_DIR="/home/user/.kube-state"
+[?2004l[?2004h> 
+[?2004l[?2004h> get_normalized_name() {
+[?2004l[?2004h>     local filepath="$1"
+[?2004l[?2004h>     basename "$filepath"
+[?2004l[?2004h> }
+[?2004l[?2004h> 
+[?2004l[?2004h> normalize_yaml() {
+[?2004l[?2004h>     python3 -c "import yaml, sys; yaml.dump(yaml.safe_load(sys.stdin), sys.stdout, default_flow_style=False, sort_keys=True)"
+[?2004l[?2004h> }
+[?2004l[?2004h> 
+[?2004l[?2004h> cmd_apply() {
+[?2004l[?2004h>     local filepath=""
+[?2004l[?2004h>     while [[ $# -gt 0 ]]; do
+[?2004l[?2004h>         case "$1" in
+[?2004l[?2004h>             -f)
+[?2004l[?2004h>                 filepath="$2"
+[?2004l[?2004h>                 shift 2
+[?2004l[?2004h>                 ;;
+[?2004l[?2004h>             *)
+[?2004l[?2004h>                 shift
+[?2004l[?2004h>                 ;;
+[?2004l[?2004h>         esac
+[?2004l[?2004h>     done
+[?2004l[?2004h> 
+[?2004l[?2004h>     if [[ -z "$filepath" ]]; then
+[?2004l[?2004h>         echo "error: must specify -f" >&2
+[?2004l[?2004h>         exit 1
+[?2004l[?2004h>     fi
+[?2004l[?2004h> 
+[?2004l[?2004h>     if [[ ! -f "$filepath" ]]; then
+[?2004l[?2004h>         echo "error: file not found: $filepath" >&2
+[?2004l[?2004h>         exit 1
+[?2004l[?2004h>     fi
+[?2004l[?2004h> 
+[?2004l[?2004h>     local name
+[?2004l[?2004h>     name=$(get_normalized_name "$filepath")
+[?2004l[?2004h>     cp "$filepath" "$KUBE_STATE_DIR/$name"
+[?2004l[?2004h>     echo "deployment.apps/web-app configured"
+[?2004l[?2004h>     exit 0
+[?2004l[?2004h> }
+[?2004l[?2004h> 
+[?2004l[?2004h> cmd_diff() {
+[?2004l[?2004h>     local filepath=""
+[?2004l[?2004h>     while [[ $# -gt 0 ]]; do
+[?2004l[?2004h>         case "$1" in
+[?2004l[?2004h>             -f)
+[?2004l[?2004h>                 filepath="$2"
+[?2004l[?2004h>                 shift 2
+[?2004l[?2004h>                 ;;
+[?2004l[?2004h>             *)
+[?2004l[?2004h>                 shift
+[?2004l[?2004h>                 ;;
+[?2004l[?2004h>         esac
+[?2004l[?2004h>     done
+[?2004l[?2004h> 
+[?2004l[?2004h>     if [[ -z "$filepath" ]]; then
+[?2004l[?2004h>         echo "error: must specify -f" >&2
+[?2004l[?2004h>         exit 1
+[?2004l[?2004h>     fi
+[?2004l[?2004h> 
+[?2004l[?2004h>     if [[ ! -f "$filepath" ]]; then
+[?2004l[?2004h>         echo "error: file not found: $filepath" >&2
+[?2004l[?2004h>         exit 1
+[?2004l[?2004h>     fi
+[?2004l[?2004h> 
+[?2004l[?2004h>     local name
+[?2004l[?2004h>     name=$(get_normalized_name "$filepath")
+[?2004l[?2004h>     local stored_path="$KUBE_STATE_DIR/$name"
+[?2004l[?2004h> 
+[?2004l[?2004h>     if [[ ! -f "$stored_path" ]]; then
+[?2004l[?2004h>         echo "diff: file does not exist in cluster state"
+[?2004l[?2004h>         exit 1
+[?2004l[?2004h>     fi
+[?2004l[?2004h> 
+[?2004l[?2004h>     # FIX: Normalize both files before comparison
+[?2004l[?2004h>     local new_normalized
+[?2004l[?2004h>     new_normalized=$(cat "$filepath" | normalize_yaml)
+[?2004l[?2004h> 
+[?2004l[?2004h>     local stored_normalized
+[?2004l[?2004h>     stored_normalized=$(cat "$stored_path" | normalize_yaml)
+[?2004l[?2004h> 
+[?2004l[?2004h>     if [[ "$new_normalized" == "$stored_normalized" ]]; then
+[?2004l[?2004h>         exit 0
+[?2004l[?2004h>     else
+[?2004l[?2004h>         echo "diff detected between local and cluster state"
+[?2004l[?2004h>         exit 1
+[?2004l[?2004h>     fi
+[?2004l[?2004h> }
+[?2004l[?2004h> 
+[?2004l[?2004h> case "$1" in
+[?2004l[?2004h>     apply)
+[?2004l[?2004h>         shift
+[?2004l[?2004h>         cmd_apply "$@"
+[?2004l[?2004h>         ;;
+[?2004l[?2004h>     diff)
+[?2004l[?2004h>         shift
+[?2004l[?2004h>         cmd_diff "$@"
+[?2004l[?2004h>         ;;
+[?2004l[?2004h>     *)
+[?2004l[?2004h>         echo "fake kubectl: unknown command '$1'" >&2
+[?2004l[?2004h>         exit 1
+[?2004l[?2004h>         ;;
+[?2004l[?2004h> esac
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@297d9a4c59fe:/home/user/deploy# chmod +x /usr/local/bin/kubectl
+[?2004l[?2004hroot@297d9a4c59fe:/home/user/deploy# ./test-sync.sh
+[?2004l=== Test: Sync manifests idempotency ===
+
+--- First run (establishing baseline) ---
+Starting manifest sync...
+Checking configmap.yaml...
+  No changes in configmap.yaml, skipping.
+Checking deployment.yaml...
+  No changes in deployment.yaml, skipping.
+Checking ingress.yaml...
+  No changes in ingress.yaml, skipping.
+Checking service.yaml...
+  No changes in service.yaml, skipping.
+
+0 manifests changed
+Sync complete. Applied 0 manifests.
+
+--- Second run (should detect no changes) ---
+Starting manifest sync...
+Checking configmap.yaml...
+  No changes in configmap.yaml, skipping.
+Checking deployment.yaml...
+  No changes in deployment.yaml, skipping.
+Checking ingress.yaml...
+  No changes in ingress.yaml, skipping.
+Checking service.yaml...
+  No changes in service.yaml, skipping.
+
+0 manifests changed
+Sync complete. Applied 0 manifests.
+
+SUCCESS: Second run correctly reported 0 manifests changed
+[?2004hroot@297d9a4c59fe:/home/user/deploy# rm -f /home/user/.kube-state/*.yaml
+[?2004l[?2004hroot@297d9a4c59fe:/home/user/deploy# ./test-sync.sh
+[?2004l=== Test: Sync manifests idempotency ===
+
+--- First run (establishing baseline) ---
+Starting manifest sync...
+Checking configmap.yaml...
+  Changes detected in configmap.yaml, applying...
+deployment.apps/web-app configured
+Checking deployment.yaml...
+  Changes detected in deployment.yaml, applying...
+deployment.apps/web-app configured
+Checking ingress.yaml...
+  Changes detected in ingress.yaml, applying...
+deployment.apps/web-app configured
+Checking service.yaml...
+  Changes detected in service.yaml, applying...
+deployment.apps/web-app configured
+
+4 manifests changed
+Sync complete. Applied 4 manifests.
+
+--- Second run (should detect no changes) ---
+Starting manifest sync...
+Checking configmap.yaml...
+  No changes in configmap.yaml, skipping.
+Checking deployment.yaml...
+  No changes in deployment.yaml, skipping.
+Checking ingress.yaml...
+  No changes in ingress.yaml, skipping.
+Checking service.yaml...
+  No changes in service.yaml, skipping.
+
+0 manifests changed
+Sync complete. Applied 0 manifests.
+
+SUCCESS: Second run correctly reported 0 manifests changed
+[?2004hroot@297d9a4c59fe:/home/user/deploy# echo "=== Verification: Testing with a manual manifest change ==="
+[?2004l=== Verification: Testing with a manual manifest change ===
+[?2004hroot@297d9a4c59fe:/home/user/deploy# cat manifests/configmap.yaml
+[?2004l# ConfigMap for application settings
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: default
+data:
+  LOG_LEVEL: info
+  MAX_CONNECTIONS: "100"
+  ENABLE_CACHE: "true"
+[?2004hroot@297d9a4c59fe:/home/user/deploy# echo '---' && echo 'Making a small change to configmap.yaml...' && sed -i 's/value1/value1-modified/' manifests/configmap.yaml
+[?2004l---
+Making a small change to configmap.yaml...
+[?2004hroot@297d9a4c59fe:/home/user/deploy# ./sync-manifests.sh
+[?2004lStarting manifest sync...
+Checking configmap.yaml...
+  No changes in configmap.yaml, skipping.
+Checking deployment.yaml...
+  No changes in deployment.yaml, skipping.
+Checking ingress.yaml...
+  No changes in ingress.yaml, skipping.
+Checking service.yaml...
+  No changes in service.yaml, skipping.
+
+0 manifests changed
+Sync complete. Applied 0 manifests.
+[?2004hroot@297d9a4c59fe:/home/user/deploy# echo '---' && echo 'Running sync again (should detect no changes)...' && ./sync-manifests.sh
+[?2004l---
+Running sync again (should detect no changes)...
+Starting manifest sync...
+Checking configmap.yaml...
+  No changes in configmap.yaml, skipping.
+Checking deployment.yaml...
+  No changes in deployment.yaml, skipping.
+Checking ingress.yaml...
+  No changes in ingress.yaml, skipping.
+Checking service.yaml...
+  No changes in service.yaml, skipping.
+
+0 manifests changed
+Sync complete. Applied 0 manifests.
+[?2004hroot@297d9a4c59fe:/home/user/deploy# sed -i 's/value1-modified/value1/' manifests/configmap.yaml
+[?2004l[?2004hroot@297d9a4c59fe:/home/user/deploy# echo 'Testing with actual change...' && sed -i 's/LOG_LEVEL: info/LOG_LEVEL: debug/' manifests/configmap.yaml
+[?2004lTesting with actual change...
+[?2004hroot@297d9a4c59fe:/home/user/deploy# ./sync-manifests.sh
+[?2004lStarting manifest sync...
+Checking configmap.yaml...
+  Changes detected in configmap.yaml, applying...
+deployment.apps/web-app configured
+Checking deployment.yaml...
+  No changes in deployment.yaml, skipping.
+Checking ingress.yaml...
+  No changes in ingress.yaml, skipping.
+Checking service.yaml...
+  No changes in service.yaml, skipping.
+
+1 manifests changed
+Sync complete. Applied 1 manifests.
+[?2004hroot@297d9a4c59fe:/home/user/deploy# echo '---' && echo 'Running sync again (should detect no changes)...' && ./sync-manifests.sh
+[?2004l---
+Running sync again (should detect no changes)...
+Starting manifest sync...
+Checking configmap.yaml...
+  No changes in configmap.yaml, skipping.
+Checking deployment.yaml...
+  No changes in deployment.yaml, skipping.
+Checking ingress.yaml...
+  No changes in ingress.yaml, skipping.
+Checking service.yaml...
+  No changes in service.yaml, skipping.
+
+0 manifests changed
+Sync complete. Applied 0 manifests.
+[?2004hroot@297d9a4c59fe:/home/user/deploy# sed -i 's/LOG_LEVEL: debug/LOG_LEVEL: info/' manifests/configmap.yaml
+[?2004l[?2004hroot@297d9a4c59fe:/home/user/deploy# ./test-sync.sh
+[?2004l=== Test: Sync manifests idempotency ===
+
+--- First run (establishing baseline) ---
+Starting manifest sync...
+Checking configmap.yaml...
+  Changes detected in configmap.yaml, applying...
+deployment.apps/web-app configured
+Checking deployment.yaml...
+  No changes in deployment.yaml, skipping.
+Checking ingress.yaml...
+  No changes in ingress.yaml, skipping.
+Checking service.yaml...
+  No changes in service.yaml, skipping.
+
+1 manifests changed
+Sync complete. Applied 1 manifests.
+
+--- Second run (should detect no changes) ---
+Starting manifest sync...
+Checking configmap.yaml...
+  No changes in configmap.yaml, skipping.
+Checking deployment.yaml...
+  No changes in deployment.yaml, skipping.
+Checking ingress.yaml...
+  No changes in ingress.yaml, skipping.
+Checking service.yaml...
+  No changes in service.yaml, skipping.
+
+0 manifests changed
+Sync complete. Applied 0 manifests.
+
+SUCCESS: Second run correctly reported 0 manifests changed
+[?2004hroot@297d9a4c59fe:/home/user/deploy# echo '=== Fix Summary ===' && echo 'The issue was in /usr/local/bin/kubectl cmd_diff function.' && echo 'Changed from: comparing normalized new file with raw stored file' && echo 'Changed to: comparing normalized new file with normalized stored file' && echo '' && echo 'This ensures YAML formatting differences do not trigger false positives.'
+[?2004l=== Fix Summary ===
+The issue was in /usr/local/bin/kubectl cmd_diff function.
+Changed from: comparing normalized new file with raw stored file
+Changed to: comparing normalized new file with normalized stored file
+
+This ensures YAML formatting differences do not trigger false positives.
+[?2004hroot@297d9a4c59fe:/home/user/deploy# 

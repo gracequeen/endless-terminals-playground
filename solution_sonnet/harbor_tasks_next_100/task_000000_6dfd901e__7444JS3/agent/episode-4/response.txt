@@ -1,0 +1,20 @@
+```json
+{
+  "analysis": "Good, I've backed up all 16 corrupted files. Now I need to attempt recovery. I'll use gunzip -c to extract whatever data is salvageable from each corrupted file, ignoring the error at the end. The extracted SQL will be partial but may still be usable.",
+  "plan": "For each corrupted file, I'll: 1) Use gunzip -c to extract partial data (it will output data until it hits the corruption), 2) Save to a .sql file, 3) Check if we got valid SQL content, 4) Recompress properly with gzip. I'll create a recovery script to process all files.",
+  "commands": [
+    {
+      "keystrokes": "cat > ../recover.sh << 'EOF'\n#!/bin/bash\nfor gz_file in analytics.sql.gz categories.sql.gz configs.sql.gz discounts.sql.gz images.sql.gz inventory.sql.gz invoices.sql.gz messages.sql.gz payments.sql.gz products.sql.gz reviews.sql.gz roles.sql.gz scheduled_tasks.sql.gz settings.sql.gz subscriptions.sql.gz thumbnails.sql.gz; do\n    base=$(basename \"$gz_file\" .sql.gz)\n    echo \"Processing $gz_file...\"\n    gunzip -c \"$gz_file\" > \"${base}.sql\" 2>/dev/null || true\n    if [ -s \"${base}.sql\" ]; then\n        size=$(wc -c < \"${base}.sql\")\n        lines=$(wc -l < \"${base}.sql\")\n        echo \"  Extracted: $size bytes, $lines lines\"\n        gzip -c \"${base}.sql\" > \"${base}.sql.gz.new\"\n        mv \"${base}.sql.gz.new\" \"${base}.sql.gz\"\n        rm \"${base}.sql\"\n        echo \"  Recompressed successfully\"\n    else\n        echo \"  WARNING: No data extracted\"\n    fi\ndone\nEOF\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "chmod +x ../recover.sh\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "bash ../recover.sh\n",
+      "duration": 2.0
+    }
+  ]
+}
+```

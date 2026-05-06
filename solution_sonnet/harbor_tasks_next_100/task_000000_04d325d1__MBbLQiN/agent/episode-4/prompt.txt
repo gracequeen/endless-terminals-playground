@@ -1,0 +1,50 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+root@eb0cd99bce13:/home/user/profilesvc# cat internal/db/db.go
+package db
+
+import (
+        "fmt"
+        "os"
+
+        "profilesvc/internal/cache"
+)
+
+type Config interface {
+        GetDBPoolSize() int
+}
+
+var poolSize int
+
+func Init(cfg Config) (err error) {
+        // Added after "cleanup" - require cache to be ready before DB init
+        // This was added to ensure proper initialization order
+        defer func() {
+                if r := recover(); r != nil {
+                        fmt.Fprintf(os.Stderr, "db init panic: %v\n", r)
+                        os.Exit(1)
+                }
+        }()
+
+        // This will panic if cache init failed
+        cache.MustBeReady()
+
+        poolSize = cfg.GetDBPoolSize()
+        if poolSize <= 0 {
+                poolSize = 5
+        }
+
+        // Mock DB initialization - no real database needed
+        fmt.Printf("db pool initialized with size %d\n", poolSize)
+        return nil
+}
+
+func GetPoolSize() int {
+        return poolSize
+}
+root@eb0cd99bce13:/home/user/profilesvc# ss -tlnp | grep 8080
+root@eb0cd99bce13:/home/user/profilesvc#

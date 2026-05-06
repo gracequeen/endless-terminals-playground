@@ -1,0 +1,52 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@c9da50e81b0b:~/infra-configs$ git config --get core.bare
+false
+user@c9da50e81b0b:~/infra-configs$ cat > .git/hooks/pre-commit << 'EOF'
+> #!/bin/bash
+> # Pre-commit hook to block world-readable private keys
+> # WARNING: This hook can be bypassed with 'git commit --no-verify'
+> # For production repositories, ensure server-side hooks (pre-receive/update) are also in place
+>
+> echo "[pre-commit] Checking for world-readable private keys..."
+>
+> # Get list of staged files
+> staged_files=$(git diff --cached --name-only --diff-filter=ACM)
+>
+> exit_code=0
+>
+> for file in $staged_files; do
+>     # Check if file matches *.pem or *.key
+>     if [[ "$file" == *.pem ]] || [[ "$file" == *.key ]]; then
+>         # Check if file exists in working tree
+>         if [ -f "$file" ]; then
+>             # Get file permissions
+>             perms=$(stat -c "%a" "$file")
+>
+>             # Check if permissions are too permissive (anything other than 600 or 400)
+>             # Private keys should be 600 (rw-------) or 400 (r--------)
+>             if [ "$perms" != "600" ] && [ "$perms" != "400" ]; then
+>                 echo "ERROR: $file has insecure permissions ($perms)."
+>                 echo "       Private keys must have permissions 0600 or 0400 (owner-only access)."
+>                 echo "       Current permissions allow group/world access."
+>                 echo "       Fix with: chmod 600 $file"
+>                 exit_code=1
+>             fi
+>         fi
+>     fi
+> done
+>
+> if [ $exit_code -ne 0 ]; then
+>     echo ""
+>     echo "COMMIT BLOCKED: Fix the permissions above before committing."
+>     echo "WARNING: Do NOT use --no-verify to bypass this check!"
+>     echo "         Using --no-verify bypasses security checks and may expose private keys."
+> fi
+>
+> exit $exit_code
+> EOF
+user@c9da50e81b0b:~/infra-configs$

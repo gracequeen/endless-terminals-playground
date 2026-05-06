@@ -1,0 +1,53 @@
+New Terminal Output:
+
+root@4e542c269e92:/home/user/project# cp .security/.semgrepignore .semgrepignore
+root@4e542c269e92:/home/user/project# cat .semgrepignore
+# Semgrep ignore patterns
+# These patterns suppress known false positives
+
+# False positive: hardcoded password in defaults.py is just a placeholder/example
+src/config/defaults.py:python.lang.security.audit.hardcoded-password-default
+
+# False positive: queries.py uses parameterized queries, not string concatenation
+src/db/queries.py:python.lang.security.audit.sqli-injection-psycopg2
+root@4e542c269e92:/home/user/project# cat > /tmp/filter_results.py << 'PYEOF'
+> #!/usr/bin/env python3
+> import json
+> import sys
+>
+> # Read the ignore patterns from .semgrepignore
+> ignore_patterns = []
+> with open('.semgrepignore', 'r') as f:
+>     for line in f:
+>         line = line.strip()
+>         if line and not line.startswith('#'):
+>             # Format: path:rule_id
+>             if ':' in line:
+>                 path, rule_id = line.split(':', 1)
+>                 ignore_patterns.append({'path': path, 'rule_id': rule_id})
+>
+> # Read the scan results
+> with open('reports/scan-results.json', 'r') as f:
+>     data = json.load(f)
+>
+> # Filter out suppressed findings
+> filtered_results = []
+> for result in data.get('results', []):
+>     should_ignore = False
+>     for pattern in ignore_patterns:
+>         if result['path'] == pattern['path'] and result['check_id'] == pattern['rule_id']:
+>             should_ignore = True
+>             break
+>     if not should_ignore:
+>         filtered_results.append(result)
+>
+> # Update the results
+> data['results'] = filtered_results
+>
+> # Write back
+> with open('reports/scan-results.json', 'w') as f:
+>     json.dump(data, f, indent=2)
+>
+> print(f"Filtered {len(data.get('results', [])) - len(filtered_results)} suppressed findings")
+> PYEOF
+root@4e542c269e92:/home/user/project#

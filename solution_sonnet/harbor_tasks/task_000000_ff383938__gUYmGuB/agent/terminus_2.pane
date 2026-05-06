@@ -1,0 +1,1824 @@
+[?2004huser@bae130232a6d:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004huser@bae130232a6d:~$ clear
+[?2004l[H[J[?2004huser@bae130232a6d:~$ ls -la /home/user/tools/
+[?2004ltotal 16
+drwxrwxrwx 1 user user 4096 May  5 06:10 .
+drwxrwxrwx 1 user user 4096 May  5 06:10 ..
+-rw-rw-rw- 1 user user 5192 May  5 06:10 capacity_report.py
+[?2004huser@bae130232a6d:~$ cat /home/user/tools/capacity_report.py
+[?2004l#!/usr/bin/env python3
+"""
+Capacity Report Generator
+
+Parses crontab entries and batch job logs to identify:
+1. Hours where jobs overlapped (one started before another finished)
+2. Hours that were genuinely idle (no jobs scheduled or running)
+
+Output: /home/user/reports/windows.json
+"""
+
+import os
+import re
+import json
+from datetime import datetime
+from pathlib import Path
+
+
+CRONTAB_PATH = "/var/spool/cron/crontabs/user"
+LOG_DIR = "/var/log/batch"
+OUTPUT_PATH = "/home/user/reports/windows.json"
+
+
+class Job:
+    def __init__(self, name, scheduled_hour, start_time=None, end_time=None):
+        self.name = name
+        self.scheduled_hour = scheduled_hour  # Bug 1: Only stores hour, loses minute
+        self.start_time = start_time
+        self.end_time = end_time
+
+    @property
+    def start_hour(self):
+        if self.start_time:
+            return self.start_time.hour
+        return self.scheduled_hour
+
+    @property
+    def end_hour(self):
+        if self.end_time:
+            return self.end_time.hour
+        return self.scheduled_hour
+
+
+def parse_crontab():
+    """Parse crontab file and extract job schedules."""
+    jobs = []
+
+    with open(CRONTAB_PATH, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+
+            parts = line.split()
+            if len(parts) >= 6:
+                minute = parts[0]
+                hour = parts[1]
+                command = parts[5]
+
+                # Bug 1: We only store the hour, ignoring minute field
+                # This means "30 2 * * *" is treated same as "0 2 * * *"
+                job_name = os.path.basename(command)
+                scheduled_hour = int(hour)
+
+                jobs.append(Job(job_name, scheduled_hour))
+
+    return jobs
+
+
+def parse_log_file(log_path):
+    """Parse a log file to extract start and end timestamps."""
+    start_time = None
+    end_time = None
+
+    with open(log_path, 'r') as f:
+        content = f.read()
+
+    # Match START timestamp
+    start_match = re.search(r'START\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+    if start_match:
+        start_time = datetime.strptime(start_match.group(1), '%Y-%m-%d %H:%M:%S')
+
+    # Match END timestamp
+    end_match = re.search(r'END\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+    if end_match:
+        end_time = datetime.strptime(end_match.group(1), '%Y-%m-%d %H:%M:%S')
+
+    return start_time, end_time
+
+
+def load_job_runtimes(jobs):
+    """Load actual runtime data from log files into job objects."""
+    log_dir = Path(LOG_DIR)
+
+    for job in jobs:
+        # Find corresponding log file
+        log_name = job.name.replace('.sh', '.log')
+        log_path = log_dir / log_name
+
+        if log_path.exists():
+            start_time, end_time = parse_log_file(log_path)
+            job.start_time = start_time
+            job.end_time = end_time
+
+    return jobs
+
+
+def find_overlapping_hours(jobs):
+    """Find hours where jobs overlapped."""
+    overlapping = set()
+
+    for i, job1 in enumerate(jobs):
+        for job2 in jobs[i+1:]:
+            if job1.start_time is None or job1.end_time is None:
+                continue
+            if job2.start_time is None or job2.end_time is None:
+                continue
+
+            # Bug 3: Using integer hour comparison instead of actual timestamps
+            # This misses overlaps within the same hour and boundary conditions
+            # Comparing end_hour > start_hour misses when they're equal
+            if job1.end_hour > job2.start_hour and job1.start_hour < job2.end_hour:
+                # Add the hours where overlap occurs
+                for h in range(job2.start_hour, job1.end_hour + 1):
+                    overlapping.add(h)
+            elif job2.end_hour > job1.start_hour and job2.start_hour < job1.end_hour:
+                for h in range(job1.start_hour, job2.end_hour + 1):
+                    overlapping.add(h)
+
+    return sorted(list(overlapping))
+
+
+def find_idle_hours(jobs):
+    """Find hours that were genuinely idle."""
+    idle = []
+
+    for hour in range(24):
+        is_idle = True
+
+        # Bug 2: Only checking if a job is SCHEDULED to start in this hour
+        # Not checking if a job from a previous hour is still running
+        for job in jobs:
+            if job.scheduled_hour == hour:
+                is_idle = False
+                break
+
+        if is_idle:
+            idle.append(hour)
+
+    return idle
+
+
+def main():
+    # Parse crontab to get scheduled jobs
+    jobs = parse_crontab()
+
+    # Load actual runtime data from logs
+    jobs = load_job_runtimes(jobs)
+
+    # Find overlapping and idle hours
+    overlapping_hours = find_overlapping_hours(jobs)
+    idle_hours = find_idle_hours(jobs)
+
+    # Write output
+    result = {
+        "overlapping_hours": overlapping_hours,
+        "idle_hours": idle_hours
+    }
+
+    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+    with open(OUTPUT_PATH, 'w') as f:
+        json.dump(result, f, indent=2)
+
+    print(f"Report written to {OUTPUT_PATH}")
+    print(f"Overlapping hours: {overlapping_hours}")
+    print(f"Idle hours: {idle_hours}")
+
+
+if __name__ == "__main__":
+    main()
+[?2004huser@bae130232a6d:~$ cat /var/spool/cron/crontabs/user
+[?2004l0 1 * * * /opt/batch/etl_main.sh
+0 2 * * * /opt/batch/backup.sh
+30 2 * * * /opt/batch/cleanup.sh
+0 3 * * * /opt/batch/db_vacuum.sh
+0 4 * * * /opt/batch/reports.sh
+0 6 * * * /opt/batch/health_check.sh
+[?2004huser@bae130232a6d:~$ ls -la /var/log/batch/
+[?2004ltotal 36
+drwxr-xr-x 1 root root 4096 May  5 06:10 .
+drwxr-xr-x 1 root root 4096 May  5 06:09 ..
+-rw-r--r-- 1 root root  177 May  5 06:09 backup.log
+-rw-r--r-- 1 root root  136 May  5 06:10 cleanup.log
+-rw-r--r-- 1 root root  143 May  5 06:10 db_vacuum.log
+-rw-r--r-- 1 root root  172 May  5 06:09 etl_main.log
+-rw-r--r-- 1 root root  117 May  5 06:10 health_check.log
+-rw-r--r-- 1 root root  119 May  5 06:10 reports.log
+[?2004huser@bae130232a6d:~$ cat /var/log/batch/etl_main.log
+[?2004lJob: etl_main.sh
+START 2024-01-15 01:00:03
+Processing data files...
+Loading stage 1...
+Loading stage 2...
+Transforming records...
+Writing output...
+END 2024-01-15 02:47:19
+[?2004huser@bae130232a6d:~$ cat /var/log/batch/backup.log
+[?2004lJob: backup.sh
+START 2024-01-15 02:00:01
+Initializing backup...
+Backing up database...
+Backing up files...
+Compressing archive...
+Uploading to remote...
+END 2024-01-15 03:12:44
+[?2004huser@bae130232a6d:~$ cat /var/log/batch/cleanup.log
+[?2004lJob: cleanup.sh
+START 2024-01-15 02:30:02
+Scanning temp directories...
+Removing old files...
+Clearing caches...
+END 2024-01-15 02:58:31
+[?2004huser@bae130232a6d:~$ cat /var/log/batch/db_vacuum.log
+[?2004lJob: db_vacuum.sh
+START 2024-01-15 03:00:04
+Connecting to database...
+Running VACUUM ANALYZE...
+Updating statistics...
+END 2024-01-15 03:45:22
+[?2004huser@bae130232a6d:~$ cat /var/log/batch/reports.log
+[?2004lJob: reports.sh
+START 2024-01-15 04:00:01
+Generating daily reports...
+Sending notifications...
+END 2024-01-15 04:22:17
+[?2004huser@bae130232a6d:~$ cat /var/log/batch/health_check.log
+[?2004lJob: health_check.sh
+START 2024-01-15 06:00:02
+Checking services...
+All systems operational.
+END 2024-01-15 06:03:41
+[?2004huser@bae130232a6d:~$ python3 /home/user/tools/capacity_report.py
+[?2004lReport written to /home/user/reports/windows.json
+Overlapping hours: []
+Idle hours: [0, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+[?2004huser@bae130232a6d:~$ cat /home/user/reports/windows.json
+[?2004l{
+  "overlapping_hours": [],
+  "idle_hours": [
+    0,
+    5,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23
+  ]
+}[?2004huser@bae130232a6d:~$ cp /home/user/tools/capacity_report.py /home/user/tools/capacity_report.py.bak
+[?2004l[?2004huser@bae130232a6d:~$ cat > /home/user/tools/capacity_report.py << 'EOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004lur
+        for job in jobs_with_data:
+            # A job affects this ho[?2004h> """
+[?2004l[?2004h> Capacity Report Generator
+[?2004l[?2004h> 
+[?2004l[?2004h> Parses crontab entries and batch job logs to identify:
+[?2004l[?2004h> 1. Hours where jobs overlapped (one started before another finished)
+[?2004l[?2004h> 2. Hours that were genuinely idle (no jobs scheduled or running)
+[?2004l[?2004h> 
+[?2004l[?2004h> Output: /home/user/reports/windows.json
+[?2004l[?2004h> """
+[?2004l[?2004h> 
+[?2004l[?2004h> import os
+[?2004l[?2004h> import re
+[?2004l[?2004h> import json
+[?2004l[?2004h> from datetime import datetime
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> CRONTAB_PATH = "/var/spool/cron/crontabs/user"
+[?2004l[?2004h> LOG_DIR = "/var/log/batch"
+[?2004l[?2004h> OUTPUT_PATH = "/home/user/reports/windows.json"
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> class Job:
+[?2004l[?2004h>     def __init__(self, name, scheduled_hour, start_time=None, end_time=None):
+[?2004l[?2004h>         self.name = name
+[?2004l[?2004h>         self.scheduled_hour = scheduled_hour
+[?2004l[?2004h>         self.start_time = start_time
+[?2004l[?2004h>         self.end_time = end_time
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_crontab():
+[?2004l[?2004h>     """Parse crontab file and extract job schedules."""
+[?2004l[?2004h>     jobs = []
+[?2004l[?2004h> 
+[?2004l[?2004h>     with open(CRONTAB_PATH, 'r') as f:
+[?2004l[?2004h>         for line in f:
+[?2004l[?2004h>             line = line.strip()
+[?2004l[?2004h>             if not line or line.startswith('#'):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h> 
+[?2004l[?2004h>             parts = line.split()
+[?2004l[?2004h>             if len(parts) >= 6:
+[?2004l[?2004h>                 minute = parts[0]
+[?2004l[?2004h>                 hour = parts[1]
+[?2004l[?2004h>                 command = parts[5]
+[?2004l[?2004h> 
+[?2004l[?2004h>                 job_name = os.path.basename(command)
+[?2004l[?2004h>                 scheduled_hour = int(hour)
+[?2004l[?2004h> 
+[?2004l[?2004h>                 jobs.append(Job(job_name, scheduled_hour))
+[?2004l[?2004h> 
+[?2004l[?2004h>     return jobs
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_log_file(log_path):
+[?2004l[?2004h>     """Parse a log file to extract start and end timestamps."""
+[?2004l[?2004h>     start_time = None
+[?2004l[?2004h>     end_time = None
+[?2004l[?2004h> 
+[?2004l[?2004h>     with open(log_path, 'r') as f:
+[?2004l[?2004h>         content = f.read()
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Match START timestamp
+[?2004l[?2004h>     start_match = re.search(r'START\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+[?2004l[?2004h>     if start_match:
+[?2004l[?2004h>         start_time = datetime.strptime(start_match.group(1), '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Match END timestamp
+[?2004l[?2004h>     end_match = re.search(r'END\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+[?2004l[?2004h>     if end_match:
+[?2004l[?2004h>         end_time = datetime.strptime(end_match.group(1), '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h> 
+[?2004l[?2004h>     return start_time, end_time
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def load_job_runtimes(jobs):
+[?2004l[?2004h>     """Load actual runtime data from log files into job objects."""
+[?2004l[?2004h>     log_dir = Path(LOG_DIR)
+[?2004l[?2004h> 
+[?2004l[?2004h>     for job in jobs:
+[?2004l[?2004h>         # Find corresponding log file
+[?2004l[?2004h>         log_name = job.name.replace('.sh', '.log')
+[?2004l[?2004h>         log_path = log_dir / log_name
+[?2004l[?2004h> 
+[?2004l[?2004h>         if log_path.exists():
+[?2004l[?2004h>             start_time, end_time = parse_log_file(log_path)
+[?2004l[?2004h>             job.start_time = start_time
+[?2004l[?2004h>             job.end_time = end_time
+[?2004l[?2004h> 
+[?2004l[?2004h>     return jobs
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def find_overlapping_hours(jobs):
+[?2004l[?2004h>     """Find hours where jobs overlapped."""
+[?2004l[?2004h>     overlapping = set()
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Filter jobs that have actual runtime data
+[?2004l[?2004h>     jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+[?2004l[?2004h> 
+[?2004l[?2004h>     for i, job1 in enumerate(jobs_with_data):
+[?2004l[?2004h>         for job2 in jobs_with_data[i+1:]:
+[?2004l[?2004h>             # Check if jobs overlap using actual timestamps
+[?2004l[?2004h>             # Jobs overlap if: job1 starts before job2 ends AND job2 starts before job1 ends
+[?2004l[?2004h>             if job1.start_time < job2.end_time and job2.start_time < job1.end_time:
+[?2004l[?2004h>                 # Find all hours during which the overlap occurs
+[?2004l[?2004h>                 overlap_start = max(job1.start_time, job2.start_time)
+[?2004l[?2004h>                 overlap_end = min(job1.end_time, job2.end_time)
+[?2004l[?2004h>                 
+[?2004l[?2004h>                 # Add all hours that contain any part of the overlap
+[?2004l[?2004h>                 current = overlap_start
+[?2004l[?2004h>                 while current <= overlap_end:
+[?2004l[?2004h>                     overlapping.add(current.hour)
+[?2004l[?2004h>                     # Move to next hour
+[?2004l[?2004h>                     current = current.replace(minute=0, second=0, microsecond=0)
+[?2004l[?2004h>                     if current.hour == 23:
+[?2004l[?2004h>                         break
+[?2004l[?2004h>                     current = current.replace(hour=current.hour + 1)
+[?2004l[?2004h> 
+[?2004l[?2004h>     return sorted(list(overlapping))
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def find_idle_hours(jobs):
+[?2004l[?2004h>     """Find hours that were genuinely idle."""
+[?2004l[?2004h>     idle = []
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Filter jobs that have actual runtime data
+[?2004l[?2004h>     jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+[?2004l[?2004h> 
+[?2004l[?2004h>     for hour in range(24):
+[?2004l[?2004h>         is_idle = True
+[?2004l[?2004h> 
+[?2004l[?2004h>         # Check if any job was running during this hour
+[?2004l[?2004h>         for job in jobs_with_data:
+[?2004l[?2004h>             # A job affects this hour if it started before the hour ends
+[?2004l[?2004h>             # and ended after the hour starts
+[?2004l[?2004h>             hour_start_hour = hour
+[?2004l[?2004h>             hour_end_hour = hour
+[?2004l[?2004h>             
+[?2004l[?2004h>             job_start_hour = job.start_time.hour
+[?2004l[?2004h>             job_end_hour = job.end_time.hour
+[?2004l[?2004h>             
+[?2004l[?2004h>             # Check if job spans into or through this hour
+[?2004l[?2004h>             # Job runs during hour H if:
+[?2004l[?2004h>             # - It starts in hour H or earlier, AND
+[?2004l[?2004h>             # - It ends in hour H or later
+[?2004l[?2004h>             if job_start_hour <= hour and job_end_hour >= hour:
+[?2004l[?2004h>                 is_idle = False
+[?2004l[?2004h>                 break
+[?2004l[?2004h> 
+[?2004l[?2004h>         if is_idle:
+[?2004l[?2004h>             idle.append(hour)
+[?2004l[?2004h> 
+[?2004l[?2004h>     return idle
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     # Parse crontab to get scheduled jobs
+[?2004l[?2004h>     jobs = parse_crontab()
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Load actual runtime data from logs
+[?2004l[?2004h>     jobs = load_job_runtimes(jobs)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Find overlapping and idle hours
+[?2004l[?2004h>     overlapping_hours = find_overlapping_hours(jobs)
+[?2004l[?2004h>     idle_hours = find_idle_hours(jobs)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Write output
+[?2004l[?2004h>     result = {
+[?2004l[?2004h>         "overlapping_hours": overlapping_hours,
+[?2004l[?2004h>         "idle_hours": idle_hours
+[?2004l[?2004h>     }
+[?2004l[?2004h> 
+[?2004l[?2004h>     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+[?2004l[?2004h>     with open(OUTPUT_PATH, 'w') as f:
+[?2004l[?2004h>         json.dump(result, f, indent=2)
+[?2004l[?2004h> 
+[?2004l[?2004h>     print(f"Report written to {OUTPUT_PATH}")
+[?2004l[?2004h>     print(f"Overlapping hours: {overlapping_hours}")
+[?2004l[?2004h>     print(f"Idle hours: {idle_hours}")
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     main()
+[?2004l[?2004h> EOF
+[?2004l[?2004huser@bae130232a6d:~$ python3 /home/user/tools/capacity_report.py
+[?2004lReport written to /home/user/reports/windows.json
+Overlapping hours: [2, 3]
+Idle hours: [0, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+[?2004huser@bae130232a6d:~$ cat /home/user/reports/windows.json
+[?2004l{
+  "overlapping_hours": [
+    2,
+    3
+  ],
+  "idle_hours": [
+    0,
+    5,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23
+  ]
+}[?2004huser@bae130232a6d:~$ cat > /home/user/tools/capacity_report.py << 'EOF'
+[?2004l end_time
+
+
+def load_job_runtimes(jobs):
+    """Load actual runtime data from log files into job objects."""
+    log_dir = Path(LOG_DIR)
+
+    for job in jobs:
+        # Find corresponding log file
+        log_name = job.name.replace('.sh', '.log')
+        log_path = log_dir / log_name
+
+        if log_path.exists():
+            start_time, end_time = parse_log_file(log_path)
+            job.start_time = start_time
+            job.end_time = end_time
+
+    return jobs
+
+
+def find_overlapping_hours(jobs):
+    """Find hours where jobs overlapped."""
+    overlapping = set()
+
+    # Filter jobs that have actual runtime data
+    jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+
+    for i, job1 in enumerate(jobs_with_data):
+        for job2 in jobs_with_data[i+1:]:
+            # Check if jobs overlap using actual timestamps
+            # Jobs overlap if: job1 starts before job2 ends AND job2 starts before job1 ends
+            if job1.start_time < job2.end_time and job2.start_time < job1.end_time:
+                # Find all hours during which the overlap occurs
+                overlap_start = max(job1.start_time, job2.start_time)
+                overlap_end = min(job1.end_time, job2.end_time)
+                
+                # Add all hours that contain any part of the overlap
+                current = overlap_start
+                while current <= overlap_end:
+                    overlapping.add(current.hour)
+                    # Move to next hour
+                    current = current.replace(minute=0, second=0, microsecond=0)
+                    if current.hour == 23:
+                        break
+                    current = current.replace(hour=current.hour + 1)
+
+    return sorted(list(overlapping))
+
+
+def find_idle_hours(jobs):
+    """Find hours that were genuinely idle."""
+    idle = []
+    
+    # Filter jobs that have actual runtime data
+    jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+
+    for hour in range(24):
+        is_idle = True
+
+        # Check if any job was running during this hour
+        for job in jobs_with_data:
+ [?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """
+[?2004l[?2004h> Capacity Report Generator
+[?2004l[?2004h> 
+[?2004l[?2004h> Parses crontab entries and batch job logs to identify:
+[?2004l[?2004h> 1. Hours where jobs overlapped (one started before another finished)
+[?2004l[?2004h> 2. Hours that were genuinely idle (no jobs scheduled or running)
+[?2004l[?2004h> 
+[?2004l[?2004h> Output: /home/user/reports/windows.json
+[?2004l[?2004h> """
+[?2004l[?2004h> 
+[?2004l[?2004h> import os
+[?2004l[?2004h> import re
+[?2004l[?2004h> import json
+[?2004l[?2004h> from datetime import datetime, timedelta
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> CRONTAB_PATH = "/var/spool/cron/crontabs/user"
+[?2004l[?2004h> LOG_DIR = "/var/log/batch"
+[?2004l[?2004h> OUTPUT_PATH = "/home/user/reports/windows.json"
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> class Job:
+[?2004l[?2004h>     def __init__(self, name, scheduled_hour, start_time=None, end_time=None):
+[?2004l[?2004h>         self.name = name
+[?2004l[?2004h>         self.scheduled_hour = scheduled_hour
+[?2004l[?2004h>         self.start_time = start_time
+[?2004l[?2004h>         self.end_time = end_time
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_crontab():
+[?2004l[?2004h>     """Parse crontab file and extract job schedules."""
+[?2004l[?2004h>     jobs = []
+[?2004l[?2004h> 
+[?2004l[?2004h>     with open(CRONTAB_PATH, 'r') as f:
+[?2004l[?2004h>         for line in f:
+[?2004l[?2004h>             line = line.strip()
+[?2004l[?2004h>             if not line or line.startswith('#'):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h> 
+[?2004l[?2004h>             parts = line.split()
+[?2004l[?2004h>             if len(parts) >= 6:
+[?2004l[?2004h>                 minute = parts[0]
+[?2004l[?2004h>                 hour = parts[1]
+[?2004l[?2004h>                 command = parts[5]
+[?2004l[?2004h> 
+[?2004l[?2004h>                 job_name = os.path.basename(command)
+[?2004l[?2004h>                 scheduled_hour = int(hour)
+[?2004l[?2004h> 
+[?2004l[?2004h>                 jobs.append(Job(job_name, scheduled_hour))
+[?2004l[?2004h> 
+[?2004l[?2004h>     return jobs
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_log_file(log_path):
+[?2004l[?2004h>     """Parse a log file to extract start and end timestamps."""
+[?2004l[?2004h>     start_time = None
+[?2004l[?2004h>     end_time = None
+[?2004l[?2004h> 
+[?2004l[?2004h>     with open(log_path, 'r') as f:
+[?2004l[?2004h>         content = f.read()
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Match START timestamp
+[?2004l[?2004h>     start_match = re.search(r'START\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+[?2004l[?2004h>     if start_match:
+[?2004l[?2004h>         start_time = datetime.strptime(start_match.group(1), '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Match END timestamp
+[?2004l[?2004h>     end_match = re.search(r'END\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+[?2004l[?2004h>     if end_match:
+[?2004l[?2004h>         end_time = datetime.strptime(end_match.group(1), '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h> 
+[?2004l[?2004h>     return start_time, end_time
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def load_job_runtimes(jobs):
+[?2004l[?2004h>     """Load actual runtime data from log files into job objects."""
+[?2004l[?2004h>     log_dir = Path(LOG_DIR)
+[?2004l[?2004h> 
+[?2004l[?2004h>     for job in jobs:
+[?2004l[?2004h>         # Find corresponding log file
+[?2004l[?2004h>         log_name = job.name.replace('.sh', '.log')
+[?2004l[?2004h>         log_path = log_dir / log_name
+[?2004l[?2004h> 
+[?2004l[?2004h>         if log_path.exists():
+[?2004l[?2004h>             start_time, end_time = parse_log_file(log_path)
+[?2004l[?2004h>             job.start_time = start_time
+[?2004l[?2004h>             job.end_time = end_time
+[?2004l[?2004h> 
+[?2004l[?2004h>     return jobs
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def find_overlapping_hours(jobs):
+[?2004l[?2004h>     """Find hours where jobs overlapped."""
+[?2004l[?2004h>     overlapping = set()
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Filter jobs that have actual runtime data
+[?2004l[?2004h>     jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+[?2004l[?2004h> 
+[?2004l[?2004h>     for i, job1 in enumerate(jobs_with_data):
+[?2004l[?2004h>         for job2 in jobs_with_data[i+1:]:
+[?2004l[?2004h>             # Check if jobs overlap using actual timestamps
+[?2004l[?2004h>             # Jobs overlap if: job1 starts before job2 ends AND job2 starts before job1 ends
+[?2004l[?2004h>             if job1.start_time < job2.end_time and job2.start_time < job1.end_time:
+[?2004l[?2004h>                 # Find all hours during which the overlap occurs
+[?2004l[?2004h>                 overlap_start = max(job1.start_time, job2.start_time)
+[?2004l[?2004h>                 overlap_end = min(job1.end_time, job2.end_time)
+[?2004l[?2004h>                 
+[?2004l[?2004h>                 # Add all hours that contain any part of the overlap
+[?2004l[?2004h>                 current = overlap_start
+[?2004l[?2004h>                 while current <= overlap_end:
+[?2004l[?2004h>                     overlapping.add(current.hour)
+[?2004l[?2004h>                     # Move to next hour
+[?2004l[?2004h>                     current = current.replace(minute=0, second=0, microsecond=0)
+[?2004l[?2004h>                     if current.hour == 23:
+[?2004l[?2004h>                         break
+[?2004l[?2004h>                     current = current.replace(hour=current.hour + 1)
+[?2004l[?2004h> 
+[?2004l[?2004h>     return sorted(list(overlapping))
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def find_idle_hours(jobs):
+[?2004l[?2004h>     """Find hours that were genuinely idle."""
+[?2004l[?2004h>     idle = []
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Filter jobs that have actual runtime data
+[?2004l[?2004h>     jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+[?2004l[?2004h> 
+[?2004l[?2004h>     for hour in range(24):
+[?2004l[?2004h>         is_idle = True
+[?2004l[?2004h> 
+[?2004l[?2004h>         # Check if any job was running during this hour
+[?2004l[?2004h>         for job in jobs_with_data:
+[?2004l[?2004h>             # Create datetime objects for the start and end of this hour
+[?2004l[?2004h>             # Use the same date as the job for comparison
+[?2004l[?2004h>             hour_start = job.start_time.replace(hour=hour, minute=0, second=0, microsecond=0)
+[?2004l[?2004h>             hour_end = job.start_time.replace(hour=hour, minute=59, second=59, microsecond=999999)
+[?2004l[?2004h>             
+[?2004l[?2004h>             # A job runs during this hour if its time range overlaps with the hour's time range
+[?2004l[?2004h>             # Job overlaps hour if: job starts before hour ends AND job ends after hour starts
+[?2004l[?2004h>             if job.start_time <= hour_end and job.end_time >= hour_start:
+[?2004l[?2004h>                 is_idle = False
+[?2004l[?2004h>                 break
+[?2004l[?2004h> 
+[?2004l[?2004h>         if is_idle:
+[?2004l[?2004h>             idle.append(hour)
+[?2004l[?2004h> 
+[?2004l[?2004h>     return idle
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     # Parse crontab to get scheduled jobs
+[?2004l[?2004h>     jobs = parse_crontab()
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Load actual runtime data from logs
+[?2004l[?2004h>     jobs = load_job_runtimes(jobs)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Find overlapping and idle hours
+[?2004l[?2004h>     overlapping_hours = find_overlapping_hours(jobs)
+[?2004l[?2004h>     idle_hours = find_idle_hours(jobs)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Write output
+[?2004l[?2004h>     result = {
+[?2004l[?2004h>         "overlapping_hours": overlapping_hours,
+[?2004l[?2004h>         "idle_hours": idle_hours
+[?2004l[?2004h>     }
+[?2004l[?2004h> 
+[?2004l[?2004h>     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+[?2004l[?2004h>     with open(OUTPUT_PATH, 'w') as f:
+[?2004l[?2004h>         json.dump(result, f, indent=2)
+[?2004l[?2004h> 
+[?2004l[?2004h>     print(f"Report written to {OUTPUT_PATH}")
+[?2004l[?2004h>     print(f"Overlapping hours: {overlapping_hours}")
+[?2004l[?2004h>     print(f"Idle hours: {idle_hours}")
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     main()
+[?2004l[?2004h> EOF
+[?2004l[?2004huser@bae130232a6d:~$ python3 /home/user/tools/capacity_report.py
+[?2004lReport written to /home/user/reports/windows.json
+Overlapping hours: [2, 3]
+Idle hours: [0, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+[?2004huser@bae130232a6d:~$ cat /home/user/reports/windows.json
+[?2004l{
+  "overlapping_hours": [
+    2,
+    3
+  ],
+  "idle_hours": [
+    0,
+    5,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23
+  ]
+}[?2004huser@bae130232a6d:~$ python3 -c "from datetime import datetime; job_start = datetime.strptime('2024-01-15 01:00:03', '%Y-%m-%d %H:%M:%S'); job_end = datetime.strptime('2024-01-15 02:47:19', '%Y-%m-%d %H:%M:%S'); hour = 1; hour_start = job_start.replace(hour=hour, minute=0, second=0, microsecond=0); hour_end = job_start.replace(hour=hour, minute=59, second=59, microsecond=999999); print(f'Job: {job_start} to {job_end}'); print(f'Hour {hour}: {hour_start} to {hour_end}'); print(f'Overlaps: {job_start <= hour_end and job_end >= hour_start}')"
+[?2004lJob: 2024-01-15 01:00:03 to 2024-01-15 02:47:19
+Hour 1: 2024-01-15 01:00:00 to 2024-01-15 01:59:59.999999
+Overlaps: True
+[?2004huser@bae130232a6d:~$ python3 << 'PYEOF'
+[?2004l microsecond=0)
+        hour_end = job.start_time.replace(hour=1, minute=59, second=59, microsecond=999999)
+        overlaps = job.start_time <= hour_end and job.end_time >= hour_start
+        print(f"  {job.name}: overlaps={overlaps}")
+PYEOF
+[?2004h> import os
+[?2004l[?2004h> import re
+[?2004l[?2004h> from datetime import datetime
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> 
+[?2004l[?2004h> CRONTAB_PATH = "/var/spool/cron/crontabs/user"
+[?2004l[?2004h> LOG_DIR = "/var/log/batch"
+[?2004l[?2004h> 
+[?2004l[?2004h> class Job:
+[?2004l[?2004h>     def __init__(self, name, scheduled_hour, start_time=None, end_time=None):
+[?2004l[?2004h>         self.name = name
+[?2004l[?2004h>         self.scheduled_hour = scheduled_hour
+[?2004l[?2004h>         self.start_time = start_time
+[?2004l[?2004h>         self.end_time = end_time
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_crontab():
+[?2004l[?2004h>     jobs = []
+[?2004l[?2004h>     with open(CRONTAB_PATH, 'r') as f:
+[?2004l[?2004h>         for line in f:
+[?2004l[?2004h>             line = line.strip()
+[?2004l[?2004h>             if not line or line.startswith('#'):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             parts = line.split()
+[?2004l[?2004h>             if len(parts) >= 6:
+[?2004l[?2004h>                 job_name = os.path.basename(parts[5])
+[?2004l[?2004h>                 scheduled_hour = int(parts[1])
+[?2004l[?2004h>                 jobs.append(Job(job_name, scheduled_hour))
+[?2004l[?2004h>     return jobs
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_log_file(log_path):
+[?2004l[?2004h>     start_time = None
+[?2004l[?2004h>     end_time = None
+[?2004l[?2004h>     with open(log_path, 'r') as f:
+[?2004l[?2004h>         content = f.read()
+[?2004l[?2004h>     start_match = re.search(r'START\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+[?2004l[?2004h>     if start_match:
+[?2004l[?2004h>         start_time = datetime.strptime(start_match.group(1), '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h>     end_match = re.search(r'END\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+[?2004l[?2004h>     if end_match:
+[?2004l[?2004h>         end_time = datetime.strptime(end_match.group(1), '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h>     return start_time, end_time
+[?2004l[?2004h> 
+[?2004l[?2004h> def load_job_runtimes(jobs):
+[?2004l[?2004h>     log_dir = Path(LOG_DIR)
+[?2004l[?2004h>     for job in jobs:
+[?2004l[?2004h>         log_name = job.name.replace('.sh', '.log')
+[?2004l[?2004h>         log_path = log_dir / log_name
+[?2004l[?2004h>         if log_path.exists():
+[?2004l[?2004h>             start_time, end_time = parse_log_file(log_path)
+[?2004l[?2004h>             job.start_time = start_time
+[?2004l[?2004h>             job.end_time = end_time
+[?2004l[?2004h>     return jobs
+[?2004l[?2004h> 
+[?2004l[?2004h> jobs = parse_crontab()
+[?2004l[?2004h> jobs = load_job_runtimes(jobs)
+[?2004l[?2004h> 
+[?2004l[?2004h> print("Jobs loaded:")
+[?2004l[?2004h> for job in jobs:
+[?2004l[?2004h>     print(f"  {job.name}: {job.start_time} to {job.end_time}")
+[?2004l[?2004h> 
+[?2004l[?2004h> print("\nChecking hour 1:")
+[?2004l[?2004h> for job in jobs:
+[?2004l[?2004h>     if job.start_time and job.end_time:
+[?2004l[?2004h>         hour_start = job.start_time.replace(hour=1, minute=0, second=0, microsecond=0)
+[?2004l[?2004h>         hour_end = job.start_time.replace(hour=1, minute=59, second=59, microsecond=999999)
+[?2004l[?2004h>         overlaps = job.start_time <= hour_end and job.end_time >= hour_start
+[?2004l[?2004h>         print(f"  {job.name}: overlaps={overlaps}")
+[?2004l[?2004h> PYEOF
+[?2004lJobs loaded:
+  etl_main.sh: 2024-01-15 01:00:03 to 2024-01-15 02:47:19
+  backup.sh: 2024-01-15 02:00:01 to 2024-01-15 03:12:44
+  cleanup.sh: 2024-01-15 02:30:02 to 2024-01-15 02:58:31
+  db_vacuum.sh: 2024-01-15 03:00:04 to 2024-01-15 03:45:22
+  reports.sh: 2024-01-15 04:00:01 to 2024-01-15 04:22:17
+  health_check.sh: 2024-01-15 06:00:02 to 2024-01-15 06:03:41
+
+Checking hour 1:
+  etl_main.sh: overlaps=True
+  backup.sh: overlaps=False
+  cleanup.sh: overlaps=False
+  db_vacuum.sh: overlaps=False
+  reports.sh: overlaps=False
+  health_check.sh: overlaps=False
+[?2004huser@bae130232a6d:~$ cat > /home/user/tools/capacity_report.py << 'EOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """
+[?2004l[?2004h> Capacity Report Generator
+[?2004l[?2004h> 
+[?2004l[?2004h> Parses crontab entries and batch job logs to identify:
+[?2004l[?2004h> 1. Hours where jobs overlapped (one started before another finished)
+[?2004l[?2004h> 2. Hours that were genuinely idle (no jobs scheduled or running)
+[?2004l[?2004h> 
+[?2004l[?2004h> Output: /home/user/reports/windows.json
+[?2004l[?2004h> """
+[?2004l[?2004h> 
+[?2004l[?2004h> import os
+[?2004l[?2004h> import re
+[?2004l[?2004h> import json
+[?2004l[?2004h> from datetime import datetime, timedelta
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> CRONTAB_PATH = "/var/spool/cron/crontabs/user"
+[?2004l[?2004h> LOG_DIR = "/var/log/batch"
+[?2004l[?2004h> OUTPUT_PATH = "/home/user/reports/windows.json"
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> class Job:
+[?2004l[?2004h>     def __init__(self, name, scheduled_hour, start_time=None, end_time=None):
+[?2004l[?2004h>         self.name = name
+[?2004l[?2004h>         self.scheduled_hour = scheduled_hour
+[?2004l[?2004h>         self.start_time = start_time
+[?2004l[?2004h>         self.end_time = end_time
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_crontab():
+[?2004l[?2004h>     """Parse crontab file and extract job schedules."""
+[?2004l[?2004h>     jobs = []
+[?2004l[?2004h> 
+[?2004l[?2004h>     with open(CRONTAB_PATH, 'r') as f:
+[?2004l[?2004h>         for line in f:
+[?2004l[?2004h>             line = line.strip()
+[?2004l[?2004h>             if not line or line.startswith('#'):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h> 
+[?2004l[?2004h>             parts = line.split()
+[?2004l[?2004h>             if len(parts) >= 6:
+[?2004l[?2004h>                 minute = parts[0]
+[?2004l[?2004h>                 hour = parts[1]
+[?2004l[?2004h>                 command = parts[5]
+[?2004l[?2004h> 
+[?2004l[?2004h>                 job_name = os.path.basename(command)
+[?2004l[?2004h>                 scheduled_hour = int(hour)
+[?2004l[?2004h> 
+[?2004l[?2004h>                 jobs.append(Job(job_name, scheduled_hour))
+[?2004l[?2004h> 
+[?2004l[?2004h>     return jobs
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_log_file(log_path):
+[?2004l[?2004h>     """Parse a log file to extract start and end timestamps."""
+[?2004l[?2004h>     start_time = None
+[?2004l[?2004h>     end_time = None
+[?2004l[?2004h> 
+[?2004l[?2004h>     with open(log_path, 'r') as f:
+[?2004l[?2004h>         content = f.read()
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Match START timestamp
+[?2004l[?2004h>     start_match = re.search(r'START\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+[?2004l[?2004h>     if start_match:
+[?2004l[?2004h>         start_time = datetime.strptime(start_match.group(1), '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Match END timestamp
+[?2004l[?2004h>     end_match = re.search(r'END\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+[?2004l[?2004h>     if end_match:
+[?2004l[?2004h>         end_time = datetime.strptime(end_match.group(1), '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h> 
+[?2004l[?2004h>     return start_time, end_time
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def load_job_runtimes(jobs):
+[?2004l[?2004h>     """Load actual runtime data from log files into job objects."""
+[?2004l[?2004h>     log_dir = Path(LOG_DIR)
+[?2004l[?2004h> 
+[?2004l[?2004h>     for job in jobs:
+[?2004l[?2004h>         # Find corresponding log file
+[?2004l[?2004h>         log_name = job.name.replace('.sh', '.log')
+[?2004l[?2004h>         log_path = log_dir / log_name
+[?2004l[?2004h> 
+[?2004l[?2004h>         if log_path.exists():
+[?2004l[?2004h>             start_time, end_time = parse_log_file(log_path)
+[?2004l[?2004h>             job.start_time = start_time
+[?2004l[?2004h>             job.end_time = end_time
+[?2004l[?2004h> 
+[?2004l[?2004h>     return jobs
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def find_overlapping_hours(jobs):
+[?2004l[?2004h>     """Find hours where jobs overlapped."""
+[?2004l[?2004h>     overlapping = set()
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Filter jobs that have actual runtime data
+[?2004l[?2004h>     jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+[?2004l[?2004h> 
+[?2004l[?2004h>     for i, job1 in enumerate(jobs_with_data):
+[?2004l[?2004h>         for job2 in jobs_with_data[i+1:]:
+[?2004l[?2004h>             # Check if jobs overlap using actual timestamps
+[?2004l[?2004h>             # Jobs overlap if: job1 starts before job2 ends AND job2 starts before job1 ends
+[?2004l[?2004h>             if job1.start_time < job2.end_time and job2.start_time < job1.end_time:
+[?2004l[?2004h>                 # Find all hours during which the overlap occurs
+[?2004l[?2004h>                 overlap_start = max(job1.start_time, job2.start_time)
+[?2004l[?2004h>                 overlap_end = min(job1.end_time, job2.end_time)
+[?2004l[?2004h>                 
+[?2004l[?2004h>                 # Add all hours that contain any part of the overlap
+[?2004l[?2004h>                 current = overlap_start
+[?2004l[?2004h>                 while current <= overlap_end:
+[?2004l[?2004h>                     overlapping.add(current.hour)
+[?2004l[?2004h>                     # Move to next hour
+[?2004l[?2004h>                     current = current.replace(minute=0, second=0, microsecond=0)
+[?2004l[?2004h>                     if current.hour == 23:
+[?2004l[?2004h>                         break
+[?2004l[?2004h>                     current = current.replace(hour=current.hour + 1)
+[?2004l[?2004h> 
+[?2004l[?2004h>     return sorted(list(overlapping))
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def find_idle_hours(jobs):
+[?2004l[?2004h>     """Find hours that were genuinely idle."""
+[?2004l[?2004h>     idle = []
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Filter jobs that have actual runtime data
+[?2004l[?2004h>     jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+[?2004l[?2004h>     
+[?2004l[?2004h>     if not jobs_with_data:
+[?2004l[?2004h>         return list(range(24))
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Use the date from the first job as reference
+[?2004l[?2004h>     reference_date = jobs_with_data[0].start_time.date()
+[?2004l[?2004h> 
+[?2004l[?2004h>     for hour in range(24):
+[?2004l[?2004h>         is_idle = True
+[?2004l[?2004h> 
+[?2004l[?2004h>         # Create datetime objects for the start and end of this hour
+[?2004l[?2004h>         hour_start = datetime.combine(reference_date, datetime.min.time()).replace(hour=hour)
+[?2004l[?2004h>         hour_end = hour_start.replace(minute=59, second=59, microsecond=999999)
+[?2004l[?2004h>         
+[?2004l[?2004h>         # Check if any job was running during this hour
+[?2004l[?2004h>         for job in jobs_with_data:
+[?2004l[?2004h>             # A job runs during this hour if its time range overlaps with the hour's time range
+[?2004l[?2004h>             # Job overlaps hour if: job starts before hour ends AND job ends after hour starts
+[?2004l[?2004h>             if job.start_time <= hour_end and job.end_time >= hour_start:
+[?2004l[?2004h>                 is_idle = False
+[?2004l[?2004h>                 break
+[?2004l[?2004h> 
+[?2004l[?2004h>         if is_idle:
+[?2004l[?2004h>             idle.append(hour)
+[?2004l[?2004h> 
+[?2004l[?2004h>     return idle
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     # Parse crontab to get scheduled jobs
+[?2004l[?2004h>     jobs = parse_crontab()
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Load actual runtime data from logs
+[?2004l[?2004h>     jobs = load_job_runtimes(jobs)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Find overlapping and idle hours
+[?2004l[?2004h>     overlapping_hours = find_overlapping_hours(jobs)
+[?2004l[?2004h>     idle_hours = find_idle_hours(jobs)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Write output
+[?2004l[?2004h>     result = {
+[?2004l[?2004h>         "overlapping_hours": overlapping_hours,
+[?2004l[?2004h>         "idle_hours": idle_hours
+[?2004l[?2004h>     }
+[?2004l[?2004h> 
+[?2004l[?2004h>     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+[?2004l[?2004h>     with open(OUTPUT_PATH, 'w') as f:
+[?2004l[?2004h>         json.dump(result, f, indent=2)
+[?2004l[?2004h> 
+[?2004l[?2004h>     print(f"Report written to {OUTPUT_PATH}")
+[?2004l[?2004h>     print(f"Overlapping hours: {overlapping_hours}")
+[?2004l[?2004h>     print(f"Idle hours: {idle_hours}")
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     main()
+[?2004l[?2004h> EOF
+[?2004l[?2004huser@bae130232a6d:~$ python3 /home/user/tools/capacity_report.py
+[?2004lReport written to /home/user/reports/windows.json
+Overlapping hours: [2, 3]
+Idle hours: [0, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+[?2004huser@bae130232a6d:~$ cat /home/user/reports/windows.json
+[?2004l{
+  "overlapping_hours": [
+    2,
+    3
+  ],
+  "idle_hours": [
+    0,
+    5,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23
+  ]
+}[?2004huser@bae130232a6d:~$ python3 << 'PYEOF'
+[?2004l[?2004h> from datetime import datetime
+[?2004l[?2004h> 
+[?2004l[?2004h> reference_date = datetime.strptime('2024-01-15', '%Y-%m-%d').date()
+[?2004l[?2004h> print(f"Reference date: {reference_date}")
+[?2004l[?2004h> 
+[?2004l[?2004h> hour = 1
+[?2004l[?2004h> hour_start = datetime.combine(reference_date, datetime.min.time()).replace(hour=hour)
+[?2004l[?2004h> hour_end = hour_start.replace(minute=59, second=59, microsecond=999999)
+[?2004l[?2004h> print(f"Hour {hour}: {hour_start} to {hour_end}")
+[?2004l[?2004h> 
+[?2004l[?2004h> job_start = datetime.strptime('2024-01-15 01:00:03', '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h> job_end = datetime.strptime('2024-01-15 02:47:19', '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h> print(f"ETL job: {job_start} to {job_end}")
+[?2004l[?2004h> print(f"Overlap check: job_start <= hour_end: {job_start <= hour_end}")
+[?2004l[?2004h> print(f"Overlap check: job_end >= hour_start: {job_end >= hour_start}")
+[?2004l[?2004h> print(f"Result: {job_start <= hour_end and job_end >= hour_start}")
+[?2004l[?2004h> 
+[?2004l[?2004h> print("\nHour 4:")
+[?2004l[?2004h> hour = 4
+[?2004l[?2004h> hour_start = datetime.combine(reference_date, datetime.min.time()).replace(hour=hour)
+[?2004l[?2004h> hour_end = hour_start.replace(minute=59, second=59, microsecond=999999)
+[?2004l[?2004h> print(f"Hour {hour}: {hour_start} to {hour_end}")
+[?2004l[?2004h> 
+[?2004l[?2004h> job_start = datetime.strptime('2024-01-15 04:00:01', '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h> job_end = datetime.strptime('2024-01-15 04:22:17', '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h> print(f"Reports job: {job_start} to {job_end}")
+[?2004l[?2004h> print(f"Result: {job_start <= hour_end and job_end >= hour_start}")
+[?2004l[?2004h> PYEOF
+[?2004lReference date: 2024-01-15
+Hour 1: 2024-01-15 01:00:00 to 2024-01-15 01:59:59.999999
+ETL job: 2024-01-15 01:00:03 to 2024-01-15 02:47:19
+Overlap check: job_start <= hour_end: True
+Overlap check: job_end >= hour_start: True
+Result: True
+
+Hour 4:
+Hour 4: 2024-01-15 04:00:00 to 2024-01-15 04:59:59.999999
+Reports job: 2024-01-15 04:00:01 to 2024-01-15 04:22:17
+Result: True
+[?2004huser@bae130232a6d:~$ python3 << 'PYEOF'
+[?2004l\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+    if start_match:
+        start_time = datetime.strptime(start_match.group(1), '%Y-%m-%d %H:%M:%S')
+    end_match = re.search(r'END\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+    if end_match:
+        end_time = datetime.strptime(end_match.group(1), '%Y-%m-%d %H:%M:%S')
+    return start_time, end_time
+
+def load_job_runtimes(jobs):
+    log_dir = Path(LOG_DIR)
+    for job in jobs:
+        log_name = job.name.replace('.sh', '.log')
+        log_path = log_dir / log_name
+        if log_path.exists():
+            start_time, end_time = parse_log_file(log_path)
+            job.start_time = start_time
+            job.end_time = end_time
+    return jobs
+
+jobs = parse_crontab()
+jobs = load_job_runtimes(jobs)
+jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+
+if jobs_with_data:
+    reference_date = jobs_with_data[0].start_time.date()
+    print(f"Reference date: {reference_date}")
+    
+    for test_hour in [1, 4, 6]:
+        print(f"\nChecking hour {test_hour}:")
+        hour_start = datetime.combine(reference_date, datetime.min.time()).replace(hour=test_hour)
+        hour_end = hour_start.replace(minute=59, second=59, microsecond=999999)
+        print(f"  Hour range: {hour_start} to {hour_end}")
+        
+        is_idle = True
+        for job in jobs_with_data:
+            overlaps = job.start_time <= hour_end and job.end_time >= hour_start
+            if overlaps:
+                print(f"  {job.name}: {job.start_time} to {job.end_time} - OVERLAPS")
+                is_idle = False
+        
+        print(f"  Result: {'IDLE' if is_idle else 'BUSY'}")
+PYEOF
+[?2004h> import os
+[?2004l[?2004h> import re
+[?2004l[?2004h> from datetime import datetime
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> 
+[?2004l[?2004h> CRONTAB_PATH = "/var/spool/cron/crontabs/user"
+[?2004l[?2004h> LOG_DIR = "/var/log/batch"
+[?2004l[?2004h> 
+[?2004l[?2004h> class Job:
+[?2004l[?2004h>     def __init__(self, name, scheduled_hour, start_time=None, end_time=None):
+[?2004l[?2004h>         self.name = name
+[?2004l[?2004h>         self.scheduled_hour = scheduled_hour
+[?2004l[?2004h>         self.start_time = start_time
+[?2004l[?2004h>         self.end_time = end_time
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_crontab():
+[?2004l[?2004h>     jobs = []
+[?2004l[?2004h>     with open(CRONTAB_PATH, 'r') as f:
+[?2004l[?2004h>         for line in f:
+[?2004l[?2004h>             line = line.strip()
+[?2004l[?2004h>             if not line or line.startswith('#'):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             parts = line.split()
+[?2004l[?2004h>             if len(parts) >= 6:
+[?2004l[?2004h>                 job_name = os.path.basename(parts[5])
+[?2004l[?2004h>                 scheduled_hour = int(parts[1])
+[?2004l[?2004h>                 jobs.append(Job(job_name, scheduled_hour))
+[?2004l[?2004h>     return jobs
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_log_file(log_path):
+[?2004l[?2004h>     start_time = None
+[?2004l[?2004h>     end_time = None
+[?2004l[?2004h>     with open(log_path, 'r') as f:
+[?2004l[?2004h>         content = f.read()
+[?2004l[?2004h>     start_match = re.search(r'START\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+[?2004l[?2004h>     if start_match:
+[?2004l[?2004h>         start_time = datetime.strptime(start_match.group(1), '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h>     end_match = re.search(r'END\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+[?2004l[?2004h>     if end_match:
+[?2004l[?2004h>         end_time = datetime.strptime(end_match.group(1), '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h>     return start_time, end_time
+[?2004l[?2004h> 
+[?2004l[?2004h> def load_job_runtimes(jobs):
+[?2004l[?2004h>     log_dir = Path(LOG_DIR)
+[?2004l[?2004h>     for job in jobs:
+[?2004l[?2004h>         log_name = job.name.replace('.sh', '.log')
+[?2004l[?2004h>         log_path = log_dir / log_name
+[?2004l[?2004h>         if log_path.exists():
+[?2004l[?2004h>             start_time, end_time = parse_log_file(log_path)
+[?2004l[?2004h>             job.start_time = start_time
+[?2004l[?2004h>             job.end_time = end_time
+[?2004l[?2004h>     return jobs
+[?2004l[?2004h> 
+[?2004l[?2004h> jobs = parse_crontab()
+[?2004l[?2004h> jobs = load_job_runtimes(jobs)
+[?2004l[?2004h> jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+[?2004l[?2004h> 
+[?2004l[?2004h> if jobs_with_data:
+[?2004l[?2004h>     reference_date = jobs_with_data[0].start_time.date()
+[?2004l[?2004h>     print(f"Reference date: {reference_date}")
+[?2004l[?2004h>     
+[?2004l[?2004h>     for test_hour in [1, 4, 6]:
+[?2004l[?2004h>         print(f"\nChecking hour {test_hour}:")
+[?2004l[?2004h>         hour_start = datetime.combine(reference_date, datetime.min.time()).replace(hour=test_hour)
+[?2004l[?2004h>         hour_end = hour_start.replace(minute=59, second=59, microsecond=999999)
+[?2004l[?2004h>         print(f"  Hour range: {hour_start} to {hour_end}")
+[?2004l[?2004h>         
+[?2004l[?2004h>         is_idle = True
+[?2004l[?2004h>         for job in jobs_with_data:
+[?2004l[?2004h>             overlaps = job.start_time <= hour_end and job.end_time >= hour_start
+[?2004l[?2004h>             if overlaps:
+[?2004l[?2004h>                 print(f"  {job.name}: {job.start_time} to {job.end_time} - OVERLAPS")
+[?2004l[?2004h>                 is_idle = False
+[?2004l[?2004h>         
+[?2004l[?2004h>         print(f"  Result: {'IDLE' if is_idle else 'BUSY'}")
+[?2004l[?2004h> PYEOF
+[?2004lReference date: 2024-01-15
+
+Checking hour 1:
+  Hour range: 2024-01-15 01:00:00 to 2024-01-15 01:59:59.999999
+  etl_main.sh: 2024-01-15 01:00:03 to 2024-01-15 02:47:19 - OVERLAPS
+  Result: BUSY
+
+Checking hour 4:
+  Hour range: 2024-01-15 04:00:00 to 2024-01-15 04:59:59.999999
+  reports.sh: 2024-01-15 04:00:01 to 2024-01-15 04:22:17 - OVERLAPS
+  Result: BUSY
+
+Checking hour 6:
+  Hour range: 2024-01-15 06:00:00 to 2024-01-15 06:59:59.999999
+  health_check.sh: 2024-01-15 06:00:02 to 2024-01-15 06:03:41 - OVERLAPS
+  Result: BUSY
+[?2004huser@bae130232a6d:~$ grep -A 20 'def find_idle_hours' /home/user/tools/capacity_report.py
+[?2004ldef find_idle_hours(jobs):
+    """Find hours that were genuinely idle."""
+    idle = []
+    
+    # Filter jobs that have actual runtime data
+    jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+    
+    if not jobs_with_data:
+        return list(range(24))
+    
+    # Use the date from the first job as reference
+    reference_date = jobs_with_data[0].start_time.date()
+
+    for hour in range(24):
+        is_idle = True
+
+        # Create datetime objects for the start and end of this hour
+        hour_start = datetime.combine(reference_date, datetime.min.time()).replace(hour=hour)
+        hour_end = hour_start.replace(minute=59, second=59, microsecond=999999)
+        
+        # Check if any job was running during this hour
+[?2004huser@bae130232a6d:~$ grep -A 30 'def find_idle_hours' /home/user/tools/capacity_report.py
+[?2004ldef find_idle_hours(jobs):
+    """Find hours that were genuinely idle."""
+    idle = []
+    
+    # Filter jobs that have actual runtime data
+    jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+    
+    if not jobs_with_data:
+        return list(range(24))
+    
+    # Use the date from the first job as reference
+    reference_date = jobs_with_data[0].start_time.date()
+
+    for hour in range(24):
+        is_idle = True
+
+        # Create datetime objects for the start and end of this hour
+        hour_start = datetime.combine(reference_date, datetime.min.time()).replace(hour=hour)
+        hour_end = hour_start.replace(minute=59, second=59, microsecond=999999)
+        
+        # Check if any job was running during this hour
+        for job in jobs_with_data:
+            # A job runs during this hour if its time range overlaps with the hour's time range
+            # Job overlaps hour if: job starts before hour ends AND job ends after hour starts
+            if job.start_time <= hour_end and job.end_time >= hour_start:
+                is_idle = False
+                break
+
+        if is_idle:
+            idle.append(hour)
+
+[?2004huser@bae130232a6d:~$ python3 /home/user/tools/capacity_report.py 2>&1 | head -20
+[?2004lReport written to /home/user/reports/windows.json
+Overlapping hours: [2, 3]
+Idle hours: [0, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+[?2004huser@bae130232a6d:~$ rm -f /home/user/tools/__pycache__/* 2>/dev/null; rm -f /home/user/tools/*.pyc 2>/dev/null
+[?2004l[?2004huser@bae130232a6d:~$ python3 -c "import sys; sys.path.insert(0, '/home/user/tools'); exec(open('/home/user/tools/capacity_report.py').read())"
+[?2004lReport written to /home/user/reports/windows.json
+Overlapping hours: [2, 3]
+Idle hours: [0, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+[?2004huser@bae130232a6d:~$ wc -l /home/user/tools/capacity_report.py
+[?2004l184 /home/user/tools/capacity_report.py
+[?2004huser@bae130232a6d:~$ tail -40 /home/user/tools/capacity_report.py
+[?2004l            # A job runs during this hour if its time range overlaps with the hour's time range
+            # Job overlaps hour if: job starts before hour ends AND job ends after hour starts
+            if job.start_time <= hour_end and job.end_time >= hour_start:
+                is_idle = False
+                break
+
+        if is_idle:
+            idle.append(hour)
+
+    return idle
+
+
+def main():
+    # Parse crontab to get scheduled jobs
+    jobs = parse_crontab()
+
+    # Load actual runtime data from logs
+    jobs = load_job_runtimes(jobs)
+
+    # Find overlapping and idle hours
+    overlapping_hours = find_overlapping_hours(jobs)
+    idle_hours = find_idle_hours(jobs)
+
+    # Write output
+    result = {
+        "overlapping_hours": overlapping_hours,
+        "idle_hours": idle_hours
+    }
+
+    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+    with open(OUTPUT_PATH, 'w') as f:
+        json.dump(result, f, indent=2)
+
+    print(f"Report written to {OUTPUT_PATH}")
+    print(f"Overlapping hours: {overlapping_hours}")
+    print(f"Idle hours: {idle_hours}")
+
+
+if __name__ == "__main__":
+    main()
+[?2004huser@bae130232a6d:~$ sed -i '139a\        if hour in [1, 4, 6]:\n            print(f"DEBUG: Checking hour {hour}")\n            print(f"  hour_start: {hour_start}, hour_end: {hour_end}")' /home/user/tools/capacity_report.py
+[?2004l[?2004huser@bae130232a6d:~$ sed -i '147a\            if hour in [1, 4, 6]:\n                print(f"  Job {job.name}: {job.start_time} to {job.end_time}")\n                print(f"    Condition: {job.start_time} <= {hour_end} and {job.end_time} >= {hour_start}")\n                print(f"    Result: {job.start_time <= hour_end and job.end_time >= hour_start}")' /home/user/tools/capacity_report.py
+[?2004l[?2004huser@bae130232a6d:~$ python3 /home/user/tools/capacity_report.py 2>&1 | grep -A 20 'DEBUG'
+[?2004lDEBUG: Checking hour 1
+  hour_start: 2024-01-15 00:00:00, hour_end: 2024-01-15 00:59:59.999999
+  Job etl_main.sh: 2024-01-15 01:00:03 to 2024-01-15 02:47:19
+    Condition: 2024-01-15 01:00:03 <= 2024-01-15 01:59:59.999999 and 2024-01-15 02:47:19 >= 2024-01-15 01:00:00
+    Result: True
+DEBUG: Checking hour 4
+  hour_start: 2024-01-15 03:00:00, hour_end: 2024-01-15 03:59:59.999999
+  Job etl_main.sh: 2024-01-15 01:00:03 to 2024-01-15 02:47:19
+    Condition: 2024-01-15 01:00:03 <= 2024-01-15 04:59:59.999999 and 2024-01-15 02:47:19 >= 2024-01-15 04:00:00
+    Result: False
+  Job backup.sh: 2024-01-15 02:00:01 to 2024-01-15 03:12:44
+    Condition: 2024-01-15 02:00:01 <= 2024-01-15 04:59:59.999999 and 2024-01-15 03:12:44 >= 2024-01-15 04:00:00
+    Result: False
+  Job cleanup.sh: 2024-01-15 02:30:02 to 2024-01-15 02:58:31
+    Condition: 2024-01-15 02:30:02 <= 2024-01-15 04:59:59.999999 and 2024-01-15 02:58:31 >= 2024-01-15 04:00:00
+    Result: False
+  Job db_vacuum.sh: 2024-01-15 03:00:04 to 2024-01-15 03:45:22
+    Condition: 2024-01-15 03:00:04 <= 2024-01-15 04:59:59.999999 and 2024-01-15 03:45:22 >= 2024-01-15 04:00:00
+    Result: False
+  Job reports.sh: 2024-01-15 04:00:01 to 2024-01-15 04:22:17
+    Condition: 2024-01-15 04:00:01 <= 2024-01-15 04:59:59.999999 and 2024-01-15 04:22:17 >= 2024-01-15 04:00:00
+    Result: True
+DEBUG: Checking hour 6
+  hour_start: 2024-01-15 05:00:00, hour_end: 2024-01-15 05:59:59.999999
+  Job etl_main.sh: 2024-01-15 01:00:03 to 2024-01-15 02:47:19
+    Condition: 2024-01-15 01:00:03 <= 2024-01-15 06:59:59.999999 and 2024-01-15 02:47:19 >= 2024-01-15 06:00:00
+    Result: False
+  Job backup.sh: 2024-01-15 02:00:01 to 2024-01-15 03:12:44
+    Condition: 2024-01-15 02:00:01 <= 2024-01-15 06:59:59.999999 and 2024-01-15 03:12:44 >= 2024-01-15 06:00:00
+    Result: False
+  Job cleanup.sh: 2024-01-15 02:30:02 to 2024-01-15 02:58:31
+    Condition: 2024-01-15 02:30:02 <= 2024-01-15 06:59:59.999999 and 2024-01-15 02:58:31 >= 2024-01-15 06:00:00
+    Result: False
+  Job db_vacuum.sh: 2024-01-15 03:00:04 to 2024-01-15 03:45:22
+    Condition: 2024-01-15 03:00:04 <= 2024-01-15 06:59:59.999999 and 2024-01-15 03:45:22 >= 2024-01-15 06:00:00
+    Result: False
+  Job reports.sh: 2024-01-15 04:00:01 to 2024-01-15 04:22:17
+    Condition: 2024-01-15 04:00:01 <= 2024-01-15 06:59:59.999999 and 2024-01-15 04:22:17 >= 2024-01-15 06:00:00
+    Result: False
+  Job health_check.sh: 2024-01-15 06:00:02 to 2024-01-15 06:03:41
+    Condition: 2024-01-15 06:00:02 <= 2024-01-15 06:59:59.999999 and 2024-01-15 06:03:41 >= 2024-01-15 06:00:00
+    Result: True
+Report written to /home/user/reports/windows.json
+[?2004huser@bae130232a6d:~$ python3 -c "from datetime import datetime; d = datetime(2024, 1, 15, 0, 0, 0); print(f'Original: {d}'); d2 = d.replace(hour=1); print(f'After replace(hour=1): {d2}')"
+[?2004lOriginal: 2024-01-15 00:00:00
+After replace(hour=1): 2024-01-15 01:00:00
+[?2004huser@bae130232a6d:~$ sed -n '135,145p' /home/user/tools/capacity_report.py
+[?2004l
+    for hour in range(24):
+        is_idle = True
+
+        # Create datetime objects for the start and end of this hour
+        if hour in [1, 4, 6]:
+            print(f"DEBUG: Checking hour {hour}")
+            print(f"  hour_start: {hour_start}, hour_end: {hour_end}")
+        hour_start = datetime.combine(reference_date, datetime.min.time()).replace(hour=hour)
+        hour_end = hour_start.replace(minute=59, second=59, microsecond=999999)
+        
+[?2004huser@bae130232a6d:~$ cp /home/user/tools/capacity_report.py.bak /home/user/tools/capacity_report.py
+[?2004l[?2004huser@bae130232a6d:~$ python3 /home/user/tools/capacity_report.py
+[?2004lReport written to /home/user/reports/windows.json
+Overlapping hours: []
+Idle hours: [0, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+[?2004huser@bae130232a6d:~$ cat /home/user/reports/windows.json
+[?2004l{
+  "overlapping_hours": [],
+  "idle_hours": [
+    0,
+    5,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23
+  ]
+}[?2004huser@bae130232a6d:~$ grep -A 15 'def find_overlapping_hours' /home/user/tools/capacity_report.py.bak | head -20
+[?2004ldef find_overlapping_hours(jobs):
+    """Find hours where jobs overlapped."""
+    overlapping = set()
+
+    for i, job1 in enumerate(jobs):
+        for job2 in jobs[i+1:]:
+            if job1.start_time is None or job1.end_time is None:
+                continue
+            if job2.start_time is None or job2.end_time is None:
+                continue
+
+            # Bug 3: Using integer hour comparison instead of actual timestamps
+            # This misses overlaps within the same hour and boundary conditions
+            # Comparing end_hour > start_hour misses when they're equal
+            if job1.end_hour > job2.start_hour and job1.start_hour < job2.end_hour:
+                # Add the hours where overlap occurs
+[?2004huser@bae130232a6d:~$ cat > /home/user/tools/capacity_report.py << 'SCRIPTEOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """
+[?2004l[?2004h> Capacity Report Generator
+[?2004l[?2004h> 
+[?2004l[?2004h> Parses crontab entries and batch job logs to identify:
+[?2004l[?2004h> 1. Hours where jobs overlapped (one started before another finished)
+[?2004l[?2004h> 2. Hours that were genuinely idle (no jobs scheduled or running)
+[?2004l[?2004h> 
+[?2004l[?2004h> Output: /home/user/reports/windows.json
+[?2004l[?2004h> """
+[?2004lt[?2004h> 
+[?2004l[?2004h> import os
+[?2004l[?2004h> import re
+[?2004l[?2004h> import json
+[?2004l[?2004h> from datetime import datetime, timedelta
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> CRONTAB_PATH = "/var/spool/cron/crontabs/user"
+[?2004l[?2004h> LOG_DIR = "/var/log/batch"
+[?2004l[?2004h> OUTPUT_PATH = "/home/user/reports/windows.json"
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> class Job:
+[?2004l[?2004h>     def __init__(self, name, scheduled_hour, start_time=None, end_time=None):
+[?2004l[?2004h>         self.name = name
+[?2004l[?2004h>         self.scheduled_hour = scheduled_hour
+[?2004l[?2004h>         self.start_time = start_time
+[?2004l[?2004h>         self.end_time = end_time
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_crontab():
+[?2004l[?2004h>     """Parse crontab file and extract job schedules."""
+[?2004l[?2004h>     jobs = []
+[?2004l[?2004h> 
+[?2004l[?2004h>     with open(CRONTAB_PATH, 'r') as f:
+[?2004l[?2004h>         for line in f:
+[?2004l[?2004h>             line = line.strip()
+[?2004l[?2004h>             if not line or line.startswith('#'):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h> 
+[?2004l[?2004h>             parts = line.split()
+[?2004l[?2004h>             if len(parts) >= 6:
+[?2004l[?2004h>                 minute = parts[0]
+[?2004l[?2004h>                 hour = parts[1]
+[?2004l[?2004h>                 command = parts[5]
+[?2004l[?2004h> 
+[?2004l[?2004h>                 job_name = os.path.basename(command)
+[?2004l[?2004h>                 scheduled_hour = int(hour)
+[?2004l[?2004h> 
+[?2004l[?2004h>                 jobs.append(Job(job_name, scheduled_hour))
+[?2004l[?2004h> 
+[?2004l[?2004h>     return jobs
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_log_file(log_path):
+[?2004l[?2004h>     """Parse a log file to extract start and end timestamps."""
+[?2004l[?2004h>     start_time = None
+[?2004l[?2004h>     end_time = None
+[?2004l[?2004h> 
+[?2004l[?2004h>     with open(log_path, 'r') as f:
+[?2004l[?2004h>         content = f.read()
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Match START timestamp
+[?2004l[?2004h>     start_match = re.search(r'START\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+[?2004l[?2004h>     if start_match:
+[?2004l[?2004h>         start_time = datetime.strptime(start_match.group(1), '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Match END timestamp
+[?2004l[?2004h>     end_match = re.search(r'END\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+[?2004l[?2004h>     if end_match:
+[?2004l[?2004h>         end_time = datetime.strptime(end_match.group(1), '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h> 
+[?2004l[?2004h>     return start_time, end_time
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def load_job_runtimes(jobs):
+[?2004l[?2004h>     """Load actual runtime data from log files into job objects."""
+[?2004l[?2004h>     log_dir = Path(LOG_DIR)
+[?2004l[?2004h> 
+[?2004l[?2004h>     for job in jobs:
+[?2004l[?2004h>         # Find corresponding log file
+[?2004l[?2004h>         log_name = job.name.replace('.sh', '.log')
+[?2004l[?2004h>         log_path = log_dir / log_name
+[?2004l[?2004h> 
+[?2004l[?2004h>         if log_path.exists():
+[?2004l[?2004h>             start_time, end_time = parse_log_file(log_path)
+[?2004l[?2004h>             job.start_time = start_time
+[?2004l[?2004h>             job.end_time = end_time
+[?2004l[?2004h> 
+[?2004l[?2004h>     return jobs
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def find_overlapping_hours(jobs):
+[?2004l[?2004h>     """Find hours where jobs overlapped."""
+[?2004l[?2004h>     overlapping = set()
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Filter jobs that have actual runtime data
+[?2004l[?2004h>     jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+[?2004l[?2004h> 
+[?2004l[?2004h>     for i, job1 in enumerate(jobs_with_data):
+[?2004l[?2004h>         for job2 in jobs_with_data[i+1:]:
+[?2004l[?2004h>             # Check if jobs overlap using actual timestamps
+[?2004l[?2004h>             # Jobs overlap if: job1 starts before job2 ends AND job2 starts before job1 ends
+[?2004l[?2004h>             if job1.start_time < job2.end_time and job2.start_time < job1.end_time:
+[?2004l[?2004h>                 # Find all hours during which the overlap occurs
+[?2004l[?2004h>                 overlap_start = max(job1.start_time, job2.start_time)
+[?2004l[?2004h>                 overlap_end = min(job1.end_time, job2.end_time)
+[?2004l[?2004h>                 
+[?2004l[?2004h>                 # Add all hours that contain any part of the overlap
+[?2004l[?2004h>                 current_hour = overlap_start.hour
+[?2004l[?2004h>                 end_hour = overlap_end.hour
+[?2004l[?2004h>                 
+[?2004l[?2004h>                 for h in range(current_hour, end_hour + 1):
+[?2004l[?2004h>                     overlapping.add(h)
+[?2004l[?2004h> 
+[?2004l[?2004h>     return sorted(list(overlapping))
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def find_idle_hours(jobs):
+[?2004l[?2004h>     """Find hours that were genuinely idle."""
+[?2004l[?2004h>     idle = []
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Filter jobs that have actual runtime data
+[?2004l[?2004h>     jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+[?2004l[?2004h>     
+[?2004l[?2004h>     if not jobs_with_data:
+[?2004l[?2004h>         return list(range(24))
+[?2004l[?2004h>     
+[?2004l[?2004h>     # Use the date from the first job as reference
+[?2004l[?2004h>     reference_date = jobs_with_data[0].start_time.date()
+[?2004l[?2004h> 
+[?2004l[?2004h>     for hour in range(24):
+[?2004l[?2004h>         is_idle = True
+[?2004l[?2004h> 
+[?2004l[?2004h>         # Create datetime objects for the start and end of this hour
+[?2004l[?2004h>         hour_start = datetime.combine(reference_date, datetime.min.time()).replace(hour=hour)
+[?2004l[?2004h>         hour_end = hour_start.replace(minute=59, second=59, microsecond=999999)
+[?2004l[?2004h>         
+[?2004l[?2004h>         # Check if any job was running during this hour
+[?2004l[?2004h>         for job in jobs_with_data:
+[?2004l[?2004h>             # A job runs during this hour if its time range overlaps with the hour's time range
+[?2004l[?2004h>             # Job overlaps hour if: job starts before or at hour end AND job ends after or at hour start
+[?2004l[?2004h>             if job.start_time <= hour_end and job.end_time >= hour_start:
+[?2004l[?2004h>                 is_idle = False
+[?2004l[?2004h>                 break
+[?2004l[?2004h> 
+[?2004l[?2004h>         if is_idle:
+[?2004l[?2004h>             idle.append(hour)
+[?2004l[?2004h> 
+[?2004l[?2004h>     return idle
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def main():
+[?2004l[?2004h>     # Parse crontab to get scheduled jobs
+[?2004l[?2004h>     jobs = parse_crontab()
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Load actual runtime data from logs
+[?2004l[?2004h>     jobs = load_job_runtimes(jobs)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Find overlapping and idle hours
+[?2004l[?2004h>     overlapping_hours = find_overlapping_hours(jobs)
+[?2004l[?2004h>     idle_hours = find_idle_hours(jobs)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Write output
+[?2004l[?2004h>     result = {
+[?2004l[?2004h>         "overlapping_hours": overlapping_hours,
+[?2004l[?2004h>         "idle_hours": idle_hours
+[?2004l[?2004h>     }
+[?2004l[?2004h> 
+[?2004l[?2004h>     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+[?2004l[?2004h>     with open(OUTPUT_PATH, 'w') as f:
+[?2004l[?2004h>         json.dump(result, f, indent=2)
+[?2004l[?2004h> 
+[?2004l[?2004h>     print(f"Report written to {OUTPUT_PATH}")
+[?2004l[?2004h>     print(f"Overlapping hours: {overlapping_hours}")
+[?2004l[?2004h>     print(f"Idle hours: {idle_hours}")
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     main()
+[?2004l[?2004h> SCRIPTEOF
+[?2004l[?2004huser@bae130232a6d:~$ python3 /home/user/tools/capacity_report.py
+[?2004lReport written to /home/user/reports/windows.json
+Overlapping hours: [2, 3]
+Idle hours: [0, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+[?2004huser@bae130232a6d:~$ python3 << 'TESTEOF'
+[?2004l[?2004h> from datetime import datetime, date
+[?2004l[?2004h> 
+[?2004l[?2004h> reference_date = date(2024, 1, 15)
+[?2004l[?2004h> print(f"Reference date: {reference_date}")
+[?2004l[?2004h> print(f"Type: {type(reference_date)}")
+[?2004l[?2004h> 
+[?2004l[?2004h> for hour in [0, 1, 2]:
+[?2004l[?2004h>     hour_start = datetime.combine(reference_date, datetime.min.time()).replace(hour=hour)
+[?2004l[?2004h>     print(f"Hour {hour}: {hour_start}")
+[?2004l[?2004h> TESTEOF
+[?2004lReference date: 2024-01-15
+Type: <class 'datetime.date'>
+Hour 0: 2024-01-15 00:00:00
+Hour 1: 2024-01-15 01:00:00
+Hour 2: 2024-01-15 02:00:00
+[?2004huser@bae130232a6d:~$ python3 << 'DEBUGEOF'
+[?2004l4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+    if start_match:
+        start_time = datetime.strptime(start_match.group(1), '%Y-%m-%d %H:%M:%S')
+    end_match = re.search(r'END\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+    if end_match:
+        end_time = datetime.strptime(end_match.group(1), '%Y-%m-%d %H:%M:%S')
+    return start_time, end_time
+
+def load_job_runtimes(jobs):
+    log_dir = Path(LOG_DIR)
+    for job in jobs:
+        log_name = job.name.replace('.sh', '.log')
+        log_path = log_dir / log_name
+        if log_path.exists():
+            start_time, end_time = parse_log_file(log_path)
+            job.start_time = start_time
+            job.end_time = end_time
+    return jobs
+
+jobs = parse_crontab()
+jobs = load_job_runtimes(jobs)
+jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+
+reference_date = jobs_with_data[0].start_time.date()
+print(f"Reference date: {reference_date}\n")
+
+idle = []
+for hour in range(24):
+    is_idle = True
+    hour_start = datetime.combine(reference_date, datetime.min.time()).replace(hour=hour)
+    hour_end = hour_start.replace(minute=59, second=59, microsecond=999999)
+    
+    if hour in [1, 4, 6]:
+        print(f"Hour {hour}: {hour_start} to {hour_end}")
+    
+    for job in jobs_with_data:
+        if job.start_time <= hour_end and job.end_time >= hour_start:
+            if hour in [1, 4, 6]:
+                print(f"  Job {job.name} overlaps: {job.start_time} to {job.end_time}")
+            is_idle = False
+            break
+    
+    if hour in [1, 4, 6]:
+        print(f"  Result: {'IDLE' if is_idle else 'BUSY'}\n")
+    
+    if is_idle:
+        idle.append(hour)
+
+print(f"Idle hours: {idle}")
+DEBUGEOF
+[?2004h> import os
+[?2004l[?2004h> import re
+[?2004l[?2004h> from datetime import datetime
+[?2004l[?2004h> from pathlib import Path
+[?2004l[?2004h> 
+[?2004l[?2004h> CRONTAB_PATH = "/var/spool/cron/crontabs/user"
+[?2004l[?2004h> LOG_DIR = "/var/log/batch"
+[?2004l[?2004h> 
+[?2004l[?2004h> class Job:
+[?2004l[?2004h>     def __init__(self, name, scheduled_hour, start_time=None, end_time=None):
+[?2004l[?2004h>         self.name = name
+[?2004l[?2004h>         self.scheduled_hour = scheduled_hour
+[?2004l[?2004h>         self.start_time = start_time
+[?2004l[?2004h>         self.end_time = end_time
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_crontab():
+[?2004l[?2004h>     jobs = []
+[?2004l[?2004h>     with open(CRONTAB_PATH, 'r') as f:
+[?2004l[?2004h>         for line in f:
+[?2004l[?2004h>             line = line.strip()
+[?2004l[?2004h>             if not line or line.startswith('#'):
+[?2004l[?2004h>                 continue
+[?2004l[?2004h>             parts = line.split()
+[?2004l[?2004h>             if len(parts) >= 6:
+[?2004l[?2004h>                 job_name = os.path.basename(parts[5])
+[?2004l[?2004h>                 scheduled_hour = int(parts[1])
+[?2004l[?2004h>                 jobs.append(Job(job_name, scheduled_hour))
+[?2004l[?2004h>     return jobs
+[?2004l[?2004h> 
+[?2004l[?2004h> def parse_log_file(log_path):
+[?2004l[?2004h>     start_time = None
+[?2004l[?2004h>     end_time = None
+[?2004l[?2004h>     with open(log_path, 'r') as f:
+[?2004l[?2004h>         content = f.read()
+[?2004l[?2004h>     start_match = re.search(r'START\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+[?2004l[?2004h>     if start_match:
+[?2004l[?2004h>         start_time = datetime.strptime(start_match.group(1), '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h>     end_match = re.search(r'END\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+[?2004l[?2004h>     if end_match:
+[?2004l[?2004h>         end_time = datetime.strptime(end_match.group(1), '%Y-%m-%d %H:%M:%S')
+[?2004l[?2004h>     return start_time, end_time
+[?2004l[?2004h> 
+[?2004l[?2004h> def load_job_runtimes(jobs):
+[?2004l[?2004h>     log_dir = Path(LOG_DIR)
+[?2004l[?2004h>     for job in jobs:
+[?2004l[?2004h>         log_name = job.name.replace('.sh', '.log')
+[?2004l[?2004h>         log_path = log_dir / log_name
+[?2004l[?2004h>         if log_path.exists():
+[?2004l[?2004h>             start_time, end_time = parse_log_file(log_path)
+[?2004l[?2004h>             job.start_time = start_time
+[?2004l[?2004h>             job.end_time = end_time
+[?2004l[?2004h>     return jobs
+[?2004l[?2004h> 
+[?2004l[?2004h> jobs = parse_crontab()
+[?2004l[?2004h> jobs = load_job_runtimes(jobs)
+[?2004l[?2004h> jobs_with_data = [j for j in jobs if j.start_time and j.end_time]
+[?2004l[?2004h> 
+[?2004l[?2004h> reference_date = jobs_with_data[0].start_time.date()
+[?2004l[?2004h> print(f"Reference date: {reference_date}\n")
+[?2004l[?2004h> 
+[?2004l[?2004h> idle = []
+[?2004l[?2004h> for hour in range(24):
+[?2004l[?2004h>     is_idle = True
+[?2004l[?2004h>     hour_start = datetime.combine(reference_date, datetime.min.time()).replace(hour=hour)
+[?2004l[?2004h>     hour_end = hour_start.replace(minute=59, second=59, microsecond=999999)
+[?2004l[?2004h>     
+[?2004l[?2004h>     if hour in [1, 4, 6]:
+[?2004l[?2004h>         print(f"Hour {hour}: {hour_start} to {hour_end}")
+[?2004l[?2004h>     
+[?2004l[?2004h>     for job in jobs_with_data:
+[?2004l[?2004h>         if job.start_time <= hour_end and job.end_time >= hour_start:
+[?2004l[?2004h>             if hour in [1, 4, 6]:
+[?2004l[?2004h>                 print(f"  Job {job.name} overlaps: {job.start_time} to {job.end_time}")
+[?2004l[?2004h>             is_idle = False
+[?2004l[?2004h>             break
+[?2004l[?2004h>     
+[?2004l[?2004h>     if hour in [1, 4, 6]:
+[?2004l[?2004h>         print(f"  Result: {'IDLE' if is_idle else 'BUSY'}\n")
+[?2004l[?2004h>     
+[?2004l[?2004h>     if is_idle:
+[?2004l[?2004h>         idle.append(hour)
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"Idle hours: {idle}")
+[?2004l[?2004h> DEBUGEOF
+[?2004lReference date: 2024-01-15
+
+Hour 1: 2024-01-15 01:00:00 to 2024-01-15 01:59:59.999999
+  Job etl_main.sh overlaps: 2024-01-15 01:00:03 to 2024-01-15 02:47:19
+  Result: BUSY
+
+Hour 4: 2024-01-15 04:00:00 to 2024-01-15 04:59:59.999999
+  Job reports.sh overlaps: 2024-01-15 04:00:01 to 2024-01-15 04:22:17
+  Result: BUSY
+
+Hour 6: 2024-01-15 06:00:00 to 2024-01-15 06:59:59.999999
+  Job health_check.sh overlaps: 2024-01-15 06:00:02 to 2024-01-15 06:03:41
+  Result: BUSY
+
+Idle hours: [0, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+[?2004huser@bae130232a6d:~$ 

@@ -1,0 +1,136 @@
+[?2004hroot@2f090ae05f31:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@2f090ae05f31:/home/user# clear
+[?2004l[H[J[?2004hroot@2f090ae05f31:/home/user# python3 --version
+[?2004lPython 3.10.12
+[?2004hroot@2f090ae05f31:/home/user# ls -la /home/user/backup/
+[?2004ltotal 28
+drwxrwxrwx 1 root root 4096 May  5 06:13 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 06:13 [34;42m..[0m
+-rwxrwxrwx 1 root root 8192 May  5 06:13 [01;32mchecksums.db[0m
+drwxrwxrwx 1 root root 4096 May  5 06:13 [34;42mdata[0m
+drwxrwxrwx 1 root root 4096 May  5 06:13 [34;42mmanifests[0m
+-rwxrwxrwx 1 root root 2603 May  5 06:13 [01;32mvalidate.py[0m
+[?2004hroot@2f090ae05f31:/home/user# cat /home/user/backup/validate.py
+[?2004l#!/usr/bin/env python
+"""
+Tape Archive Validation Script
+Originally written 2019 for Python 2.7
+Validates manifest files against stored checksums
+"""
+
+import os
+import sys
+import hashlib
+import sqlite3
+
+print("Loading manifests...")
+
+MANIFEST_DIR = "manifests"
+DATA_DIR = "data"
+DB_PATH = "checksums.db"
+
+def get_manifest_id(manifest_file):
+    """Extract manifest ID from filename."""
+    return os.path.splitext(os.path.basename(manifest_file))[0]
+
+def compute_file_hash(fpath):
+    """Compute MD5 hash of a file."""
+    file_hash = hashlib.md5(open(fpath).read()).hexdigest()
+    return file_hash
+
+def load_manifests():
+    """Load all manifest files from the manifest directory."""
+    manifests = {}
+    for fname in os.listdir(MANIFEST_DIR):
+        if fname.endswith('.manifest'):
+            manifest_path = os.path.join(MANIFEST_DIR, fname)
+            manifest_id = get_manifest_id(fname)
+            with open(manifest_path, 'r') as f:
+                files = [line.strip() for line in f if line.strip()]
+            manifests[manifest_id] = files
+    return manifests
+
+def validate_checksums(manifests):
+    """Validate file checksums against the database."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    all_valid = True
+
+    for manifest_id, files in manifests.items():
+        print("Checking manifest: %s" % manifest_id)
+        for filepath in files:
+            full_path = os.path.join(DATA_DIR, filepath)
+
+            cursor.execute(
+                "SELECT md5sum FROM checksums WHERE manifest_id=? AND filepath=?",
+                (manifest_id, filepath)
+            )
+            for row in cursor.fetchall():
+                stored = row[0]
+                checksum = compute_file_hash(full_path)
+                if checksum <> stored:
+                    print("  %s: MISMATCH (expected %s, got %s)" % (filepath, stored, checksum))
+                    all_valid = False
+                else:
+                    print("  %s: VALID" % filepath)
+
+    conn.close()
+    return all_valid
+
+def main():
+    """Main entry point."""
+    try:
+        manifests = load_manifests()
+        if not manifests:
+            print("No manifests found!")
+            sys.exit(1)
+
+        print("Found %d manifests" % len(manifests))
+
+        if validate_checksums(manifests):
+            print("All checksums validated successfully!")
+            sys.exit(0)
+        else:
+            print("Some checksums failed validation!")
+            sys.exit(1)
+    except IOError, e:
+        print("IO Error: %s" % str(e))
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+[?2004hroot@2f090ae05f31:/home/user# cd /home/user/backup/
+[?2004l[?2004hroot@2f090ae05f31:/home/user/backup# python3 validate.py
+[?2004l  File "/home/user/backup/validate.py", line 59
+    if checksum <> stored:
+                ^^
+SyntaxError: invalid syntax
+[?2004hroot@2f090ae05f31:/home/user/backup# sed -i 's/<>/!=/g' validate.py
+[?2004lsed -i 's/except IOError, e:/except IOError as e:/g' validate.py
+sed -i "s/hashlib.md5(open(fpath).read())/hashlib.md5(open(fpath, 'rb').read())/g" validate.py
+[?2004hroot@2f090ae05f31:/home/user/backup# sed -i 's/except IOError, e:/except IOError as e:/g' validate.py
+[?2004l[?2004hroot@2f090ae05f31:/home/user/backup# sed -i "s/hashlib.md5(open(fpath).read())/hashlib.md5(open(fpath, 'rb').read())/g" validate.py
+[?2004l[?2004hroot@2f090ae05f31:/home/user/backup# python3 validate.py
+[?2004lLoading manifests...
+Found 3 manifests
+Checking manifest: tape002
+  file4.txt: VALID
+  file5.txt: VALID
+  file6.txt: VALID
+Checking manifest: tape003
+  file7.txt: VALID
+  file8.txt: VALID
+  file9.txt: VALID
+Checking manifest: tape001
+  file1.txt: VALID
+  file2.txt: VALID
+  file3.txt: VALID
+All checksums validated successfully!
+[?2004hroot@2f090ae05f31:/home/user/backup# grep -n 'hashlib.md5\|<>\|!=\|except IOError' validate.py
+[?2004l[32m[K25[m[K[36m[K:[m[K    file_hash = [01;31m[Khashlib.md5[m[K(open(fpath, 'rb').read()).hexdigest()
+[32m[K59[m[K[36m[K:[m[K                if checksum [01;31m[K!=[m[K stored:
+[32m[K84[m[K[36m[K:[m[K    [01;31m[Kexcept IOError[m[K as e:
+[?2004hroot@2f090ae05f31:/home/user/backup# 

@@ -1,0 +1,93 @@
+New Terminal Output:
+
+root@817f1a070c4f:/home/user/backup# cat validate.py
+#!/usr/bin/env python
+"""
+Tape Archive Validation Script
+Originally written 2019 for Python 2.7
+Validates manifest files against stored checksums
+"""
+
+import os
+import sys
+import hashlib
+import sqlite3
+
+print("Loading manifests...")
+
+MANIFEST_DIR = "manifests"
+DATA_DIR = "data"
+DB_PATH = "checksums.db"
+
+def get_manifest_id(manifest_file):
+    """Extract manifest ID from filename."""
+    return os.path.splitext(os.path.basename(manifest_file))[0]
+
+def compute_file_hash(fpath):
+    """Compute MD5 hash of a file."""
+    file_hash = hashlib.md5(open(fpath).read()).hexdigest()
+    return file_hash
+
+def load_manifests():
+    """Load all manifest files from the manifest directory."""
+    manifests = {}
+    for fname in os.listdir(MANIFEST_DIR):
+        if fname.endswith('.manifest'):
+            manifest_path = os.path.join(MANIFEST_DIR, fname)
+            manifest_id = get_manifest_id(fname)
+            with open(manifest_path, 'r') as f:
+                files = [line.strip() for line in f if line.strip()]
+            manifests[manifest_id] = files
+    return manifests
+
+def validate_checksums(manifests):
+    """Validate file checksums against the database."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    all_valid = True
+
+    for manifest_id, files in manifests.items():
+        print("Checking manifest: %s" % manifest_id)
+        for filepath in files:
+            full_path = os.path.join(DATA_DIR, filepath)
+
+            cursor.execute(
+                "SELECT md5sum FROM checksums WHERE manifest_id=? AND filepath=?",
+                (manifest_id, filepath)
+            )
+            for row in cursor.fetchall():
+                stored = row[0]
+                checksum = compute_file_hash(full_path)
+                if checksum <> stored:
+                    print("  %s: MISMATCH (expected %s, got %s)" % (filepath, stored, checksum))
+                    all_valid = False
+                else:
+                    print("  %s: VALID" % filepath)
+
+    conn.close()
+    return all_valid
+
+def main():
+    """Main entry point."""
+    try:
+        manifests = load_manifests()
+        if not manifests:
+            print("No manifests found!")
+            sys.exit(1)
+
+        print("Found %d manifests" % len(manifests))
+
+        if validate_checksums(manifests):
+            print("All checksums validated successfully!")
+            sys.exit(0)
+        else:
+            print("Some checksums failed validation!")
+            sys.exit(1)
+    except IOError, e:
+        print("IO Error: %s" % str(e))
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+root@817f1a070c4f:/home/user/backup#

@@ -1,0 +1,48 @@
+New Terminal Output:
+
+I have no name!@60af1357df76:/home/user/releaser$ cat > /tmp/fix.py << 'EOF'
+> import sys
+>
+> # Read the file
+> with open('bump.py', 'r') as f:
+>     content = f.read()
+>
+> # Add the get_latest_tag function after get_commits_since_tag
+> get_latest_tag_func = '''def get_latest_tag():
+>     """Get the latest git tag."""
+>     cmd = "git describe --tags --abbrev=0"
+>     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+>     if result.returncode != 0:
+>         return None
+>     tag = result.stdout.strip()
+>     # Remove 'v' prefix if present
+>     if tag.startswith('v'):
+>         tag = tag[1:]
+>     return tag
+>
+>
+> '''
+>
+> # Find the position after get_commits_since_tag function
+> insert_pos = content.find('def parse_commit_type')
+> if insert_pos != -1:
+>     content = content[:insert_pos] + get_latest_tag_func + content[insert_pos:]
+>
+> # Replace the changelog mode to use get_latest_tag
+> content = content.replace(
+>     """    if len(sys.argv) > 1 and sys.argv[1] == '--changelog':
+>         # Changelog mode
+>         current = get_current_version()""",
+>     """    if len(sys.argv) > 1 and sys.argv[1] == '--changelog':
+>         # Changelog mode
+>         current = get_latest_tag() or get_current_version()""")
+>
+> # Write back
+> with open('bump.py', 'w') as f:
+>     f.write(content)
+>
+> print("Fixed!")
+> EOF
+I have no name!@60af1357df76:/home/user/releaser$ python3 /tmp/fix.py
+Fixed!
+I have no name!@60af1357df76:/home/user/releaser$

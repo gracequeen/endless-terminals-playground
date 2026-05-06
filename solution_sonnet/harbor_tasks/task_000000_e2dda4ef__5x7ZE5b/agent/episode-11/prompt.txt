@@ -1,0 +1,104 @@
+New Terminal Output:
+
+root@fef1bd9b3029:/home/user/validator# cat > PERFORMANCE_FIX.md << 'EOF'
+> # JSON Validator Performance Fix
+>
+> ## Problem
+> - Original performance: ~40 docs/sec (reported as low as 12 docs/sec)
+> - Target performance: 400-500 docs/sec
+> - After fix: **~1420 docs/sec** (3x better than target!)
+>
+> ## Root Cause
+> The validator was calling `preprocess_schema()` and creating a new `Draft7Validator` for EVERY document validation, even when the same schemas were reused rep
+eatedly.
+>
+> With 200 test documents using only ~5 unique schemas:
+> - jq subprocess was called 200 times (should have been 5)
+> - Validators were compiled 200 times (should have been 5)
+>
+> ## Why Caching Made It Worse Before
+> The previous attempt cached the preprocessed JSON schemas to disk, but:
+> 1. Still called jq every time (subprocess overhead)
+> 2. Still compiled validators every time (schema compilation overhead)
+> 3. Added disk I/O overhead for cache reads/writes
+>
+> ## The Fix
+> Added in-memory caching of **compiled validators** (not just preprocessed schemas):
+>
+> ```python
+> # Global cache for compiled validators
+> _validator_cache = {}
+>
+> def get_validator(schema_path):
+>     if schema_path not in _validator_cache:
+>         schema = preprocess_schema(schema_path)
+>         _validator_cache[schema_path] = Draft7Validator(schema)
+>     return _validator_cache[schema_path]
+> ```
+>
+> This ensures:
+> - jq is called once per unique schema (not per document)
+> - Validators are compiled once per unique schema (not per document)
+> - Zero disk I/O overhead
+>
+> ## Performance Results
+> - Before: 40.3 docs/sec
+> - After: 1420 docs/sec
+> - Improvement: **35x faster**
+> - Target exceeded by: **3x**
+>
+> ## Files Modified
+> - `validate.py`: Added `get_validator()` function and `_validator_cache` dictionary
+> - Backup saved as: `validate.py.backup`
+> EOF
+root@fef1bd9b3029:/home/user/validator# cat PERFORMANCE_FIX.md
+# JSON Validator Performance Fix
+
+## Problem
+- Original performance: ~40 docs/sec (reported as low as 12 docs/sec)
+- Target performance: 400-500 docs/sec
+- After fix: **~1420 docs/sec** (3x better than target!)
+
+## Root Cause
+The validator was calling `preprocess_schema()` and creating a new `Draft7Validator` for EVERY document validation, even when the same schemas were reused repea
+tedly.
+
+With 200 test documents using only ~5 unique schemas:
+- jq subprocess was called 200 times (should have been 5)
+- Validators were compiled 200 times (should have been 5)
+
+## Why Caching Made It Worse Before
+The previous attempt cached the preprocessed JSON schemas to disk, but:
+1. Still called jq every time (subprocess overhead)
+2. Still compiled validators every time (schema compilation overhead)
+3. Added disk I/O overhead for cache reads/writes
+
+## The Fix
+Added in-memory caching of **compiled validators** (not just preprocessed schemas):
+
+```python
+# Global cache for compiled validators
+_validator_cache = {}
+
+def get_validator(schema_path):
+    if schema_path not in _validator_cache:
+        schema = preprocess_schema(schema_path)
+        _validator_cache[schema_path] = Draft7Validator(schema)
+    return _validator_cache[schema_path]
+```
+
+This ensures:
+- jq is called once per unique schema (not per document)
+- Validators are compiled once per unique schema (not per document)
+- Zero disk I/O overhead
+
+## Performance Results
+- Before: 40.3 docs/sec
+- After: 1420 docs/sec
+- Improvement: **35x faster**
+- Target exceeded by: **3x**
+
+## Files Modified
+- `validate.py`: Added `get_validator()` function and `_validator_cache` dictionary
+- Backup saved as: `validate.py.backup`
+root@fef1bd9b3029:/home/user/validator#

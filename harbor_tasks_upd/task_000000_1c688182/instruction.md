@@ -1,0 +1,1 @@
+I need to add a new column to track download counts on our artifacts table. The table's in /home/user/artifacts.db (sqlite), table name is `packages`. Just need an integer column called `downloads` that defaults to 0. Should be nullable for the existing rows, whatever.

@@ -1,0 +1,219 @@
+New Terminal Output:
+
+I have no name!@199a2e4cfacc:~/pipeline$ cat > BUGFIX_SUMMARY.md << 'EOF'
+ts = df["text"].tolist()
+vectorizer.fit(texts)  # Build vocabulary from all 50k documents
+
+# Send fitted vectorizer to all workers
+for i in range(3):
+    sender.send(pickle.dumps(("VECTORIZER", vectorizer)))
+```
+
+### Fix 2: Transform-Only in Workers (worker.py)
+```python
+# Receive fitted vectorizer from coordinator
+msg_type, vectorizer = pickle.loads(receiver.recv())
+
+# Use transform() only - don't fit!
+tfidf_matrix = vectorizer.transform(texts)  # Uses shared vocabulary
+```
+
+### Fix 3: Startup Synchronization (coordinator.py)
+```python
+# Wait for workers to connect
+time.sleep(2)
+
+# Send vectorizer first
+for i in range(3):
+    sender.send(vectorizer_msg)
+time.sleep(0.5)
+
+# Then send chunks
+for chunk_id, chunk in enumerate(chunks):
+    sender.send(chunk_msg)
+```
+
+### Fix 4: Proper Result Tracking (coordinator.py)
+```python
+# Use dict to track results by chunk_id
+results = {}
+while len(results) < num_chunks:
+    chunk_id, result_df = pickle.loads(receiver.recv())
+    results[chunk_id] = result_df
+
+# Check for missing chunks
+if len(results) < num_chunks:
+    missing = set(range(num_chunks)) - set(results.keys())
+    print(f"Missing chunks: {missing}")
+
+# Aggregate in correct order
+ordered_results = [results[i] for i in sorted(results.keys())]
+final_df = pd.concat(ordered_results, ignore_index=True)
+```
+
+### Fix 5: Proper Termination (both files)
+```python
+# Coordinator sends DONE signals
+for i in range(3):
+    sender.send(pickle.dumps(("DONE", None, None)))
+
+# Workers handle DONE signal
+if msg_type == "DONE":
+    break
+```
+
+## Results
+
+**Before fixes:**
+- Output: 12,000 rows
+- Value range: [0.0, >1.0] ❌
+- Comparison to reference: Failed
+
+**After fixes:**
+- Output: 50,000 rows ✓
+- Value range: [0.0, 0.7998] ✓
+- Comparison to reference: **PERFECT MATCH (0.0 difference)** ✓
+
+## Key Lesson
+
+For distributed TF-IDF (or any ML feature extraction):
+1. **Fit once on all data** to build vocabulary/statistics
+2. **Share the fitted model** with all workers
+3. **Workers only transform** using the shared model
+4. Never fit on subsets - it breaks the mat> # Distributed TF-IDF Pipeline Bug Fix Summary
+>
+> ## Problem
+> The distributed feature extraction pipeline was producing incorrect output:
+> - Only 12k rows instead of 50k (missing data)
+> - Invalid tf-idf scores > 1.0 (mathematically impossible)
+> - No errors or crashes (silent data corruption)
+>
+> ## Root Causes Identified
+>
+> ### 1. **Incorrect Vocabulary Management (CRITICAL)**
+> Each worker was calling `vectorizer.fit_transform()` on individual chunks:
+> ```python
+> # WRONG - each chunk gets its own vocabulary
+> vectorizer = TfidfVectorizer(max_features=100)
+> tfidf_matrix = vectorizer.fit_transform(texts)  # Fits on chunk only!
+> ```
+>
+> **Why this caused invalid scores:**
+> - TF-IDF requires a unified vocabulary across ALL documents
+> - Each chunk built its own vocabulary with different terms
+> - IDF (inverse document frequency) was calculated only within each chunk
+> - This produced invalid scores and incompatible feature columns
+>
+> ### 2. **Column Misalignment**
+> Workers returned DataFrames with different column names (different vocabularies):
+> - Worker 1 chunk: columns ['apple', 'banana', 'cherry', ...]
+> - Worker 2 chunk: columns ['dog', 'elephant', 'fox', ...]
+> - Coordinator's `pd.concat()` created union of all columns, filling missing values
+> - Result: sparse, misaligned data with wrong dimensions
+>
+> ### 3. **Message Loss at Startup**
+> Coordinator sent chunks immediately after binding sockets:
+> ```python
+> sender.bind("tcp://127.0.0.1:5557")
+> # Immediately sends chunks - workers not connected yet!
+> for chunk in chunks:
+>     sender.send(chunk)
+> ```
+> ZeroMQ PUSH sockets can drop messages if no PULL sockets are connected.
+>
+> ### 4. **Poor Result Tracking**
+> Coordinator used a list instead of dict for results:
+> ```python
+> results = []  # Can't detect missing chunks
+> results.append(result_df)  # No chunk ID tracking
+> ```
+> Timeout-based completion meant lost chunks went undetected.
+>
+> ## Fixes Applied
+>
+> ### Fix 1: Unified Vocabulary (coordinator.py)
+> ```python
+> # Fit vectorizer on ALL data ONCE
+> vectorizer = TfidfVectorizer(max_features=100)
+> texts = df["text"].tolist()
+> vectorizer.fit(texts)  # Build vocabulary from all 50k documents
+>
+> # Send fitted vectorizer to all workers
+> for i in range(3):
+>     sender.send(pickle.dumps(("VECTORIZER", vectorizer)))
+> ```
+>
+> ### Fix 2: Transform-Only in Workers (worker.py)
+> ```python
+> # Receive fitted vectorizer from coordinator
+> msg_type, vectorizer = pickle.loads(receiver.recv())
+>
+> # Use transform() only - don't fit!
+> tfidf_matrix = vectorizer.transform(texts)  # Uses shared vocabulary
+> ```
+>
+> ### Fix 3: Startup Synchronization (coordinator.py)
+> ```python
+> # Wait for workers to connect
+> time.sleep(2)
+>
+> # Send vectorizer first
+> for i in range(3):
+>     sender.send(vectorizer_msg)
+> time.sleep(0.5)
+>
+> # Then send chunks
+> for chunk_id, chunk in enumerate(chunks):
+>     sender.send(chunk_msg)
+> ```
+>
+> ### Fix 4: Proper Result Tracking (coordinator.py)
+> ```python
+> # Use dict to track results by chunk_id
+> results = {}
+> while len(results) < num_chunks:
+>     chunk_id, result_df = pickle.loads(receiver.recv())
+>     results[chunk_id] = result_df
+>
+> # Check for missing chunks
+> if len(results) < num_chunks:
+>     missing = set(range(num_chunks)) - set(results.keys())
+>     print(f"Missing chunks: {missing}")
+>
+> # Aggregate in correct order
+> ordered_results = [results[i] for i in sorted(results.keys())]
+> final_df = pd.concat(ordered_results, ignore_index=True)
+> ```
+>
+> ### Fix 5: Proper Termination (both files)
+> ```python
+> # Coordinator sends DONE signals
+> for i in range(3):
+>     sender.send(pickle.dumps(("DONE", None, None)))
+>
+> # Workers handle DONE signal
+> if msg_type == "DONE":
+>     break
+> ```
+>
+> ## Results
+>
+> **Before fixes:**
+> - Output: 12,000 rows
+> - Value range: [0.0, >1.0] ❌
+> - Comparison to reference: Failed
+>
+> **After fixes:**
+> - Output: 50,000 rows ✓
+> - Value range: [0.0, 0.7998] ✓
+> - Comparison to reference: **PERFECT MATCH (0.0 difference)** ✓
+>
+> ## Key Lesson
+>
+> For distributed TF-IDF (or any ML feature extraction):
+> 1. **Fit once on all data** to build vocabulary/statistics
+> 2. **Share the fitted model** with all workers
+> 3. **Workers only transform** using the shared model
+> 4. Never fit on subsets - it breaks the mathematical assumptions!
+> EOF
+I have no name!@199a2e4cfacc:~/pipeline$

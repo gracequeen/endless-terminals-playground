@@ -1,0 +1,42 @@
+New Terminal Output:
+
+root@7e3627c4e10a:/home/user/releaser# cp bump.sh bump.sh.backup
+root@7e3627c4e10a:/home/user/releaser# cat > bump.sh << 'EOF'
+> #!/bin/bash
+> set -e
+> VERSION_FILE="VERSION"
+> CHANGELOG="CHANGELOG.md"
+>
+> current=$(cat "$VERSION_FILE")
+> # Parse semver
+> major=$(echo "$current" | cut -d. -f1)
+> minor=$(echo "$current" | cut -d. -f2)
+> patch=$(echo "$current" | cut -d. -f3)
+>
+> case "$1" in
+>     major) major=$((major + 1)); minor=0; patch=0 ;;
+>     minor) minor=$((minor + 1)); patch=0 ;;
+>     patch) patch=$((patch + 1)) ;;
+>     *) echo "Usage: $0 {major|minor|patch}"; exit 1 ;;
+> esac
+>
+> new_version="${major}.${minor}.${patch}"
+> echo "$new_version" > "$VERSION_FILE"
+>
+> # Generate changelog block
+> date_str=$(date +%Y-%m-%d)
+> commits=$(git log --oneline --since="midnight" 2>/dev/null || echo "- No commits today")
+>
+> {
+>     echo "## [$new_version] - $date_str"
+>     echo "$commits"
+>     echo ""
+> } > /tmp/new_changelog_block.txt
+>
+> cat /tmp/new_changelog_block.txt "$CHANGELOG" > /tmp/changelog_merged.txt
+> mv /tmp/changelog_merged.txt "$CHANGELOG"
+>
+> echo "Bumped to $new_version"
+> EOF
+root@7e3627c4e10a:/home/user/releaser# chmod +x bump.sh
+root@7e3627c4e10a:/home/user/releaser#

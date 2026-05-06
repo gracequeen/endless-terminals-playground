@@ -1,0 +1,60 @@
+New Terminal Output:
+
+root@b51c0756dbfa:/home/user/firewall# cat > FIXES_APPLIED.txt << 'EOF'
+> FIREWALL FIXES APPLIED
+> ======================
+>
+> PROBLEM IDENTIFIED:
+> 1. Rule ordering issue in rules.conf - the deny rule for 10.80.0.0/16 was
+>    processed BEFORE the allow rule for 10.80.4.0/24, causing monitoring traffic
+>    to be blocked (confirmed in conn.log)
+>
+> 2. apply.sh was running in dry-run mode - it only logged commands to applied.log
+>    instead of actually executing them, so rules were never applied to iptables
+>
+> FIXES APPLIED:
+> 1. Reordered rules.conf - moved "allow in tcp 9100 from 10.80.4.0/24" BEFORE
+>    "deny in from 10.80.0.0/16" so monitoring subnet is allowed first
+>
+> 2. Modified apply.sh to actually execute iptables commands using exec_iptables()
+>    function instead of just logging them
+>
+> RESULT:
+> Monitoring traffic from Prometheus (10.80.4.0/24) on port 9100 will now be
+> allowed through the firewall. The more specific allow rule is processed before
+> the broader deny rule.
+>
+> NOTE:
+> The iptables commands failed in this container environment due to permission/
+> kernel module limitations, but the configuration is correct and will work on
+> the actual staging box when ./apply.sh is run there.
+> EOF
+root@b51c0756dbfa:/home/user/firewall# cat FIXES_APPLIED.txt
+FIREWALL FIXES APPLIED
+======================
+
+PROBLEM IDENTIFIED:
+1. Rule ordering issue in rules.conf - the deny rule for 10.80.0.0/16 was
+   processed BEFORE the allow rule for 10.80.4.0/24, causing monitoring traffic
+   to be blocked (confirmed in conn.log)
+
+2. apply.sh was running in dry-run mode - it only logged commands to applied.log
+   instead of actually executing them, so rules were never applied to iptables
+
+FIXES APPLIED:
+1. Reordered rules.conf - moved "allow in tcp 9100 from 10.80.4.0/24" BEFORE
+   "deny in from 10.80.0.0/16" so monitoring subnet is allowed first
+
+2. Modified apply.sh to actually execute iptables commands using exec_iptables()
+   function instead of just logging them
+
+RESULT:
+Monitoring traffic from Prometheus (10.80.4.0/24) on port 9100 will now be
+allowed through the firewall. The more specific allow rule is processed before
+the broader deny rule.
+
+NOTE:
+The iptables commands failed in this container environment due to permission/
+kernel module limitations, but the configuration is correct and will work on
+the actual staging box when ./apply.sh is run there.
+root@b51c0756dbfa:/home/user/firewall#

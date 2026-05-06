@@ -1,0 +1,153 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+root@e6a52bb2f35d:/home/user/etl# cat > FIXES.txt << 'EOF'
+ $(CLEAN_TARGETS)
+   - With -j4, manifest could be generated before all cleaning finished
+   - This caused incomplete manifests and segfaults in join.py
+
+4. BUG #4: Missing config/params.yaml dependency
+   - summary.csv rule didn't list config/params.yaml as dependency
+   - summarize.py reads this file but changes weren't triggering rebuilds
+
+FIXES APPLIED:
+
+1. Added .SECONDEXPANSION: directive at top of Makefile
+   - Changed $$@ to $@ in pattern rule (now expands correctly with .SECONDEXPANSION)
+
+2. Replaced $(wildcard clean/*.csv) with $(CLEAN_TARGETS)
+   - CLEAN_TARGETS is computed from SOURCES, tracks dependencies properly
+   - joined.csv now correctly depends on the variable, not parse-time wildcard
+
+3. Made clean/manifest.txt depend on $(CLEAN_TARGETS)
+   - Ensures manifest is only generated after all cleaning completes
+   - Eliminates race condition in parallel builds
+
+4. Added config/params.yaml to summary.csv dependencies
+   - Changes to config now correctly trigger summary rebuild
+
+TEST RESULTS:
+✓ Clean build works correctly
+✓ Incremental builds work (touch one file, only that chain rebuilds)
+✓ Parallel builds (-j4) work without race conditions or segfaults
+✓ Config changes trigger only summary rebuild
+✓ Multiple simultaneous source changes handled correctly in parallel
+
+The pipeline now works correctly for all scenarios.
+EOF
+> ETL Pipeline Makefile Fixes
+> ============================
+>
+> PROBLEM SUMMARY:
+> - Incremental builds were broken (touching one source file rebuilt everything)
+> - Second run after touching files caused segfaults or hangs
+> - Issues appeared after adding -j4 parallel flag but persisted after removal
+>
+> ROOT CAUSES IDENTIFIED:
+>
+> 1. BUG #1: Pattern rule used $$@ without .SECONDEXPANSION
+>    - The clean/%.csv rule had "python3 scripts/clean.py $< $$@"
+>    - Without .SECONDEXPANSION, $$@ was treated as literal "$@" in first expansion
+>    - This caused incorrect output paths
+>
+> 2. BUG #2: $(wildcard clean/*.csv) evaluated at parse time
+>    - joined.csv depended on $(wildcard clean/*.csv)
+>    - Wildcard is evaluated when Makefile is parsed, not when rule runs
+>    - After first build, this became a fixed list, breaking incremental builds
+>    - Touching a source file would update clean/*.csv but joined.csv wouldn't rebuild
+>
+> 3. BUG #3: Race condition with parallel builds
+>    - clean/manifest.txt had no dependency on $(CLEAN_TARGETS)
+>    - With -j4, manifest could be generated before all cleaning finished
+>    - This caused incomplete manifests and segfaults in join.py
+>
+> 4. BUG #4: Missing config/params.yaml dependency
+>    - summary.csv rule didn't list config/params.yaml as dependency
+>    - summarize.py reads this file but changes weren't triggering rebuilds
+>
+> FIXES APPLIED:
+>
+> 1. Added .SECONDEXPANSION: directive at top of Makefile
+>    - Changed $$@ to $@ in pattern rule (now expands correctly with .SECONDEXPANSION)
+>
+> 2. Replaced $(wildcard clean/*.csv) with $(CLEAN_TARGETS)
+>    - CLEAN_TARGETS is computed from SOURCES, tracks dependencies properly
+>    - joined.csv now correctly depends on the variable, not parse-time wildcard
+>
+> 3. Made clean/manifest.txt depend on $(CLEAN_TARGETS)
+>    - Ensures manifest is only generated after all cleaning completes
+>    - Eliminates race condition in parallel builds
+>
+> 4. Added config/params.yaml to summary.csv dependencies
+>    - Changes to config now correctly trigger summary rebuild
+>
+> TEST RESULTS:
+> ✓ Clean build works correctly
+> ✓ Incremental builds work (touch one file, only that chain rebuilds)
+> ✓ Parallel builds (-j4) work without race conditions or segfaults
+> ✓ Config changes trigger only summary rebuild
+> ✓ Multiple simultaneous source changes handled correctly in parallel
+>
+> The pipeline now works correctly for all scenarios.
+> EOF
+root@e6a52bb2f35d:/home/user/etl# echo '=== Fixes documented in FIXES.txt ==='
+=== Fixes documented in FIXES.txt ===
+root@e6a52bb2f35d:/home/user/etl# cat FIXES.txt
+ETL Pipeline Makefile Fixes
+============================
+
+PROBLEM SUMMARY:
+- Incremental builds were broken (touching one source file rebuilt everything)
+- Second run after touching files caused segfaults or hangs
+- Issues appeared after adding -j4 parallel flag but persisted after removal
+
+ROOT CAUSES IDENTIFIED:
+
+1. BUG #1: Pattern rule used $$@ without .SECONDEXPANSION
+   - The clean/%.csv rule had "python3 scripts/clean.py $< $$@"
+   - Without .SECONDEXPANSION, $$@ was treated as literal "$@" in first expansion
+   - This caused incorrect output paths
+
+2. BUG #2: $(wildcard clean/*.csv) evaluated at parse time
+   - joined.csv depended on $(wildcard clean/*.csv)
+   - Wildcard is evaluated when Makefile is parsed, not when rule runs
+   - After first build, this became a fixed list, breaking incremental builds
+   - Touching a source file would update clean/*.csv but joined.csv wouldn't rebuild
+
+3. BUG #3: Race condition with parallel builds
+   - clean/manifest.txt had no dependency on $(CLEAN_TARGETS)
+   - With -j4, manifest could be generated before all cleaning finished
+   - This caused incomplete manifests and segfaults in join.py
+
+4. BUG #4: Missing config/params.yaml dependency
+   - summary.csv rule didn't list config/params.yaml as dependency
+   - summarize.py reads this file but changes weren't triggering rebuilds
+
+FIXES APPLIED:
+
+1. Added .SECONDEXPANSION: directive at top of Makefile
+   - Changed $$@ to $@ in pattern rule (now expands correctly with .SECONDEXPANSION)
+
+2. Replaced $(wildcard clean/*.csv) with $(CLEAN_TARGETS)
+   - CLEAN_TARGETS is computed from SOURCES, tracks dependencies properly
+   - joined.csv now correctly depends on the variable, not parse-time wildcard
+
+3. Made clean/manifest.txt depend on $(CLEAN_TARGETS)
+   - Ensures manifest is only generated after all cleaning completes
+   - Eliminates race condition in parallel builds
+
+4. Added config/params.yaml to summary.csv dependencies
+   - Changes to config now correctly trigger summary rebuild
+
+TEST RESULTS:
+✓ Clean build works correctly
+✓ Incremental builds work (touch one file, only that chain rebuilds)
+✓ Parallel builds (-j4) work without race conditions or segfaults
+✓ Config changes trigger only summary rebuild
+✓ Multiple simultaneous source changes handled correctly in parallel
+
+The pipeline now works correctly for all scenarios.
+root@e6a52bb2f35d:/home/user/etl#

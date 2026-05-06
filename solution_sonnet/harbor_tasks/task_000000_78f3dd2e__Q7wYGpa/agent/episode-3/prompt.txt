@@ -1,0 +1,63 @@
+New Terminal Output:
+
+user@621080ab1af0:~/backup-check$ cat verify.sh
+#!/bin/bash
+
+# Backup verification script
+# Reads manifest.txt and verifies SHA256 checksums of files
+
+MANIFEST_FILE="/home/user/backup-check/manifest.txt"
+BASE_DIR="/home/user/backup-check"
+ERRORS=0
+
+echo "Starting backup verification..."
+echo "Reading manifest: $MANIFEST_FILE"
+echo ""
+
+while IFS= read -r line || [ -n "$line" ]; do
+    # Skip empty lines
+    if [ -z "$line" ]; then
+        continue
+    fi
+
+    # Extract expected hash (first 64 characters)
+    expected=$(echo "$line" | cut -c1-64)
+
+    # Extract file path (after two spaces following the hash)
+    filepath=$(echo "$line" | cut -c67-)
+
+    # Full path to file
+    fullpath="$BASE_DIR/$filepath"
+
+    # Check if file exists
+    if [ ! -f "$fullpath" ]; then
+        echo "MISSING: $filepath"
+        ERRORS=$((ERRORS + 1))
+        continue
+    fi
+
+    # Compute actual hash
+    computed=$(sha256sum "$fullpath" | awk '{print $1}')
+
+    # Compare hashes
+    if [ "$expected" != "$computed" ]; then
+        echo "MISMATCH: $filepath"
+        echo "  Expected: $expected"
+        echo "  Computed: $computed"
+        ERRORS=$((ERRORS + 1))
+    else
+        echo "OK: $filepath"
+    fi
+done < "$MANIFEST_FILE"
+
+echo ""
+echo "Verification complete."
+
+if [ $ERRORS -gt 0 ]; then
+    echo "FAILED: $ERRORS file(s) failed verification."
+    exit 1
+else
+    echo "SUCCESS: All files verified."
+    exit 0
+fi
+user@621080ab1af0:~/backup-check$

@@ -1,0 +1,58 @@
+New Terminal Output:
+
+root@00299e0b1ce7:/home/user/mirror# cat sync.sh
+#!/bin/bash
+
+set -e
+
+MIRROR_DIR="/home/user/mirror"
+ARTIFACTS_LIST="${MIRROR_DIR}/artifacts.list"
+MANIFEST_FILE="${MIRROR_DIR}/manifest.sha1"
+STAGING_DIR="${MIRROR_DIR}/staging"
+ARCHIVE_DIR="${MIRROR_DIR}/archive"
+
+# Clean staging directory
+rm -f "${STAGING_DIR}"/*
+
+# Read each artifact URL and process
+while IFS= read -r url; do
+    if [ -z "$url" ]; then
+        continue
+    fi
+
+    # Extract filename from URL
+    filename=$(basename "$url")
+
+    echo "Downloading ${filename}..."
+    curl -s -o "${STAGING_DIR}/${filename}" "$url"
+
+    # Compute sha1sum of downloaded file
+    computed_hash=$(sha1sum "${STAGING_DIR}/${filename}" | awk '{print $1}')
+
+    # Get expected hash from manifest
+    expected_hash=$(grep "  ${filename}$" "${MANIFEST_FILE}" | awk '{print $1}')
+
+    if [ -z "$expected_hash" ]; then
+        echo "ERROR: No manifest entry for ${filename}"
+        exit 1
+    fi
+
+    # Compare checksums
+    if [ "$computed_hash" != "$expected_hash" ]; then
+        echo "ERROR: Checksum mismatch for ${filename}"
+        echo "  Expected: ${expected_hash}"
+        echo "  Got:      ${computed_hash}"
+        exit 1
+    fi
+
+    echo "Checksum verified for ${filename}"
+
+    # Move to archive
+    mv "${STAGING_DIR}/${filename}" "${ARCHIVE_DIR}/"
+    echo "Archived ${filename}"
+
+done < "${ARTIFACTS_LIST}"
+
+echo "Sync completed successfully!"
+exit 0
+root@00299e0b1ce7:/home/user/mirror#

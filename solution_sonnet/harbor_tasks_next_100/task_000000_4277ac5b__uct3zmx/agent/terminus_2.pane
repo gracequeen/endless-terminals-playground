@@ -1,0 +1,303 @@
+[?2004huser@1336df948b94:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004huser@1336df948b94:~$ clear
+[?2004l[H[J[?2004huser@1336df948b94:~$ cd /home/user/webhooks
+[?2004l[?2004huser@1336df948b94:~/webhooks$ ls -la
+[?2004ltotal 28
+drwxrwxrwx 1 user user 4096 May  5 19:44 .
+drwxrwxrwx 1 user user 4096 May  5 19:45 ..
+-rw-rw-rw- 1 user user  868 May  5 19:44 schema.json
+drwxrwxrwx 1 user user 4096 May  5 19:44 test_payloads
+-rw-rw-rw- 1 user user  178 May  5 19:44 transform.jq
+-rwxr-xr-x 1 user user   66 May  5 19:44 validate.sh
+-rw-rw-rw- 1 user user  981 May  5 19:44 validator.py
+[?2004huser@1336df948b94:~/webhooks$ cat validate.sh
+[?2004l#!/bin/bash
+python3 /home/user/webhooks/validator.py "$1"
+exit $?
+[?2004huser@1336df948b94:~/webhooks$ echo '---'
+[?2004l---
+[?2004huser@1336df948b94:~/webhooks$ cat schema.json
+[?2004l{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["event_type", "timestamp", "data"],
+  "properties": {
+    "event_type": {
+      "type": "string",
+      "pattern": "^[a-z]+\\.[a-z]+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}$"
+    },
+    "data": {
+      "type": "object",
+      "required": ["user_id", "email", "metadata"],
+      "properties": {
+        "user_id": {
+          "type": "integer"
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "metadata": {
+          "type": "object",
+          "required": ["source"],
+          "properties": {
+            "source": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}
+[?2004huser@1336df948b94:~/webhooks$ cat validator.py
+[?2004l#!/usr/bin/env python3
+import json
+import sys
+import jsonschema
+from jsonschema import validate, ValidationError
+
+def main():
+    if len(sys.argv) != 2:
+        print("Usage: validator.py <json_file>", file=sys.stderr)
+        sys.exit(1)
+
+    json_file = sys.argv[1]
+    schema_file = "/home/user/webhooks/schema.json"
+
+    try:
+        with open(schema_file, 'r') as f:
+            schema = json.load(f)
+    except Exception as e:
+        print(f"Error loading schema: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        with open(json_file, 'r') as f:
+            data = json.load(f)
+    except Exception as e:
+        print(f"Error loading JSON file: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        validate(instance=data, schema=schema)
+        print("Validation successful")
+        sys.exit(0)
+    except ValidationError as e:
+        print(f"Validation failed: {e.message}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+[?2004huser@1336df948b94:~/webhooks$ echo '---'
+[?2004l---
+[?2004huser@1336df948b94:~/webhooks$ ls -la test_payloads/
+[?2004ltotal 20
+drwxrwxrwx 1 user user 4096 May  5 19:44 .
+drwxrwxrwx 1 user user 4096 May  5 19:44 ..
+-rw-r--r-- 1 user user  197 May  5 19:44 event_01.json
+-rw-r--r-- 1 user user  200 May  5 19:44 event_02.json
+-rw-r--r-- 1 user user  201 May  5 19:44 event_03.json
+[?2004huser@1336df948b94:~/webhooks$ cat test_payloads/event_01.json
+[?2004l{
+  "event_type": "user.created",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "data": {
+    "user_id": 4521,
+    "email": "test@example.com",
+    "metadata": {"source": "api", "version": "2.1"}
+  }
+}
+[?2004huser@1336df948b94:~/webhooks$ echo '---'
+[?2004l---
+[?2004huser@1336df948b94:~/webhooks$ cat test_payloads/event_02.json
+[?2004l{
+  "event_type": "user.updated",
+  "timestamp": "2024-01-16T14:45:30Z",
+  "data": {
+    "user_id": 7832,
+    "email": "another@example.org",
+    "metadata": {"source": "web", "version": "2.1"}
+  }
+}
+[?2004huser@1336df948b94:~/webhooks$ echo '---'
+[?2004l---
+[?2004huser@1336df948b94:~/webhooks$ cat test_payloads/event_03.json
+[?2004l{
+  "event_type": "user.deleted",
+  "timestamp": "2024-01-17T09:15:00Z",
+  "data": {
+    "user_id": 1234,
+    "email": "third@example.net",
+    "metadata": {"source": "mobile", "version": "3.0"}
+  }
+}
+[?2004huser@1336df948b94:~/webhooks$ ./validate.sh test_payloads/event_01.json
+[?2004lValidation failed: '2024-01-15T10:30:00Z' does not match '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}$'
+[?2004huser@1336df948b94:~/webhooks$ echo "Exit code: $?"
+[?2004lExit code: 1
+[?2004huser@1336df948b94:~/webhooks$ ./validate.sh test_payloads/event_02.json
+[?2004lValidation failed: '2024-01-16T14:45:30Z' does not match '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}$'
+[?2004huser@1336df948b94:~/webhooks$ echo "Exit code: $?"
+[?2004lExit code: 1
+[?2004huser@1336df948b94:~/webhooks$ cp schema.json schema.json.bak
+[?2004l[?2004huser@1336df948b94:~/webhooks$ cat > schema.json << 'EOF'
+[?2004l[?2004h> {
+[?2004l[?2004h>   "$schema": "http://json-schema.org/draft-07/schema#",
+[?2004l[?2004h>   "type": "object",
+[?2004l[?2004h>   "required": ["event_type", "timestamp", "data"],
+[?2004l[?2004h>   "properties": {
+[?2004l[?2004h>     "event_type": {
+[?2004l[?2004h>       "type": "string",
+[?2004l[?2004h>       "pattern": "^[a-z]+\\.[a-z]+$"
+[?2004l[?2004h>     },
+[?2004l[?2004h>     "timestamp": {
+[?2004l[?2004h>       "type": "string",
+[?2004l[?2004h>       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(Z|[+-]\\d{2}:\\d{2})?$"
+[?2004l[?2004h>     },
+[?2004l[?2004h>     "data": {
+[?2004l[?2004h>       "type": "object",
+[?2004l[?2004h>       "required": ["user_id", "email", "metadata"],
+[?2004l[?2004h>       "properties": {
+[?2004l[?2004h>         "user_id": {
+[?2004l[?2004h>           "type": "integer"
+[?2004l[?2004h>         },
+[?2004l[?2004h>         "email": {
+[?2004l[?2004h>           "type": "string",
+[?2004l[?2004h>           "format": "email"
+[?2004l[?2004h>         },
+[?2004l[?2004h>         "metadata": {
+[?2004l[?2004h>           "type": "object",
+[?2004l[?2004h>           "required": ["source"],
+[?2004l[?2004h>           "properties": {
+[?2004l[?2004h>             "source": {
+[?2004l[?2004h>               "type": "string"
+[?2004l[?2004h>             }
+[?2004l[?2004h>           },
+[?2004l[?2004h>           "additionalProperties": true
+[?2004l[?2004h>         }
+[?2004l[?2004h>       }
+[?2004l[?2004h>     }
+[?2004l[?2004h>   }
+[?2004l[?2004h> }
+[?2004l[?2004h> EOF
+[?2004l[?2004huser@1336df948b94:~/webhooks$ ./validate.sh test_payloads/event_01.json
+[?2004lValidation successful
+[?2004huser@1336df948b94:~/webhooks$ echo "Exit code: $?"
+[?2004lExit code: 0
+[?2004huser@1336df948b94:~/webhooks$ ./validate.sh test_payloads/event_02.json
+[?2004lValidation successful
+[?2004huser@1336df948b94:~/webhooks$ echo "Exit code: $?"
+[?2004lExit code: 0
+[?2004huser@1336df948b94:~/webhooks$ ./validate.sh test_payloads/event_03.json
+[?2004lValidation successful
+[?2004huser@1336df948b94:~/webhooks$ echo "Exit code: $?"
+[?2004lExit code: 0
+[?2004huser@1336df948b94:~/webhooks$ cat transform.jq
+[?2004l{
+  id: (.data.userid | tonumber),
+  email: .data.email,
+  event: .event_type,
+  created_at: .timestamp,
+  source: .data.metadata.source,
+  api_version: .data.metadata.version
+}
+[?2004huser@1336df948b94:~/webhooks$ echo '---'
+[?2004l---
+[?2004huser@1336df948b94:~/webhooks$ ./validate.sh test_payloads/event_01.json && jq -f transform.jq test_payloads/event_01.json
+[?2004lValidation successful
+jq: error (at test_payloads/event_01.json:9): null (null) cannot be parsed as a number
+[?2004huser@1336df948b94:~/webhooks$ cp transform.jq transform.jq.bak
+[?2004l[?2004huser@1336df948b94:~/webhooks$ cat > transform.jq << 'EOF'
+[?2004l[?2004h> {
+[?2004l[?2004h>   id: (.data.user_id | tonumber),
+[?2004l[?2004h>   email: .data.email,
+[?2004l[?2004h>   event: .event_type,
+[?2004l[?2004h>   created_at: .timestamp,
+[?2004l[?2004h>   source: .data.metadata.source,
+[?2004l[?2004h>   api_version: .data.metadata.version
+[?2004l[?2004h> }
+[?2004l[?2004h> EOF
+[?2004l[?2004huser@1336df948b94:~/webhooks$ ./validate.sh test_payloads/event_01.json && jq -f transform.jq test_payloads/event_01.json
+[?2004lValidation successful
+[1;39m{
+  [0m[34;1m"id"[0m[1;39m: [0m[0;39m4521[0m[1;39m,
+  [0m[34;1m"email"[0m[1;39m: [0m[0;32m"test@example.com"[0m[1;39m,
+  [0m[34;1m"event"[0m[1;39m: [0m[0;32m"user.created"[0m[1;39m,
+  [0m[34;1m"created_at"[0m[1;39m: [0m[0;32m"2024-01-15T10:30:00Z"[0m[1;39m,
+  [0m[34;1m"source"[0m[1;39m: [0m[0;32m"api"[0m[1;39m,
+  [0m[34;1m"api_version"[0m[1;39m: [0m[0;32m"2.1"[0m[1;39m
+[1;39m}[0m
+[?2004huser@1336df948b94:~/webhooks$ ./validate.sh test_payloads/event_02.json && jq -f transform.jq test_payloads/event_02.json
+[?2004lValidation successful
+[1;39m{
+  [0m[34;1m"id"[0m[1;39m: [0m[0;39m7832[0m[1;39m,
+  [0m[34;1m"email"[0m[1;39m: [0m[0;32m"another@example.org"[0m[1;39m,
+  [0m[34;1m"event"[0m[1;39m: [0m[0;32m"user.updated"[0m[1;39m,
+  [0m[34;1m"created_at"[0m[1;39m: [0m[0;32m"2024-01-16T14:45:30Z"[0m[1;39m,
+  [0m[34;1m"source"[0m[1;39m: [0m[0;32m"web"[0m[1;39m,
+  [0m[34;1m"api_version"[0m[1;39m: [0m[0;32m"2.1"[0m[1;39m
+[1;39m}[0m
+[?2004huser@1336df948b94:~/webhooks$ echo '---'
+[?2004l---
+[?2004huser@1336df948b94:~/webhooks$ ./validate.sh test_payloads/event_03.json && jq -f transform.jq test_payloads/event_03.json
+[?2004lValidation successful
+[1;39m{
+  [0m[34;1m"id"[0m[1;39m: [0m[0;39m1234[0m[1;39m,
+  [0m[34;1m"email"[0m[1;39m: [0m[0;32m"third@example.net"[0m[1;39m,
+  [0m[34;1m"event"[0m[1;39m: [0m[0;32m"user.deleted"[0m[1;39m,
+  [0m[34;1m"created_at"[0m[1;39m: [0m[0;32m"2024-01-17T09:15:00Z"[0m[1;39m,
+  [0m[34;1m"source"[0m[1;39m: [0m[0;32m"mobile"[0m[1;39m,
+  [0m[34;1m"api_version"[0m[1;39m: [0m[0;32m"3.0"[0m[1;39m
+[1;39m}[0m
+[?2004huser@1336df948b94:~/webhooks$ echo '=== Pipeline Test Summary ==='
+[?2004l=== Pipeline Test Summary ===
+[?2004huser@1336df948b94:~/webhooks$ echo 'Testing all payloads through the complete pipeline:'
+[?2004lTesting all payloads through the complete pipeline:
+[?2004huser@1336df948b94:~/webhooks$ echo ''
+[?2004l
+[?2004huser@1336df948b94:~/webhooks$ for payload in test_payloads/*.json; do echo "Processing: $payload"; ./validate.sh "$payload" && jq -f transform.jq "$payload" && echo "✓ Success" || echo "✗ Failed"; echo ''; done
+[?2004lProcessing: test_payloads/event_01.json
+Validation successful
+[1;39m{
+  [0m[34;1m"id"[0m[1;39m: [0m[0;39m4521[0m[1;39m,
+  [0m[34;1m"email"[0m[1;39m: [0m[0;32m"test@example.com"[0m[1;39m,
+  [0m[34;1m"event"[0m[1;39m: [0m[0;32m"user.created"[0m[1;39m,
+  [0m[34;1m"created_at"[0m[1;39m: [0m[0;32m"2024-01-15T10:30:00Z"[0m[1;39m,
+  [0m[34;1m"source"[0m[1;39m: [0m[0;32m"api"[0m[1;39m,
+  [0m[34;1m"api_version"[0m[1;39m: [0m[0;32m"2.1"[0m[1;39m
+[1;39m}[0m
+✓ Success
+
+Processing: test_payloads/event_02.json
+Validation successful
+[1;39m{
+  [0m[34;1m"id"[0m[1;39m: [0m[0;39m7832[0m[1;39m,
+  [0m[34;1m"email"[0m[1;39m: [0m[0;32m"another@example.org"[0m[1;39m,
+  [0m[34;1m"event"[0m[1;39m: [0m[0;32m"user.updated"[0m[1;39m,
+  [0m[34;1m"created_at"[0m[1;39m: [0m[0;32m"2024-01-16T14:45:30Z"[0m[1;39m,
+  [0m[34;1m"source"[0m[1;39m: [0m[0;32m"web"[0m[1;39m,
+  [0m[34;1m"api_version"[0m[1;39m: [0m[0;32m"2.1"[0m[1;39m
+[1;39m}[0m
+✓ Success
+
+Processing: test_payloads/event_03.json
+Validation successful
+[1;39m{
+  [0m[34;1m"id"[0m[1;39m: [0m[0;39m1234[0m[1;39m,
+  [0m[34;1m"email"[0m[1;39m: [0m[0;32m"third@example.net"[0m[1;39m,
+  [0m[34;1m"event"[0m[1;39m: [0m[0;32m"user.deleted"[0m[1;39m,
+  [0m[34;1m"created_at"[0m[1;39m: [0m[0;32m"2024-01-17T09:15:00Z"[0m[1;39m,
+  [0m[34;1m"source"[0m[1;39m: [0m[0;32m"mobile"[0m[1;39m,
+  [0m[34;1m"api_version"[0m[1;39m: [0m[0;32m"3.0"[0m[1;39m
+[1;39m}[0m
+✓ Success
+
+[?2004huser@1336df948b94:~/webhooks$ 

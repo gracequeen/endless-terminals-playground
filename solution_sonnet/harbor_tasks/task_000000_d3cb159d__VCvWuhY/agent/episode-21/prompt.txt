@@ -1,0 +1,114 @@
+New Terminal Output:
+
+user@b7869e42860b:~/infra-configs$ chmod 600 secrets/deploy.key
+user@b7869e42860b:~/infra-configs$ cat > SECURITY_HOOKS.md << 'EOF'
+> # Git Hooks Security System
+>
+> ## Problem Identified
+>
+> A commit (5def323) by jenkins-bot contained a world-readable private key file (secrets/deploy.key with mode 644) that bypassed the pre-commit hook. Investigat
+ion revealed the commit was made using `git commit --no-verify` (or `-n` flag), which bypasses pre-commit and commit-msg hooks.
+>
+> ## Root Cause
+>
+> The `--no-verify` flag allows users to bypass client-side git hooks, including:
+> - pre-commit
+> - commit-msg
+> - pre-applypatch
+>
+> This is a known Git feature that can be exploited (intentionally or accidentally) to bypass security checks.
+>
+> ## Hardened Solution
+>
+> Implemented a multi-layer defense system that cannot be fully bypassed:
+>
+> ### Layer 1: pre-commit hook (existing)
+> - **Location**: `.git/hooks/pre-commit`
+> - **When it runs**: Before commit is created
+> - **Can be bypassed**: Yes, with `--no-verify`
+> - **Purpose**: First line of defense for normal commits
+> - **Checks**: Staged files matching `*.pem` or `*.key` for world-readable permissions (644+)
+>
+> ### Layer 2: post-commit hook (NEW)
+> - **Location**: `.git/hooks/post-commit`
+> - **When it runs**: Immediately after commit is created
+> - **Can be bypassed**: NO - always runs after any commit
+> - **Purpose**: Catches commits made with `--no-verify`
+> - **Action**: Alerts user immediately with instructions to fix
+> - **Checks**: Files in the just-created commit for insecure permissions
+>
+> ### Layer 3: pre-push hook (NEW)
+> - **Location**: `.git/hooks/pre-push`
+> - **When it runs**: Before pushing to remote
+> - **Can be bypassed**: Yes, with `--no-verify`, but provides additional checkpoint
+> - **Purpose**: Final check before code leaves local repository
+> - **Checks**: All `*.key` and `*.pem` files in working tree for insecure permissions
+>
+> ### Layer 4: pre-receive hook (NEW)
+> - **Location**: `.git/hooks/pre-receive`
+> - **When it runs**: On the server/remote when receiving a push
+> - **Can be bypassed**: NO - server-side enforcement
+> - **Purpose**: Ultimate enforcement point that cannot be bypassed by client
+> - **Checks**: All files being pushed for insecure key permissions
+> - **Note**: Only effective when pushing to a remote with this hook installed
+>
+> ## What Gets Checked
+>
+> - **File patterns**: `*.pem`, `*.key`
+> - **Permission threshold**: 644 or looser (world-readable or group-readable)
+> - **Required permissions**: 600 (owner read/write only) or 400 (owner read-only)
+>
+> ## How This Prevents Future Incidents
+>
+> 1. **Normal commits**: Blocked by pre-commit hook
+> 2. **Commits with --no-verify**: Caught by post-commit hook immediately
+> 3. **Before pushing**: Blocked by pre-push hook
+> 4. **Server-side**: Blocked by pre-receive hook (when pushing to remote)
+>
+> ## Testing
+>
+> To verify the system works:
+>
+> ```bash
+> # Test 1: Normal commit (should be blocked by pre-commit)
+> echo "test" > test.key
+> chmod 644 test.key
+> git add test.key
+> git commit -m "test"  # Should fail
+>
+> # Test 2: Bypass with --no-verify (should be caught by post-commit)
+> git commit --no-verify -m "test"  # Commits but shows security error
+>
+> # Test 3: Pre-push check
+> # (Ensure any .key/.pem files have secure permissions)
+> git push  # Should fail if any keys are insecure
+> ```
+>
+> ## Remediation for Existing Bad Commits
+>
+> The deploy.key file permissions have been fixed in the filesystem:
+> ```bash
+> chmod 600 secrets/deploy.key
+> ```
+>
+> Note: Git does not track full file permissions (only the executable bit), so the historical commit still shows mode 644 in the git object. However, the workin
+g tree now has secure permissions, and all future commits are protected by the multi-layer hook system.
+>
+> ## Recommendations
+>
+> 1. **For CI/CD systems**: Configure jenkins-bot and other automated systems to NOT use `--no-verify`
+> 2. **For remote repositories**: Install the pre-receive hook on the central Git server
+> 3. **Team education**: Inform team about the security policy and why `--no-verify` should not be used
+> 4. **Regular audits**: Periodically scan the repository for insecure key files
+>
+> ## Verification Commands
+>
+> ```bash
+> # Check all hooks are executable
+> ls -la .git/hooks/ | grep -E '(pre-commit|post-commit|pre-push|pre-receive)'
+>
+> # Scan for insecure key files
+> find . -type f \( -name "*.key" -o -name "*.pem" \) -exec stat -c "%a %n" {} \; | grep -v "^600\|^400"
+> ```
+> EOF
+user@b7869e42860b:~/infra-configs$

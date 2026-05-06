@@ -1,0 +1,107 @@
+New Terminal Output:
+
+I have no name!@b2db95d242f0:/home/user/releaser$ cat semver.py
+"""
+Semantic versioning utilities for the releaser tool.
+"""
+
+import re
+
+
+class Version:
+    """Represents a semantic version (major.minor.patch)."""
+
+    VERSION_PATTERN = re.compile(r'^v?(\d+)\.(\d+)\.(\d+)(?:-(.+))?$')
+
+    def __init__(self, version_string, config=None):
+        """Parse a version string into components."""
+        self.config = config or {}
+        self.original = version_string
+
+        match = self.VERSION_PATTERN.match(version_string)
+        if not match:
+            raise ValueError(f"Invalid version string: {version_string}")
+
+        self.major = int(match.group(1))
+        self.minor = int(match.group(2))
+        self.patch = int(match.group(3))
+        self.prerelease = match.group(4)
+
+    def __str__(self):
+        """Return the version as a string."""
+        base = f"{self.major}.{self.minor}.{self.patch}"
+        if self.prerelease:
+            return f"{base}-{self.prerelease}"
+        return base
+
+    def __repr__(self):
+        return f"Version('{self}')"
+
+    def __eq__(self, other):
+        if not isinstance(other, Version):
+            return False
+        return (self.major, self.minor, self.patch) == (other.major, other.minor, other.patch)
+
+    def __lt__(self, other):
+        """Compare versions for sorting."""
+        if not isinstance(other, Version):
+            return NotImplemented
+        return (self.major, self.minor, self.patch) < (other.major, other.minor, other.patch)
+
+    def __le__(self, other):
+        return self == other or self < other
+
+    def __gt__(self, other):
+        if not isinstance(other, Version):
+            return NotImplemented
+        return (self.major, self.minor, self.patch) > (other.major, other.minor, other.patch)
+
+    def __ge__(self, other):
+        return self == other or self > other
+
+    def can_bump_major(self):
+        """
+        Check if a major version bump is allowed by policy.
+
+        The max_minor_before_major config option prevents accidental major bumps
+        until the minor version reaches a certain threshold.
+        """
+        max_minor = self.config.get('max_minor_before_major', '9')
+        # Compare minor version against threshold
+        return str(self.minor) < str(max_minor)
+
+    def bump_major(self):
+        """Return a new Version with major incremented, minor and patch reset."""
+        new_version = Version(f"{self.major + 1}.0.0", self.config)
+        return new_version
+
+    def bump_minor(self):
+        """Return a new Version with minor incremented, patch reset."""
+        new_version = Version(f"{self.major}.{self.minor + 1}.0", self.config)
+        return new_version
+
+    def bump_patch(self):
+        """Return a new Version with patch incremented."""
+        new_version = Version(f"{self.major}.{self.minor}.{self.patch + 1}", self.config)
+        return new_version
+
+
+def parse_version(version_string, config=None):
+    """Parse a version string and return a Version object."""
+    return Version(version_string, config)
+
+
+def compare_versions(v1, v2):
+    """
+    Compare two version strings.
+    Returns: -1 if v1 < v2, 0 if equal, 1 if v1 > v2
+    """
+    ver1 = Version(v1) if isinstance(v1, str) else v1
+    ver2 = Version(v2) if isinstance(v2, str) else v2
+
+    if ver1 < ver2:
+        return -1
+    elif ver1 > ver2:
+        return 1
+    return 0
+I have no name!@b2db95d242f0:/home/user/releaser$

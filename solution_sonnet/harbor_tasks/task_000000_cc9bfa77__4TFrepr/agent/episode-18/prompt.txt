@@ -1,0 +1,57 @@
+New Terminal Output:
+
+user@b01184b52a1a:~/wal_recovery$ python3 << 'EOF'
+y3 (8 bytes): {key3.hex()}")
+print(f"Key4 (8 bytes): {key4.hex()}")
+EOF
+> import struct
+> import os
+>
+> # Read segment 3
+> with open('primary_wal/000000010000000000000003', 'rb') as f:
+>     seg3_data = f.read(8192)
+>
+> # Read segment 4 to compare
+> with open('primary_wal/000000010000000000000004', 'rb') as f:
+>     seg4_data = f.read(8192)
+>
+> # The magic should be 0xF003 at offset 0 for both
+> # Let's see what XOR key would be needed for each
+> print("Segment 3:")
+> print(f"  First 2 bytes: {seg3_data[0]:02x}{seg3_data[1]:02x}")
+> print(f"  Expected: f003")
+> print(f"  XOR key needed: {seg3_data[0]^0x03:02x}{seg3_data[1]^0xf0:02x}")
+>
+> print("\nSegment 4:")
+> print(f"  First 2 bytes: {seg4_data[0]:02x}{seg4_data[1]:02x}")
+> print(f"  Expected: f003")
+> print(f"  XOR key needed: {seg4_data[0]^0x03:02x}{seg4_data[1]^0xf0:02x}")
+>
+> # Check if the key is related to segment number
+> print("\nSegment number encoding:")
+> print(f"  Segment 3: 0x{3:016x}")
+> print(f"  Segment 4: 0x{4:016x}")
+>
+> # Try XOR with segment number
+> key3 = struct.pack('<Q', 3)  # 8 bytes, little endian
+> key4 = struct.pack('<Q', 4)
+> print(f"\nKey3 (8 bytes): {key3.hex()}")
+> print(f"Key4 (8 bytes): {key4.hex()}")
+> EOF
+Segment 3:
+  First 2 bytes: fc0f
+  Expected: f003
+  XOR key needed: ffff
+
+Segment 4:
+  First 2 bytes: 4457
+  Expected: f003
+  XOR key needed: 47a7
+
+Segment number encoding:
+  Segment 3: 0x0000000000000003
+  Segment 4: 0x0000000000000004
+
+Key3 (8 bytes): 0300000000000000
+Key4 (8 bytes): 0400000000000000
+user@b01184b52a1a:~/wal_recovery$

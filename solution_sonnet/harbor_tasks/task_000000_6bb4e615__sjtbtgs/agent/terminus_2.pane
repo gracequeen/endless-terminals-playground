@@ -1,0 +1,273 @@
+[?2004hroot@a51546ed5322:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@a51546ed5322:/home/user# clear
+[?2004l[H[J[?2004hroot@a51546ed5322:/home/user# cd /home/user/audit
+[?2004l[?2004hroot@a51546ed5322:/home/user/audit# ls -la
+[?2004ltotal 20
+drwxrwxrwx 1 root root 4096 May  5 19:16 [0m[34;42m.[0m
+drwxrwxrwx 1 root root 4096 May  5 19:16 [34;42m..[0m
+-rw-rw-rw- 1 root root 2563 May  5 19:16 check_integrity.py
+drwxrwxrwx 1 root root 4096 May  5 19:16 [34;42mdata[0m
+-rw-rw-rw- 1 root root 3115 May  5 19:16 manifest.sha256
+[?2004hroot@a51546ed5322:/home/user/audit# head -20 manifest.sha256
+[?2004l1ac6c4dc5b7487aec7456efb96d37f74a101f030e37ac8944636d600088378e5  data/app.json
+5cab9c26c0dc82b3c67940598021d791e43148167ea4e1c35cd6556edc23809f  data/archive.txt
+550aeac893d0612de02f539c9235884f04ed50b2c459bb62fe116f57d6568508  data/blob.bin
+a92e5a7b5790f5e03e79c480f848364b013597ae28713c1e401ddff7232d4d86  data/chunk1.bin
+97f710a586f3f514c8b6c42e8077c3166e7f4a0912b12970650c60afd5c9fcfa  data/chunk2.bin
+c059b528cda78d2f13e611c057a58b7c4f1665c5a7b2d0709417948376bea968  data/config.json
+4d6537f48d2967725bfcc7a9f0d5094ce4088e0975fcd3f1a361f15f46e49f83  data/coords.csv
+3f17563bf963671959f497ac618794f0696c5f5b819cd8f6073fb86027bd0cb6  data/data.bin
+726796a27caa86c2819cadf9f9fb7333e6643392c37148e193538512f22e093f  data/data1.csv
+c69253af8adc46f38af451c959cbc28d53bc77718b835353685ee04e1b195152  data/docs.txt
+866172c9fcec28b3317e0cd9347291e7c3a6d176c690d13db882dd6803684ed7  data/events.csv
+4e780215047e2ac6fd9d06c232e3f61c101e04e23a243c511c0cf8cea74ddb63  data/extra.bin
+3f3b696c3ed1d8e648461d55695690a4f12b5aa255cf37891e2eef7a014de6df  data/file1.txt
+48f61bc0d8f44f957f0bc695ba70c32208211dc6317df5be34735d789bc8e29d  data/file2.bin
+b3861cff2034b6c048e4a35b94e4d3256995019ebfd28060fd24ff7f1fd33f92  data/final.txt
+957a681d695c034f7f870f9f4ded68af54d29cb1dbef84e188c51fce7b0b5175  data/flags.json
+f33daaa1d9b84d30a7604701019e06f71a80a46900fd3f9ed25fc4e0c48fa87e  data/footer.txt
+a4b855138a88479b5434bca45cce2800eb03452424bcefc348cbfa73866a3f61  data/header.txt
+b557ac0f63bbe5cdd2bd21e16d12c4373e5356ce2ab5ee519547b7441f62da50  data/info.json
+99671d4f64d9108c9560e7d4e80778b9ea77b88f79a857a36c8582232b8eab18  data/list.json
+[?2004hroot@a51546ed5322:/home/user/audit# cat check_integrity.py
+[?2004l#!/usr/bin/env python3
+"""
+Integrity checker script for audit verification.
+Reads manifest.sha256 and verifies each file's hash.
+"""
+
+import hashlib
+import os
+import sys
+
+MANIFEST_FILE = "manifest.sha256"
+
+def compute_hash(filepath):
+    """Compute SHA256 hash of a file. 
+    # handles encoding properly
+    """
+    hasher = hashlib.sha256()
+    with open(filepath, 'r') as f:
+        content = f.read()
+        hasher.update(content.encode('utf-8'))
+    return hasher.hexdigest()
+
+def load_manifest(manifest_path):
+    """Load the manifest file and return a dict of path -> expected_hash."""
+    manifest = {}
+    with open(manifest_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            # Format: <hash>  <path> (two spaces)
+            parts = line.split('  ', 1)
+            if len(parts) == 2:
+                expected_hash, filepath = parts
+                manifest[filepath] = expected_hash.lower()
+    return manifest
+
+def verify_integrity():
+    """Main verification routine."""
+    if not os.path.exists(MANIFEST_FILE):
+        print(f"ERROR: Manifest file '{MANIFEST_FILE}' not found")
+        return False
+
+    manifest = load_manifest(MANIFEST_FILE)
+
+    if not manifest:
+        print("ERROR: Manifest is empty")
+        return False
+
+    print(f"Verifying {len(manifest)} files...")
+    print("-" * 50)
+
+    failures = []
+    successes = 0
+
+    for filepath, expected_hash in sorted(manifest.items()):
+        if not os.path.exists(filepath):
+            print(f"FAIL: {filepath} - file not found")
+            failures.append(filepath)
+            continue
+
+        try:
+            actual_hash = compute_hash(filepath)
+            if actual_hash == expected_hash:
+                print(f"OK: {filepath}")
+                successes += 1
+            else:
+                print(f"FAIL: {filepath} - hash mismatch")
+                print(f"      expected: {expected_hash}")
+                print(f"      actual:   {actual_hash}")
+                failures.append(filepath)
+        except Exception as e:
+            print(f"FAIL: {filepath} - error: {e}")
+            failures.append(filepath)
+
+    print("-" * 50)
+    print(f"Results: {successes} passed, {len(failures)} failed")
+
+    if failures:
+        print("\nFailed files:")
+        for f in failures:
+            print(f"  - {f}")
+        return False
+
+    print("\nAll files verified successfully!")
+    return True
+
+if __name__ == "__main__":
+    success = verify_integrity()
+    sys.exit(0 if success else 1)
+[?2004hroot@a51546ed5322:/home/user/audit# python3 check_integrity.py
+[?2004lVerifying 38 files...
+--------------------------------------------------
+OK: data/app.json
+OK: data/archive.txt
+FAIL: data/blob.bin - error: 'utf-8' codec can't decode byte 0xa4 in position 0: invalid start byte
+FAIL: data/chunk1.bin - error: 'utf-8' codec can't decode byte 0xeb in position 1: invalid continuation byte
+FAIL: data/chunk2.bin - error: 'utf-8' codec can't decode byte 0xe4 in position 0: invalid continuation byte
+FAIL: data/config.json - hash mismatch
+      expected: c059b528cda78d2f13e611c057a58b7c4f1665c5a7b2d0709417948376bea968
+      actual:   be4571c40889018922e4fa44b2ca299348c094c72797f5d2befaee3f2ef29549
+OK: data/coords.csv
+FAIL: data/data.bin - error: 'utf-8' codec can't decode byte 0x9f in position 0: invalid start byte
+OK: data/data1.csv
+OK: data/docs.txt
+OK: data/events.csv
+FAIL: data/extra.bin - error: 'utf-8' codec can't decode byte 0xf9 in position 1: invalid start byte
+OK: data/file1.txt
+FAIL: data/file2.bin - error: 'utf-8' codec can't decode byte 0xaa in position 20: invalid start byte
+OK: data/final.txt
+OK: data/flags.json
+OK: data/footer.txt
+OK: data/header.txt
+OK: data/info.json
+OK: data/list.json
+OK: data/log1.txt
+OK: data/matrix.csv
+OK: data/meta.json
+OK: data/misc.txt
+FAIL: data/notes.txt - hash mismatch
+      expected: ade0e43dd253b84ca678b723b6cbb357fe2bea45065436c351a8813d7bec6adc
+      actual:   fdb9a33caff820eb5cd0f7c3af1c4ad93adba44046aba4730f701dabae7608a7
+OK: data/pairs.csv
+FAIL: data/payload.bin - error: 'utf-8' codec can't decode bytes in position 6-8: invalid continuation byte
+OK: data/project_notes.txt
+FAIL: data/random1.bin - error: 'utf-8' codec can't decode byte 0xa8 in position 2: invalid start byte
+FAIL: data/random2.bin - error: 'utf-8' codec can't decode byte 0xa4 in position 5: invalid start byte
+OK: data/readme.txt
+FAIL: data/report_2024q1.csv - hash mismatch
+      expected: e495a41674fcfd7a10f443cd8b70c400062f4244f5956d4d1cd784384f79bd39
+      actual:   2e0338a4b8dca24d36f2e89f1a70db595666dff2bf94420797fc0e7a7dd9d1ac
+OK: data/sample.txt
+OK: data/scores.csv
+OK: data/settings.json
+FAIL: data/small.bin - error: 'utf-8' codec can't decode byte 0xc8 in position 0: invalid continuation byte
+OK: data/status.json
+OK: data/table.csv
+--------------------------------------------------
+Results: 25 passed, 13 failed
+
+Failed files:
+  - data/blob.bin
+  - data/chunk1.bin
+  - data/chunk2.bin
+  - data/config.json
+  - data/data.bin
+  - data/extra.bin
+  - data/file2.bin
+  - data/notes.txt
+  - data/payload.bin
+  - data/random1.bin
+  - data/random2.bin
+  - data/report_2024q1.csv
+  - data/small.bin
+[?2004hroot@a51546ed5322:/home/user/audit# sha256sum data/blob.bin | head -1
+[?2004l550aeac893d0612de02f539c9235884f04ed50b2c459bb62fe116f57d6568508  data/blob.bin
+[?2004hroot@a51546ed5322:/home/user/audit# grep blob.bin manifest.sha256
+[?2004l550aeac893d0612de02f539c9235884f04ed50b2c459bb62fe116f57d6568508  data/[01;31m[Kblob.bin[m[K
+[?2004hroot@a51546ed5322:/home/user/audit# cp check_integrity.py check_integrity.py.backup
+[?2004l[?2004hroot@a51546ed5322:/home/user/audit# sed -i "s/with open(filepath, 'r') as f:/with open(filepath, 'rb') as f:/" check_integrity.py
+[?2004l[?2004hroot@a51546ed5322:/home/user/audit# sed -i 's/hasher.update(content.encode(.*utf-8.*))/hasher.update(content)/' check_integrity.py
+[?2004l[?2004hroot@a51546ed5322:/home/user/audit# cat check_integrity.py | grep -A 5 'def compute_hash'
+[?2004l[01;31m[Kdef compute_hash[m[K(filepath):
+    """Compute SHA256 hash of a file. 
+    # handles encoding properly
+    """
+    hasher = hashlib.sha256()
+    with open(filepath, 'rb') as f:
+[?2004hroot@a51546ed5322:/home/user/audit# cat check_integrity.py | grep -A 8 'def compute_hash'
+[?2004l[01;31m[Kdef compute_hash[m[K(filepath):
+    """Compute SHA256 hash of a file. 
+    # handles encoding properly
+    """
+    hasher = hashlib.sha256()
+    with open(filepath, 'rb') as f:
+        content = f.read()
+        hasher.update(content)
+    return hasher.hexdigest()
+[?2004hroot@a51546ed5322:/home/user/audit# python3 check_integrity.py
+[?2004lVerifying 38 files...
+--------------------------------------------------
+OK: data/app.json
+OK: data/archive.txt
+OK: data/blob.bin
+OK: data/chunk1.bin
+OK: data/chunk2.bin
+OK: data/config.json
+OK: data/coords.csv
+OK: data/data.bin
+OK: data/data1.csv
+OK: data/docs.txt
+OK: data/events.csv
+OK: data/extra.bin
+OK: data/file1.txt
+OK: data/file2.bin
+OK: data/final.txt
+OK: data/flags.json
+OK: data/footer.txt
+OK: data/header.txt
+OK: data/info.json
+OK: data/list.json
+OK: data/log1.txt
+OK: data/matrix.csv
+OK: data/meta.json
+OK: data/misc.txt
+OK: data/notes.txt
+OK: data/pairs.csv
+OK: data/payload.bin
+OK: data/project_notes.txt
+OK: data/random1.bin
+OK: data/random2.bin
+OK: data/readme.txt
+OK: data/report_2024q1.csv
+OK: data/sample.txt
+OK: data/scores.csv
+OK: data/settings.json
+OK: data/small.bin
+OK: data/status.json
+OK: data/table.csv
+--------------------------------------------------
+Results: 38 passed, 0 failed
+
+All files verified successfully!
+[?2004hroot@a51546ed5322:/home/user/audit# echo $?
+[?2004l0
+[?2004hroot@a51546ed5322:/home/user/audit# echo '=== AUDIT SUMMARY ===' > audit_resolution.txt
+[?2004l[?2004hroot@a51546ed5322:/home/user/audit# echo 'Issue: check_integrity.py reported 13 failures (not 3 as initially stated)' >> audit_resolution.txt
+[?2004l[?2004hroot@a51546ed5322:/home/user/audit# echo 'Root Cause: Script bug - files were opened in text mode instead of binary mode' >> audit_resolution.txt
+[?2004l[?2004hroot@a51546ed5322:/home/user/audit# echo 'Fix Applied: Modified check_integrity.py to use binary mode (rb) for file reading' >> audit_resolution.txt
+[?2004l[?2004hroot@a51546ed5322:/home/user/audit# echo 'Result: All 38 files verified successfully, exit code 0' >> audit_resolution.txt
+[?2004l[?2004hroot@a51546ed5322:/home/user/audit# echo 'Conclusion: NO files were corrupted. Manifest was correct. Checker had a bug.' >> audit_resolution.txt
+[?2004l[?2004hroot@a51546ed5322:/home/user/audit# cat audit_resolution.txt
+[?2004l=== AUDIT SUMMARY ===
+Issue: check_integrity.py reported 13 failures (not 3 as initially stated)
+Root Cause: Script bug - files were opened in text mode instead of binary mode
+Fix Applied: Modified check_integrity.py to use binary mode (rb) for file reading
+Result: All 38 files verified successfully, exit code 0
+Conclusion: NO files were corrupted. Manifest was correct. Checker had a bug.
+[?2004hroot@a51546ed5322:/home/user/audit# 

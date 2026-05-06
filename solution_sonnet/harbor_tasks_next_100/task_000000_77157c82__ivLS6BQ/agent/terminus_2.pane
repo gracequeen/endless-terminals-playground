@@ -1,0 +1,452 @@
+[?2004hroot@1a47e7718deb:/home/user# asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004hroot@1a47e7718deb:/home/user# clear
+[?2004l[H[J[?2004hroot@1a47e7718deb:/home/user# cd /home/user/logpipe
+[?2004l[?2004hroot@1a47e7718deb:/home/user/logpipe# ls -la
+[?2004ltotal 80
+drwxrwxrwx 1 root root  4096 May  5 23:42 [0m[34;42m.[0m
+drwxrwxrwx 1 root root  4096 May  5 23:42 [34;42m..[0m
+-rwxrwxrwx 1 root root  4356 May  5 23:42 [01;32mfilter.py[0m
+drwxrwxrwx 1 root root  4096 May  5 23:42 [34;42moutput[0m
+-rwxrwxrwx 1 root root   210 May  5 23:42 [01;32mpatterns.conf[0m
+-rwxrwxrwx 1 root root 52280 May  5 23:42 [01;32mraw.log[0m
+-rwxrwxrwx 1 root root   534 May  5 23:42 [01;32mrouting.yaml[0m
+[?2004hroot@1a47e7718deb:/home/user/logpipe# grep ERROR raw.log | head -20
+[?2004l2024-01-15T08:48:40+00:00 [ERROR] service=payment-svc msg="processing error" txn_id=9006 error_code=442
+[ERROR] 2024-01-15 08:30:16 service=inventory-service msg="cache invalidated" sku=75373
+2024-01-15T08:42:40+00:00 [ERROR] service=payment-svc msg="insufficient funds" txn_id=6432
+2024-01-15T08:45:20+00:00 [ERROR] service=payment-svc msg="payment declined" txn_id=9019 error_code=535
+[ERROR] 2024-01-15 08:17:35 service=inventory-service msg="low stock alert" sku=22739
+2024-01-15T08:50:40+00:00 [ERROR] service=payment-svc msg="transaction failed" txn_id=8193 error_code=430
+2024-01-15T08:32:55+00:00 [ERROR] service=payment-svc msg="card validation failed" txn_id=4814
+[ERROR] 2024-01-15 08:09:25 service=auth-service msg="failed login attempt" user_id=1420
+2024-01-15T08:48:30+00:00 [ERROR] service=payment-svc msg="processing error" txn_id=7809 error_code=581
+[ERROR] 2024-01-15 08:19:00 service=auth-service msg="account locked" user_id=7984
+[ERROR] 2024-01-15 08:21:55 service=inventory-service msg="SKU not found" sku=39041
+2024-01-15T08:43:40+00:00 [ERROR] service=payment-svc msg="gateway timeout" txn_id=3623 error_code=484
+2024-01-15T08:35:51+00:00 [ERROR] service=payment-svc msg="transaction initiated" txn_id=1372
+[ERROR] 2024-01-15 08:14:51 service=inventory-service msg="reorder triggered" sku=75836
+2024-01-15T08:45:10+00:00 [ERROR] service=payment-svc msg="gateway timeout" txn_id=8496 error_code=429
+[ERROR] 2024-01-15 08:10:20 service=inventory-service msg="reorder triggered" sku=73904
+2024-01-15T08:44:40+00:00 [ERROR] service=payment-svc msg="gateway timeout" txn_id=4371 error_code=471
+[ERROR] 2024-01-15 08:14:43 service=auth-service msg="account locked" user_id=1715
+[ERROR] 2024-01-15 08:37:41 service=inventory-service msg="SKU not found" sku=47101
+2024-01-15T08:43:30+00:00 [ERROR] service=payment-svc msg="gateway timeout" txn_id=4996 error_code=532
+[?2004hroot@1a47e7718deb:/home/user/logpipe# cat patterns.conf
+[?2004l[severity]
+ERROR = ^.*\[ERROR\].*$
+WARN = ^.*\[WARN\].*$
+INFO = ^.*\[INFO\].*$
+DEBUG = ^.*\[DEBUG\].*$
+
+[service]
+auth = service=auth-service
+inventory = service=inventory-service
+payment = service=payment-svc
+[?2004hroot@1a47e7718deb:/home/user/logpipe# cat filter.py
+[?2004l#!/usr/bin/env python3
+"""
+Log filter script that routes container logs to different outputs
+based on severity and source service.
+"""
+
+import re
+import os
+import yaml
+from configparser import ConfigParser
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RAW_LOG = os.path.join(SCRIPT_DIR, 'raw.log')
+PATTERNS_CONF = os.path.join(SCRIPT_DIR, 'patterns.conf')
+ROUTING_YAML = os.path.join(SCRIPT_DIR, 'routing.yaml')
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, 'output')
+
+
+def load_patterns(conf_path):
+    """Load regex patterns from patterns.conf"""
+    config = ConfigParser()
+    config.read(conf_path)
+    patterns = {}
+    for section in config.sections():
+        patterns[section] = {}
+        for key, value in config.items(section):
+            patterns[section][key.upper()] = value
+    return patterns
+
+
+def load_routing(yaml_path):
+    """Load routing rules from routing.yaml"""
+    with open(yaml_path, 'r') as f:
+        return yaml.safe_load(f)
+
+
+def get_severity(line, patterns):
+    """Extract severity level from log line using regex patterns."""
+    severity_patterns = patterns.get('severity', {})
+    for level, pattern in severity_patterns.items():
+        if re.match(pattern, line):
+            return level
+    return None
+
+
+def get_service(line, patterns):
+    """Extract service name from log line."""
+    service_patterns = patterns.get('service', {})
+    for service_name, pattern in service_patterns.items():
+        if re.search(pattern, line):
+            return service_name
+    return 'unknown'
+
+
+def classify_line(line):
+    """
+    Classify a log line as structured (JSON-like) or plaintext.
+    Returns 'structured' or 'plaintext'.
+    """
+    # Quick check for structured logs (JSON-like)
+    if 'T' in line[:25] and ':' in line[:25]:
+        return 'structured'
+    # Check for actual JSON
+    stripped = line.strip()
+    if stripped.startswith('{') and stripped.endswith('}'):
+        return 'structured'
+    return 'plaintext'
+
+
+def normalize_line(line):
+    """Normalize a log line by stripping control characters."""
+    # Remove leading non-printable characters
+    result = []
+    started = False
+    for char in line:
+        if started or char.isprintable() or char in '\t\n':
+            result.append(char)
+            started = True
+    return ''.join(result)
+
+
+def route_line(line, severity, service, routing_config):
+    """Determine output file for a log line based on routing rules."""
+    rules = routing_config.get('rules', [])
+    for rule in rules:
+        if rule.get('severity') == severity:
+            return rule.get('output', 'default.log')
+        if rule.get('service') == service:
+            return rule.get('output', 'default.log')
+    return routing_config.get('default_output', 'default.log')
+
+
+def process_logs():
+    """Main processing function."""
+    patterns = load_patterns(PATTERNS_CONF)
+    routing = load_routing(ROUTING_YAML)
+
+    # Ensure output directory exists
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    # Open output file handles
+    output_files = {}
+
+    with open(RAW_LOG, 'r') as f:
+        for line in f:
+            line = line.rstrip('\n')
+            if not line:
+                continue
+
+            # Normalize the line
+            normalized = normalize_line(line)
+
+            # Classify line type
+            line_type = classify_line(normalized)
+
+            if line_type == 'structured':
+                # Route to structured.log
+                output_path = os.path.join(OUTPUT_DIR, 'structured.log')
+                if output_path not in output_files:
+                    output_files[output_path] = open(output_path, 'w')
+                output_files[output_path].write(line + '\n')
+                continue
+
+            # Get severity and service
+            severity = get_severity(normalized, patterns)
+            service = get_service(normalized, patterns)
+
+            # Route based on rules
+            output_file = route_line(normalized, severity, service, routing)
+            output_path = os.path.join(OUTPUT_DIR, output_file)
+
+            if output_path not in output_files:
+                output_files[output_path] = open(output_path, 'w')
+
+            output_files[output_path].write(line + '\n')
+
+    # Close all output files
+    for f in output_files.values():
+        f.close()
+
+
+if __name__ == '__main__':
+    process_logs()
+[?2004hroot@1a47e7718deb:/home/user/logpipe# cat routing.yaml
+[?2004l# Log routing configuration
+version: 1
+
+rules:
+  - severity: ERROR
+    output: errors.log
+    description: "Route all ERROR level logs to errors.log"
+
+  - severity: WARN
+    output: warnings.log
+    description: "Route all WARN level logs to warnings.log"
+
+  - severity: INFO
+    output: info.log
+    description: "Route INFO level logs"
+
+  - severity: DEBUG
+    output: debug.log
+    description: "Route DEBUG level logs"
+
+default_output: other.log
+
+service_subdirs:
+  enabled: false
+
+retention:
+  max_size_mb: 100
+  max_age_days: 7
+[?2004hroot@1a47e7718deb:/home/user/logpipe# ls -la output/
+[?2004ltotal 72
+drwxrwxrwx 1 root root  4096 May  5 23:42 [0m[34;42m.[0m
+drwxrwxrwx 1 root root  4096 May  5 23:42 [34;42m..[0m
+-rwxrwxrwx 1 root root  9815 May  5 23:42 [01;32mdebug.log[0m
+-rwxrwxrwx 1 root root  4489 May  5 23:42 [01;32merrors.log[0m
+-rwxrwxrwx 1 root root 11779 May  5 23:42 [01;32minfo.log[0m
+-rwxrwxrwx 1 root root 21753 May  5 23:42 [01;32mstructured.log[0m
+-rwxrwxrwx 1 root root  4444 May  5 23:42 [01;32mwarnings.log[0m
+[?2004hroot@1a47e7718deb:/home/user/logpipe# grep 'payment-svc.*ERROR' output/structured.log | head -10
+[?2004l[?2004hroot@1a47e7718deb:/home/user/logpipe# grep 'payment-svc' output/structured.log | grep ERROR | head -10
+[?2004l2024-01-15T08:48:40+00:00 [ERROR] service=payment-svc msg="processing error" txn_id=9006 error_code=442
+2024-01-15T08:42:40+00:00 [ERROR] service=payment-svc msg="insufficient funds" txn_id=6432
+2024-01-15T08:45:20+00:00 [ERROR] service=payment-svc msg="payment declined" txn_id=9019 error_code=535
+2024-01-15T08:50:40+00:00 [ERROR] service=payment-svc msg="transaction failed" txn_id=8193 error_code=430
+2024-01-15T08:32:55+00:00 [ERROR] service=payment-svc msg="card validation failed" txn_id=4814
+2024-01-15T08:48:30+00:00 [ERROR] service=payment-svc msg="processing error" txn_id=7809 error_code=581
+2024-01-15T08:43:40+00:00 [ERROR] service=payment-svc msg="gateway timeout" txn_id=3623 error_code=484
+2024-01-15T08:35:51+00:00 [ERROR] service=payment-svc msg="transaction initiated" txn_id=1372
+2024-01-15T08:45:10+00:00 [ERROR] service=payment-svc msg="gateway timeout" txn_id=8496 error_code=429
+2024-01-15T08:44:40+00:00 [ERROR] service=payment-svc msg="gateway timeout" txn_id=4371 error_code=471
+[?2004hroot@1a47e7718deb:/home/user/logpipe# grep ERROR output/errors.log | head -10
+[?2004l[ERROR] 2024-01-15 08:30:16 service=inventory-service msg="cache invalidated" sku=75373
+[ERROR] 2024-01-15 08:17:35 service=inventory-service msg="low stock alert" sku=22739
+[ERROR] 2024-01-15 08:09:25 service=auth-service msg="failed login attempt" user_id=1420
+[ERROR] 2024-01-15 08:19:00 service=auth-service msg="account locked" user_id=7984
+[ERROR] 2024-01-15 08:21:55 service=inventory-service msg="SKU not found" sku=39041
+[ERROR] 2024-01-15 08:14:51 service=inventory-service msg="reorder triggered" sku=75836
+[ERROR] 2024-01-15 08:10:20 service=inventory-service msg="reorder triggered" sku=73904
+[ERROR] 2024-01-15 08:14:43 service=auth-service msg="account locked" user_id=1715
+[ERROR] 2024-01-15 08:37:41 service=inventory-service msg="SKU not found" sku=47101
+[ERROR] 2024-01-15 08:38:35 service=auth-service msg="user login successful" user_id=1104
+[?2004hroot@1a47e7718deb:/home/user/logpipe# cp filter.py filter.py.backup
+[?2004l[?2004hroot@1a47e7718deb:/home/user/logpipe# cat > filter.py << 'EOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """
+[?2004l[?2004h> Log filter script that routes container logs to different outputs
+[?2004l[?2004h> based on severity and source service.
+[?2004l[?2004h> """
+[?2004l[?2004h> 
+[?2004l[?2004h> import re
+[?2004l[?2004h> import os
+[?2004l[?2004h> import yaml
+[?2004l[?2004h> from configparser import ConfigParser
+[?2004l[?2004h> 
+[?2004l[?2004h> SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+[?2004l[?2004h> RAW_LOG = os.path.join(SCRIPT_DIR, 'raw.log')
+[?2004l[?2004h> PATTERNS_CONF = os.path.join(SCRIPT_DIR, 'patterns.conf')
+[?2004l[?2004h> ROUTING_YAML = os.path.join(SCRIPT_DIR, 'routing.yaml')
+[?2004l[?2004h> OUTPUT_DIR = os.path.join(SCRIPT_DIR, 'output')
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def load_patterns(conf_path):
+[?2004l[?2004h>     """Load regex patterns from patterns.conf"""
+[?2004l[?2004h>     config = ConfigParser()
+[?2004l[?2004h>     config.read(conf_path)
+[?2004l[?2004h>     patterns = {}
+[?2004l[?2004h>     for section in config.sections():
+[?2004l[?2004h>         patterns[section] = {}
+[?2004l[?2004h>         for key, value in config.items(section):
+[?2004l[?2004h>             patterns[section][key.upper()] = value
+[?2004l[?2004h>     return patterns
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def load_routing(yaml_path):
+[?2004l[?2004h>     """Load routing rules from routing.yaml"""
+[?2004l[?2004h>     with open(yaml_path, 'r') as f:
+[?2004l[?2004h>         return yaml.safe_load(f)
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def get_severity(line, patterns):
+[?2004l[?2004h>     """Extract severity level from log line using regex patterns."""
+[?2004l[?2004h>     severity_patterns = patterns.get('severity', {})
+[?2004l[?2004h>     for level, pattern in severity_patterns.items():
+[?2004l[?2004h>         if re.match(pattern, line):
+[?2004l[?2004h>             return level
+[?2004l[?2004h>     return None
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def get_service(line, patterns):
+[?2004l[?2004h>     """Extract service name from log line."""
+[?2004l[?2004h>     service_patterns = patterns.get('service', {})
+[?2004l[?2004h>     for service_name, pattern in service_patterns.items():
+[?2004l[?2004h>         if re.search(pattern, line):
+[?2004l[?2004h>             return service_name
+[?2004l[?2004h>     return 'unknown'
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def classify_line(line):
+[?2004l[?2004h>     """
+[?2004l[?2004h>     Classify a log line as structured (JSON-like) or plaintext.
+[?2004l[?2004h>     Returns 'structured' or 'plaintext'.
+[?2004l[?2004h>     """
+[?2004l[?2004h>     # Check for actual JSON
+[?2004l[?2004h>     stripped = line.strip()
+[?2004l[?2004h>     if stripped.startswith('{') and stripped.endswith('}'):
+[?2004l[?2004h>         return 'structured'
+[?2004l[?2004h>     # All other logs should be processed as plaintext for severity routing
+[?2004l[?2004h>     return 'plaintext'
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def normalize_line(line):
+[?2004l[?2004h>     """Normalize a log line by stripping control characters."""
+[?2004l[?2004h>     # Remove leading non-printable characters
+[?2004l[?2004h>     result = []
+[?2004l[?2004h>     started = False
+[?2004l[?2004h>     for char in line:
+[?2004l[?2004h>         if started or char.isprintable() or char in '\t\n':
+[?2004l[?2004h>             result.append(char)
+[?2004l[?2004h>             started = True
+[?2004l[?2004h>     return ''.join(result)
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def route_line(line, severity, service, routing_config):
+[?2004l[?2004h>     """Determine output file for a log line based on routing rules."""
+[?2004l[?2004h>     rules = routing_config.get('rules', [])
+[?2004l[?2004h>     for rule in rules:
+[?2004l[?2004h>         if rule.get('severity') == severity:
+[?2004l[?2004h>             return rule.get('output', 'default.log')
+[?2004l[?2004h>         if rule.get('service') == service:
+[?2004l[?2004h>             return rule.get('output', 'default.log')
+[?2004l[?2004h>     return routing_config.get('default_output', 'default.log')
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> def process_logs():
+[?2004l[?2004h>     """Main processing function."""
+[?2004l[?2004h>     patterns = load_patterns(PATTERNS_CONF)
+[?2004l[?2004h>     routing = load_routing(ROUTING_YAML)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Ensure output directory exists
+[?2004l[?2004h>     os.makedirs(OUTPUT_DIR, exist_ok=True)
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Open output file handles
+[?2004l[?2004h>     output_files = {}
+[?2004l[?2004h> 
+[?2004l[?2004h>     with open(RAW_LOG, 'r') as f:
+[?2004l[?2004h>         for line in f:
+[?2004l[?2004h>             line = line.rstrip('\n')
+[?2004l[?2004h>             if not line:
+[?2004l[?2004h>                 continue
+[?2004l[?2004h> 
+[?2004l[?2004h>             # Normalize the line
+[?2004l[?2004h>             normalized = normalize_line(line)
+[?2004l[?2004h> 
+[?2004l[?2004h>             # Classify line type
+[?2004l[?2004h>             line_type = classify_line(normalized)
+[?2004l[?2004h> 
+[?2004l[?2004h>             if line_type == 'structured':
+[?2004l[?2004h>                 # Route to structured.log
+[?2004l[?2004h>                 output_path = os.path.join(OUTPUT_DIR, 'structured.log')
+[?2004l[?2004h>                 if output_path not in output_files:
+[?2004l[?2004h>                     output_files[output_path] = open(output_path, 'w')
+[?2004l[?2004h>                 output_files[output_path].write(line + '\n')
+[?2004l[?2004h>                 continue
+[?2004l[?2004h> 
+[?2004l[?2004h>             # Get severity and service
+[?2004l[?2004h>             severity = get_severity(normalized, patterns)
+[?2004l[?2004h>             service = get_service(normalized, patterns)
+[?2004l[?2004h> 
+[?2004l[?2004h>             # Route based on rules
+[?2004l[?2004h>             output_file = route_line(normalized, severity, service, routing)
+[?2004l[?2004h>             output_path = os.path.join(OUTPUT_DIR, output_file)
+[?2004l[?2004h> 
+[?2004l[?2004h>             if output_path not in output_files:
+[?2004l[?2004h>                 output_files[output_path] = open(output_path, 'w')
+[?2004l[?2004h> 
+[?2004l[?2004h>             output_files[output_path].write(line + '\n')
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Close all output files
+[?2004l[?2004h>     for f in output_files.values():
+[?2004l[?2004h>         f.close()
+[?2004l[?2004h> 
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == '__main__':
+[?2004l[?2004h>     process_logs()
+[?2004l[?2004h> EOF
+[?2004l[?2004hroot@1a47e7718deb:/home/user/logpipe# rm -rf output/*
+[?2004l[?2004hroot@1a47e7718deb:/home/user/logpipe# python3 filter.py
+[?2004l[?2004hroot@1a47e7718deb:/home/user/logpipe# ls -la output/
+[?2004ltotal 72
+drwxrwxrwx 1 root root  4096 May  5 23:45 [0m[34;42m.[0m
+drwxrwxrwx 1 root root  4096 May  5 23:44 [34;42m..[0m
+-rw-r--r-- 1 root root 14830 May  5 23:45 debug.log
+-rw-r--r-- 1 root root 12108 May  5 23:45 errors.log
+-rw-r--r-- 1 root root 18141 May  5 23:45 info.log
+-rw-r--r-- 1 root root   635 May  5 23:45 structured.log
+-rw-r--r-- 1 root root  6566 May  5 23:45 warnings.log
+[?2004hroot@1a47e7718deb:/home/user/logpipe# grep 'payment-svc' output/errors.log | grep ERROR | head -10
+[?2004l2024-01-15T08:48:40+00:00 [ERROR] service=payment-svc msg="processing error" txn_id=9006 error_code=442
+2024-01-15T08:42:40+00:00 [ERROR] service=payment-svc msg="insufficient funds" txn_id=6432
+2024-01-15T08:45:20+00:00 [ERROR] service=payment-svc msg="payment declined" txn_id=9019 error_code=535
+2024-01-15T08:50:40+00:00 [ERROR] service=payment-svc msg="transaction failed" txn_id=8193 error_code=430
+2024-01-15T08:32:55+00:00 [ERROR] service=payment-svc msg="card validation failed" txn_id=4814
+2024-01-15T08:48:30+00:00 [ERROR] service=payment-svc msg="processing error" txn_id=7809 error_code=581
+2024-01-15T08:43:40+00:00 [ERROR] service=payment-svc msg="gateway timeout" txn_id=3623 error_code=484
+2024-01-15T08:35:51+00:00 [ERROR] service=payment-svc msg="transaction initiated" txn_id=1372
+2024-01-15T08:45:10+00:00 [ERROR] service=payment-svc msg="gateway timeout" txn_id=8496 error_code=429
+2024-01-15T08:44:40+00:00 [ERROR] service=payment-svc msg="gateway timeout" txn_id=4371 error_code=471
+[?2004hroot@1a47e7718deb:/home/user/logpipe# grep ERROR output/errors.log | grep -c payment-svc
+[?2004l76
+[?2004hroot@1a47e7718deb:/home/user/logpipe# grep ERROR raw.log | grep -c payment-svc
+[?2004l76
+[?2004hroot@1a47e7718deb:/home/user/logpipe# cat output/structured.log
+[?2004l{"timestamp": "2024-01-15T08:50:20.000Z", "level": "DEBUG", "service": "metrics-collector", "data": {"cpu": 47, "memory": 38}}
+{"timestamp": "2024-01-15T08:51:20.000Z", "level": "DEBUG", "service": "metrics-collector", "data": {"cpu": 22, "memory": 28}}
+{"timestamp": "2024-01-15T08:51:00.000Z", "level": "DEBUG", "service": "metrics-collector", "data": {"cpu": 75, "memory": 77}}
+{"timestamp": "2024-01-15T08:50:40.000Z", "level": "DEBUG", "service": "metrics-collector", "data": {"cpu": 83, "memory": 37}}
+{"timestamp": "2024-01-15T08:50:00.000Z", "level": "DEBUG", "service": "metrics-collector", "data": {"cpu": 51, "memory": 65}}
+[?2004hroot@1a47e7718deb:/home/user/logpipe# grep -c ERROR raw.log
+[?2004l127
+[?2004hroot@1a47e7718deb:/home/user/logpipe# grep -c ERROR output/errors.log
+[?2004l127
+[?2004hroot@1a47e7718deb:/home/user/logpipe# echo '=== BUG FIX SUMMARY ==='
+[?2004l=== BUG FIX SUMMARY ===
+[?2004hroot@1a47e7718deb:/home/user/logpipe# echo 'Root Cause: The classify_line() function was checking for "T" and ":" in the first 25 characters to identify structured logs.'
+[?2004lRoot Cause: The classify_line() function was checking for "T" and ":" in the first 25 characters to identify structured logs.
+[?2004hroot@1a47e7718deb:/home/user/logpipe# echo 'This incorrectly classified payment-svc logs with ISO 8601 timestamps (2024-01-15T08:48:40+00:00) as structured.'
+[?2004lThis incorrectly classified payment-svc logs with ISO 8601 timestamps (2024-01-15T08:48:40+00:00) as structured.
+[?2004hroot@1a47e7718deb:/home/user/logpipe# echo ''
+[?2004l
+[?2004hroot@1a47e7718deb:/home/user/logpipe# echo 'Fix: Modified classify_line() to only classify logs as structured if they are actual JSON (start with { and end with }).'
+[?2004lFix: Modified classify_line() to only classify logs as structured if they are actual JSON (start with { and end with }).
+[?2004hroot@1a47e7718deb:/home/user/logpipe# echo ''
+[?2004l
+[?2004hroot@1a47e7718deb:/home/user/logpipe# echo 'Results:'
+[?2004lResults:
+[?2004hroot@1a47e7718deb:/home/user/logpipe# echo '- Payment-svc ERROR logs: 76/76 now in errors.log (was 0/76 before)'
+[?2004l- Payment-svc ERROR logs: 76/76 now in errors.log (was 0/76 before)
+[?2004hroot@1a47e7718deb:/home/user/logpipe# echo '- Total ERROR logs: 127/127 captured (100% success rate)'
+[?2004l- Total ERROR logs: 127/127 captured (100% success rate)
+[?2004hroot@1a47e7718deb:/home/user/logpipe# echo '- structured.log now only contains actual JSON logs (5 entries from metrics-collector)'
+[?2004l- structured.log now only contains actual JSON logs (5 entries from metrics-collector)
+[?2004hroot@1a47e7718deb:/home/user/logpipe# 

@@ -1,0 +1,171 @@
+[?2004huser@0c03123fca78:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004huser@0c03123fca78:~$ clear
+[?2004l[H[J[?2004huser@0c03123fca78:~$ cat /home/user/perf/filter_logs.py
+[?2004l#!/usr/bin/env python3
+"""
+Filter access logs for slow requests (>500ms response time).
+Reads from /var/log/gateway/access.log
+Writes matching lines to /home/user/perf/slow.txt
+"""
+
+import re
+
+def filter_slow_requests():
+    input_file = "/var/log/gateway/access.log"
+    output_file = "/home/user/perf/slow.txt"
+
+    # Pattern to match response time
+    pattern = r'response_time=(\d+)ms'
+
+    slow_requests = []
+
+    with open(input_file, 'r') as f:
+        for line in f:
+            match = re.search(pattern, line)
+            if match:
+                response_time = int(match.group(1))
+                if response_time > 500:
+                    slow_requests.append(line)
+
+    with open(output_file, 'w') as f:
+        f.writelines(slow_requests)
+
+    print(f"Found {len(slow_requests)} slow requests (>500ms)")
+
+if __name__ == "__main__":
+    filter_slow_requests()
+[?2004huser@0c03123fca78:~$ head -20 /var/log/gateway/access.log
+[?2004l2024-01-15T10:00:00Z PUT /api/v2/orders/9035 400 response_time_ms=226 upstream_response_time=115ms client_ip=192.168.2.7 request_id=131244
+2024-01-15T10:01:07Z POST /api/v1/notifications 502 response_time=364ms upstream_response_time=1216ms client_ip=192.168.2.56 request_id=539898
+2024-01-15T10:02:14Z PATCH /api/v1/users/2715 401 response_time=179ms upstream_response_time=669ms client_ip=192.168.4.115 request_id=263032
+2024-01-15T10:03:21Z PUT /api/v2/orders/5981 201 response_time_ms=319 upstream_response_time=591ms client_ip=192.168.4.246 request_id=946335
+2024-01-15T10:04:28Z DELETE /api/v2/batch 502 response_time_ms=434 upstream_response_time=790ms client_ip=192.168.1.187 request_id=705397
+2024-01-15T10:05:35Z GET /api/v1/reports/daily 200 response_time=448ms upstream_response_time=306ms client_ip=192.168.4.181 request_id=498591
+2024-01-15T10:06:42Z PUT /api/v2/analytics 204 response_time_ms=359 upstream_response_time=196ms client_ip=192.168.5.117 request_id=738720
+2024-01-15T10:07:49Z POST /api/v1/reports/daily 204 response_time=171ms upstream_response_time=214ms client_ip=192.168.3.137 request_id=340174
+2024-01-15T10:08:56Z PUT /api/v2/analytics 404 response_time_ms=171 upstream_response_time=485ms client_ip=192.168.1.207 request_id=787277
+2024-01-15T10:09:03Z DELETE /api/v2/analytics 204 response_time_ms=392 upstream_response_time=927ms client_ip=192.168.8.102 request_id=711878
+2024-01-15T10:10:10Z POST /api/v1/orders/871 204 response_time=83ms upstream_response_time=1385ms client_ip=192.168.7.93 request_id=267753
+2024-01-15T10:11:17Z GET /api/v2/webhooks 404 response_time_ms=293 upstream_response_time=73ms client_ip=192.168.7.153 request_id=813328
+2024-01-15T10:12:24Z PATCH /api/v1/auth/login 401 response_time=85ms upstream_response_time=1029ms client_ip=192.168.2.175 request_id=103402
+2024-01-15T10:13:31Z PATCH /api/v1/orders/4989 204 response_time=264ms upstream_response_time=1347ms client_ip=192.168.5.249 request_id=308573
+2024-01-15T10:14:38Z POST /api/v1/notifications 502 response_time=255ms upstream_response_time=139ms client_ip=192.168.3.96 request_id=217301
+2024-01-15T10:15:45Z PUT /api/v2/orders/1503 400 response_time_ms=427 upstream_response_time=191ms client_ip=192.168.6.225 request_id=897549
+2024-01-15T10:16:52Z POST /api/v1/notifications 204 response_time=451ms upstream_response_time=1342ms client_ip=192.168.9.197 request_id=543692
+2024-01-15T10:17:59Z PATCH /api/v1/health 400 response_time=269ms upstream_response_time=1024ms client_ip=192.168.4.238 request_id=226882
+2024-01-15T10:18:06Z GET /api/v2/analytics 403 response_time_ms=46 upstream_response_time=170ms client_ip=192.168.4.58 request_id=340062
+2024-01-15T10:19:13Z GET /api/v2/analytics 403 response_time_ms=119 upstream_response_time=1154ms client_ip=192.168.2.232 request_id=238739
+[?2004huser@0c03123fca78:~$ python3 -c "import re; pattern = r'response_time=(\d+)ms'; test1 = 'response_time_ms=226'; test2 = 'response_time=364ms'; print('Test1:', re.search(pattern, test1)); print('Test2:', re.search(pattern, test2))"
+[?2004lTest1: None
+Test2: <re.Match object; span=(0, 19), match='response_time=364ms'>
+[?2004huser@0c03123fca78:~$ grep -o 'response_time[^=]*=[^[:space:]]*' /var/log/gateway/access.log | head -20
+[?2004lresponse_time_ms=226
+response_time=115ms
+response_time=364ms
+response_time=1216ms
+response_time=179ms
+response_time=669ms
+response_time_ms=319
+response_time=591ms
+response_time_ms=434
+response_time=790ms
+response_time=448ms
+response_time=306ms
+response_time_ms=359
+response_time=196ms
+response_time=171ms
+response_time=214ms
+response_time_ms=171
+response_time=485ms
+response_time_ms=392
+response_time=927ms
+grep: write error: Broken pipe
+[?2004huser@0c03123fca78:~$ python3 -c "import re; pattern = r'response_time=(\d+)ms'; line = '2024-01-15T10:00:00Z PUT /api/v2/orders/9035 400 response_time_ms=226 upstream_response_time=115ms client_ip=192.168.2.7 request_id=131244'; match = re.search(pattern, line); print('Match:', match); print('Value:', match.group(1) if match else None)"
+[?2004lMatch: <re.Match object; span=(79, 98), match='response_time=115ms'>
+Value: 115
+[?2004huser@0c03123fca78:~$ cp /home/user/perf/filter_logs.py /home/user/perf/filter_logs.py.bak
+[?2004l[?2004huser@0c03123fca78:~$ cat > /home/user/perf/filter_logs.py << 'EOF'
+[?2004l[?2004h> #!/usr/bin/env python3
+[?2004l[?2004h> """
+[?2004l[?2004h> Filter access logs for slow requests (>500ms response time).
+[?2004l[?2004h> Reads from /var/log/gateway/access.log
+[?2004l[?2004h> Writes matching lines to /home/user/perf/slow.txt
+[?2004l[?2004h> """
+[?2004l[?2004h> 
+[?2004l[?2004h> import re
+[?2004l[?2004h> 
+[?2004l[?2004h> def filter_slow_requests():
+[?2004l[?2004h>     input_file = "/var/log/gateway/access.log"
+[?2004l[?2004h>     output_file = "/home/user/perf/slow.txt"
+[?2004l[?2004h> 
+[?2004l[?2004h>     # Pattern to match response time - handles both formats:
+[?2004l[?2004h>     # response_time=XXXms and response_time_ms=XXX
+[?2004l[?2004h>     # Uses negative lookbehind to exclude upstream_response_time
+[?2004l[?2004h>     pattern = r'(?<!upstream_)response_time(?:_ms)?=(\d+)(?:ms)?'
+[?2004l[?2004h> 
+[?2004l[?2004h>     slow_requests = []
+[?2004l[?2004h> 
+[?2004l[?2004h>     with open(input_file, 'r') as f:
+[?2004l[?2004h>         for line in f:
+[?2004l[?2004h>             match = re.search(pattern, line)
+[?2004l[?2004h>             if match:
+[?2004l[?2004h>                 response_time = int(match.group(1))
+[?2004l[?2004h>                 if response_time > 500:
+[?2004l[?2004h>                     slow_requests.append(line)
+[?2004l[?2004h> 
+[?2004l[?2004h>     with open(output_file, 'w') as f:
+[?2004l[?2004h>         f.writelines(slow_requests)
+[?2004l[?2004h> 
+[?2004l[?2004h>     print(f"Found {len(slow_requests)} slow requests (>500ms)")
+[?2004l[?2004h> 
+[?2004l[?2004h> if __name__ == "__main__":
+[?2004l[?2004h>     filter_slow_requests()
+[?2004l[?2004h> EOF
+[?2004l[?2004huser@0c03123fca78:~$ python3 -c "import re; pattern = r'(?<!upstream_)response_time(?:_ms)?=(\d+)(?:ms)?'; test1 = 'response_time_ms=226 upstream_response_time=615ms'; test2 = 'response_time=364ms upstream_response_time=1216ms'; m1 = re.search(pattern, test1); m2 = re.search(pattern, test2); print('Test1:', m1.group(1) if m1 else None); print('Test2:', m2.group(1) if m2 else None)"
+[?2004lbash: !upstream_: event not found
+[?2004huser@0c03123fca78:~$ python3 << 'PYEOF'
+[?2004l[?2004h> import re
+[?2004l[?2004h> pattern = r'(?<!upstream_)response_time(?:_ms)?=(\d+)(?:ms)?'
+[?2004l[?2004h> test1 = 'response_time_ms=226 upstream_response_time=615ms'
+[?2004l[?2004h> test2 = 'response_time=364ms upstream_response_time=1216ms'
+[?2004l[?2004h> test3 = 'response_time_ms=550 upstream_response_time=100ms'
+[?2004l[?2004h> m1 = re.search(pattern, test1)
+[?2004l[?2004h> m2 = re.search(pattern, test2)
+[?2004l[?2004h> m3 = re.search(pattern, test3)
+[?2004l[?2004h> print('Test1 (response_time_ms=226):', m1.group(1) if m1 else None)
+[?2004l[?2004h> print('Test2 (response_time=364ms):', m2.group(1) if m2 else None)
+[?2004l[?2004h> print('Test3 (response_time_ms=550):', m3.group(1) if m3 else None)
+[?2004l[?2004h> PYEOF
+[?2004lTest1 (response_time_ms=226): 226
+Test2 (response_time=364ms): 364
+Test3 (response_time_ms=550): 550
+[?2004huser@0c03123fca78:~$ python3 /home/user/perf/filter_logs.py
+[?2004lFound 187 slow requests (>500ms)
+[?2004huser@0c03123fca78:~$ head -5 /home/user/perf/slow.txt
+[?2004l2024-01-15T10:37:19Z POST /api/v1/products/6855 204 response_time=1861ms upstream_response_time=943ms client_ip=192.168.3.237 request_id=941204
+2024-01-15T10:07:49Z DELETE /api/v1/health 503 response_time=1832ms upstream_response_time=472ms client_ip=192.168.8.63 request_id=611233
+2024-01-15T10:08:56Z PUT /api/v2/recommendations 403 response_time_ms=2442 upstream_response_time=441ms client_ip=192.168.4.91 request_id=189771
+2024-01-15T10:29:23Z PUT /api/v1/settings 500 response_time=2994ms upstream_response_time=590ms client_ip=192.168.3.238 request_id=844261
+2024-01-15T10:51:57Z DELETE /api/v2/analytics 403 response_time_ms=2311 upstream_response_time=1199ms client_ip=192.168.5.150 request_id=443939
+[?2004huser@0c03123fca78:~$ grep 'response_time=364ms upstream_response_time=1216ms' /var/log/gateway/access.log
+[?2004l2024-01-15T10:01:07Z POST /api/v1/notifications 502 response_time=364ms upstream_response_time=1216ms client_ip=192.168.2.56 request_id=539898
+[?2004huser@0c03123fca78:~$ grep 'request_id=539898' /home/user/perf/slow.txt
+[?2004l[?2004huser@0c03123fca78:~$ echo "Fix Summary:"
+[?2004lFix Summary:
+[?2004huser@0c03123fca78:~$ echo "- Original issue: Script caught 4000 requests (false positives)"
+[?2004l- Original issue: Script caught 4000 requests (false positives)
+[?2004huser@0c03123fca78:~$ echo "- Root cause: Regex matched 'upstream_response_time' instead of just 'response_time'"
+[?2004l- Root cause: Regex matched 'upstream_response_time' instead of just 'response_time'
+[?2004huser@0c03123fca78:~$ echo "- Fixed regex: Added negative lookbehind to exclude upstream_response_time"
+[?2004l- Fixed regex: Added negative lookbehind to exclude upstream_response_time
+[?2004huser@0c03123fca78:~$ echo "- Also handles both log formats: response_time=XXXms and response_time_ms=XXX"
+[?2004l- Also handles both log formats: response_time=XXXms and response_time_ms=XXX
+[?2004huser@0c03123fca78:~$ echo "- Result: Now correctly identifies 187 slow requests (>500ms)"
+[?2004l- Result: Now correctly identifies 187 slow requests (>500ms)
+[?2004huser@0c03123fca78:~$ echo ""
+[?2004l
+[?2004huser@0c03123fca78:~$ wc -l /home/user/perf/slow.txt
+[?2004l187 /home/user/perf/slow.txt
+[?2004huser@0c03123fca78:~$ 

@@ -1,0 +1,84 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+root@0c902d3923de:~/auditgen# cat generate.py
+#!/usr/bin/env python3
+"""
+Audit Report Generator
+Reads audit records from data/records.yaml, validates against schema.yaml,
+and renders output to output/audit_report.md using Jinja2 template.
+"""
+
+import os
+import yaml
+import json
+from jinja2 import Environment, FileSystemLoader, Undefined
+from jsonschema import validate, ValidationError
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(BASE_DIR, "data", "records.yaml")
+SCHEMA_FILE = os.path.join(BASE_DIR, "schema.yaml")
+TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
+OUTPUT_FILE = os.path.join(BASE_DIR, "output", "audit_report.md")
+
+
+class SilentUndefined(Undefined):
+    """Custom undefined that returns empty string instead of raising error."""
+    def _fail_with_undefined_error(self, *args, **kwargs):
+        return ""
+
+    def __str__(self):
+        return ""
+
+
+def load_yaml(filepath):
+    """Load YAML file and return data."""
+    with open(filepath, 'r') as f:
+        return yaml.safe_load(f)
+
+
+def validate_records(records, schema):
+    """Validate each record against the schema."""
+    item_schema = schema.get("items", schema)
+    for i, record in enumerate(records):
+        try:
+            validate(instance=record, schema=item_schema)
+        except ValidationError as e:
+            raise ValidationError(f"Record {i} validation failed: {e.message}")
+
+
+def render_report(records, template_dir, output_file):
+    """Render the audit report using Jinja2 template."""
+    env = Environment(
+        loader=FileSystemLoader(template_dir),
+        undefined=SilentUndefined
+    )
+    template = env.get_template("report.md.j2")
+
+    output = template.render(records=records)
+
+    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    with open(output_file, 'w') as f:
+        f.write(output)
+
+    print(f"Report generated: {output_file}")
+
+
+def main():
+    # Load data
+    records = load_yaml(DATA_FILE)
+    schema = load_yaml(SCHEMA_FILE)
+
+    # Validate
+    validate_records(records, schema)
+
+    # Render
+    render_report(records, TEMPLATE_DIR, OUTPUT_FILE)
+
+
+if __name__ == "__main__":
+    main()
+root@0c902d3923de:~/auditgen#

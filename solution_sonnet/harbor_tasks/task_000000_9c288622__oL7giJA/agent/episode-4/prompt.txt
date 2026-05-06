@@ -1,0 +1,33 @@
+New Terminal Output:
+
+user@48628fe6bff9:~$ python3 << 'EOF'
+> import pytz
+> from datetime import datetime
+>
+> # Test the problematic time conversion
+> utc_time_str = '2024-03-31T01:30:00'
+> utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%dT%H:%M:%S')
+>
+> print("Testing UTC to Berlin conversion for DST transition date:")
+> print(f"UTC time (naive): {utc_dt}")
+>
+> # OLD METHOD (buggy)
+> berlin_tz = pytz.timezone('Europe/Berlin')
+> old_method = berlin_tz.localize(utc_dt)
+> print(f"OLD method (localize): {old_method} = {old_method.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
+>
+> # NEW METHOD (correct)
+> utc_tz = pytz.utc
+> utc_aware = utc_tz.localize(utc_dt)
+> new_method = utc_aware.astimezone(berlin_tz)
+> print(f"NEW method (UTC->Berlin): {new_method} = {new_method.strftime('%Y-%m-%d %H:%M:%S %Z%z')}")
+>
+> print(f"\nDifference: {(new_method - old_method).total_seconds() / 3600} hours")
+> EOF
+Testing UTC to Berlin conversion for DST transition date:
+UTC time (naive): 2024-03-31 01:30:00
+OLD method (localize): 2024-03-31 01:30:00+01:00 = 2024-03-31 01:30:00 CET+0100
+NEW method (UTC->Berlin): 2024-03-31 03:30:00+02:00 = 2024-03-31 03:30:00 CEST+0200
+
+Difference: 1.0 hours
+user@48628fe6bff9:~$

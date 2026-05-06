@@ -1,0 +1,14 @@
+{
+  "analysis": "The heredoc is still not preserving tabs properly. I need to use a different approach. Let me use sed or a Python script to create the Makefile with proper tab characters, or use printf with \\t for tabs.",
+  "plan": "I'll use a Python one-liner to write the Makefile with proper tab characters before each command line.",
+  "commands": [
+    {
+      "keystrokes": "python3 << 'PYEOF'\nwith open('Makefile', 'w') as f:\n    f.write('''# ETL Pipeline Makefile\n# Cleans CSVs, joins them, and generates summary\n\nSHELL := /bin/bash\n\n# Source files\nSOURCES := $(wildcard data/*.csv)\n# Derive clean targets from sources\nCLEAN_TARGETS := $(patsubst data/%.csv,clean/%.csv,$(SOURCES))\n\n.PHONY: all clean\n\nall: summary.csv\n\n# Pattern rule for cleaning - FIX #1: Use $@ instead of $$@\nclean/%.csv: data/%.csv\n\\t@mkdir -p clean\n\\tpython3 scripts/clean.py $< $@\n\n# Generate manifest of cleaned files - FIX #3: Depend on actual clean targets\nclean/manifest.txt: $(CLEAN_TARGETS)\n\\t@mkdir -p clean\n\\t@ls clean/*.csv 2>/dev/null > clean/manifest.txt || touch clean/manifest.txt\n\n# FIX #2: Use $(CLEAN_TARGETS) instead of $(wildcard clean/*.csv)\n# FIX #3: Add clean/manifest.txt as dependency\njoined.csv: $(CLEAN_TARGETS) clean/manifest.txt\n\\tpython3 scripts/join.py clean/manifest.txt joined.csv\n\n# FIX #4: Add config/params.yaml as dependency\nsummary.csv: joined.csv config/params.yaml\n\\tpython3 scripts/summarize.py joined.csv summary.csv\n\nclean:\n\\trm -rf clean/*.csv clean/manifest.txt joined.csv summary.csv\n''')\nPYEOF\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "make clean\n",
+      "duration": 0.1
+    }
+  ]
+}

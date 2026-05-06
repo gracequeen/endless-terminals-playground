@@ -1,0 +1,65 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+
+New Terminal Output:
+
+root@f21c690d9b5e:/home/user# ls -la /home/user/
+total 12
+drwxrwxrwx 1 root root 4096 May  5 05:23 .
+drwxr-xr-x 1 root root 4096 May  5 05:23 ..
+-rwxr-xr-x 1 root root 2028 May  5 05:23 correlate.py
+root@f21c690d9b5e:/home/user# cat /home/user/correlate.py
+#!/usr/bin/env python3
+import json
+from collections import defaultdict
+from datetime import datetime, timedelta
+
+INTERNAL_PREFIX = "10."
+WINDOW_MINUTES = 5
+THRESHOLD = 3
+
+def is_internal(ip):
+    return ip.startswith(INTERNAL_PREFIX)
+
+def parse_timestamp(ts):
+    # Bug 1: Suricata timestamps have microseconds and timezone, this format string is wrong
+    return datetime.strptime(ts, "%Y-%m-%dT%H:%M:%S")
+
+def main():
+    connections = []
+    with open("/var/log/suricata/eve.json") as f:
+        for line in f:
+            event = json.loads(line)
+            # Bug 2: Only looks at event_type == "flow", but Suricata marks
+            # completed flows as "flow" with flow.state == "closed" or "new".
+            # The script checks for "netflow" which doesn't exist in standard eve.json
+            if event.get("event_type") != "netflow":
+                continue
+            src = event.get("src_ip", "")
+            dst = event.get("dest_ip", "")  # Bug 3: Suricata uses "dest_ip", not "dst_ip" - this is actually correct but see below
+            # Bug 4: script uses "dst_ip" in the variable name but reads "dest_ip" -
+            # Actually the real bug is the event_type check above means this never runs
+            if is_internal(src) and is_internal(dst) and src != dst:
+                ts = parse_timestamp(event.get("timestamp", ""))
+                connections.append((ts, src, dst))
+
+    # Window-based grouping
+    connections.sort()
+    flagged = set()
+    for i, (ts, src, dst) in enumerate(connections):
+        window_end = ts + timedelta(minutes=WINDOW_MINUTES)
+        dsts_in_window = set()
+        for j in range(i, len(connections)):
+            if connections[j][0] > window_end:
+                break
+            if connections[j][1] == src:
+                dsts_in_window.add(connections[j][2])
+        if len(dsts_in_window) > THRESHOLD:
+            flagged.add(src)
+
+    for host in sorted(flagged):
+        print(f"LATERAL_MOVEMENT_CANDIDATE: {host}")
+
+if __name__ == "__main__":
+    main()
+root@f21c690d9b5e:/home/user#

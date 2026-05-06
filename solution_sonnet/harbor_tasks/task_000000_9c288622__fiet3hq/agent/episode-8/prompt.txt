@@ -1,0 +1,131 @@
+New Terminal Output:
+
+user@a2bf6ce81f22:~/scheduler$ cat > demonstrate_fix.py << 'EOF'
+me)")
+print("  - This TREATS the datetime AS IF it's already in Berlin timezone")
+print("  - It doesn't CONVERT from UTC to Berlin")
+print()
+print("The correct code uses: UTC_TZ.localize(naive_dt).astimezone(BERLIN_TZ)")
+print("  - First makes the datetime UTC-aware")
+print("  - Then CONVERTS it to Berlin timezone")
+print()
+print("This bug caused a 1-hour offset, especially problematic during DST")
+print("transitions when the 2am-3am hour is skipped or repeated.")
+EOF
+> #!/usr/bin/env python3
+> """Demonstrate the bug fix for timezone conversion."""
+>
+> import pytz
+> from datetime import datetime
+>
+> BERLIN_TZ = pytz.timezone('Europe/Berlin')
+> UTC_TZ = pytz.utc
+>
+> def buggy_convert_to_berlin(utc_time_str):
+>     """BUGGY: The old incorrect way - treats UTC time as Berlin time."""
+>     utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%dT%H:%M:%S')
+>     berlin_dt = BERLIN_TZ.localize(utc_dt)  # BUG: This is wrong!
+>     return berlin_dt
+>
+> def correct_convert_to_berlin(utc_time_str):
+>     """FIXED: The correct way - converts FROM UTC TO Berlin."""
+>     utc_dt = datetime.strptime(utc_time_str, '%Y-%m-%dT%H:%M:%S')
+>     utc_dt_aware = UTC_TZ.localize(utc_dt)  # Make it UTC-aware
+>     berlin_dt = utc_dt_aware.astimezone(BERLIN_TZ)  # Convert to Berlin
+>     return berlin_dt
+>
+> print("=" * 70)
+> print("DEMONSTRATING THE BUG FIX")
+> print("=" * 70)
+> print()
+>
+> # Test with the problematic maintenance window time
+> test_cases = [
+>     ("2024-03-31T01:30:00", "Maintenance Window - DST transition day"),
+>     ("2024-03-31T08:00:00", "Daily Standup - DST transition day"),
+>     ("2024-06-15T10:00:00", "Summer meeting"),
+>     ("2024-12-15T10:00:00", "Winter meeting"),
+> ]
+>
+> for utc_time_str, description in test_cases:
+>     print(f"Test: {description}")
+>     print(f"UTC Time: {utc_time_str}")
+>     print()
+>
+>     buggy_result = buggy_convert_to_berlin(utc_time_str)
+>     correct_result = correct_convert_to_berlin(utc_time_str)
+>
+>     print(f"  BUGGY (old):   {buggy_result.strftime('%Y-%m-%d %H:%M:%S %Z (UTC%z)')}")
+>     print(f"  CORRECT (new): {correct_result.strftime('%Y-%m-%d %H:%M:%S %Z (UTC%z)')}")
+>
+>     # Calculate the difference
+>     diff = (correct_result - buggy_result).total_seconds() / 3600
+>     if diff != 0:
+>         print(f"  ⚠️  DIFFERENCE: {abs(diff):.1f} hour(s) off!")
+>     else:
+>         print(f"  ✓ No difference (both happen to be correct)")
+>     print()
+>
+> print("=" * 70)
+> print("EXPLANATION OF THE BUG:")
+> print("=" * 70)
+> print()
+> print("The buggy code used: BERLIN_TZ.localize(naive_utc_datetime)")
+> print("  - This TREATS the datetime AS IF it's already in Berlin timezone")
+> print("  - It doesn't CONVERT from UTC to Berlin")
+> print()
+> print("The correct code uses: UTC_TZ.localize(naive_dt).astimezone(BERLIN_TZ)")
+> print("  - First makes the datetime UTC-aware")
+> print("  - Then CONVERTS it to Berlin timezone")
+> print()
+> print("This bug caused a 1-hour offset, especially problematic during DST")
+> print("transitions when the 2am-3am hour is skipped or repeated.")
+> EOF
+user@a2bf6ce81f22:~/scheduler$ python3 demonstrate_fix.py
+======================================================================
+DEMONSTRATING THE BUG FIX
+======================================================================
+
+Test: Maintenance Window - DST transition day
+UTC Time: 2024-03-31T01:30:00
+
+  BUGGY (old):   2024-03-31 01:30:00 CET (UTC+0100)
+  CORRECT (new): 2024-03-31 03:30:00 CEST (UTC+0200)
+  ⚠️  DIFFERENCE: 1.0 hour(s) off!
+
+Test: Daily Standup - DST transition day
+UTC Time: 2024-03-31T08:00:00
+
+  BUGGY (old):   2024-03-31 08:00:00 CEST (UTC+0200)
+  CORRECT (new): 2024-03-31 10:00:00 CEST (UTC+0200)
+  ⚠️  DIFFERENCE: 2.0 hour(s) off!
+
+Test: Summer meeting
+UTC Time: 2024-06-15T10:00:00
+
+  BUGGY (old):   2024-06-15 10:00:00 CEST (UTC+0200)
+  CORRECT (new): 2024-06-15 12:00:00 CEST (UTC+0200)
+  ⚠️  DIFFERENCE: 2.0 hour(s) off!
+
+Test: Winter meeting
+UTC Time: 2024-12-15T10:00:00
+
+  BUGGY (old):   2024-12-15 10:00:00 CET (UTC+0100)
+  CORRECT (new): 2024-12-15 11:00:00 CET (UTC+0100)
+  ⚠️  DIFFERENCE: 1.0 hour(s) off!
+
+======================================================================
+EXPLANATION OF THE BUG:
+======================================================================
+
+The buggy code used: BERLIN_TZ.localize(naive_utc_datetime)
+  - This TREATS the datetime AS IF it's already in Berlin timezone
+  - It doesn't CONVERT from UTC to Berlin
+
+The correct code uses: UTC_TZ.localize(naive_dt).astimezone(BERLIN_TZ)
+  - First makes the datetime UTC-aware
+  - Then CONVERTS it to Berlin timezone
+
+This bug caused a 1-hour offset, especially problematic during DST
+transitions when the 2am-3am hour is skipped or repeated.
+user@a2bf6ce81f22:~/scheduler$

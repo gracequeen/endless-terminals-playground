@@ -1,0 +1,83 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+I have no name!@2a680464a6b0:/home/user/policygate$ cat validate.sh
+#!/bin/bash
+#
+# Policy validation script
+# Applies patches from incoming/ and validates against allowlist
+#
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASELINE_DIR="$SCRIPT_DIR/baseline"
+INCOMING_DIR="$SCRIPT_DIR/incoming"
+ALLOWLIST="$SCRIPT_DIR/allowlist.txt"
+LIB_DIR="$SCRIPT_DIR/lib"
+
+# Track overall result
+OVERALL_RESULT=0
+PASS_COUNT=0
+FAIL_COUNT=0
+
+echo "=========================================="
+echo "Policy-as-Code Validation"
+echo "=========================================="
+echo ""
+
+# Process each patch
+for patch_file in "$INCOMING_DIR"/*.patch; do
+    if [ ! -f "$patch_file" ]; then
+        echo "No patch files found in $INCOMING_DIR"
+        exit 0
+    fi
+
+    patch_name=$(basename "$patch_file")
+    echo "Processing: $patch_name"
+
+    # Create temporary working directory
+    WORKDIR=$(mktemp -d)
+    trap "rm -rf $WORKDIR" EXIT
+
+    # Copy baseline to working directory
+    cp -r "$BASELINE_DIR"/* "$WORKDIR/"
+
+    # Apply the patch
+    cd "$WORKDIR"
+    if ! patch -p1 < "$patch_file" > /dev/null 2>&1; then
+        echo "  Status: FAIL (patch failed to apply)"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        OVERALL_RESULT=1
+        rm -rf "$WORKDIR"
+        trap - EXIT
+        echo ""
+        continue
+    fi
+    cd "$SCRIPT_DIR"
+
+    # Run diff check
+    if python3 "$LIB_DIR/diff_check.py" "$WORKDIR" "$BASELINE_DIR" "$ALLOWLIST" 2>&1; then
+        echo "  Status: PASS"
+        PASS_COUNT=$((PASS_COUNT + 1))
+    else
+        echo "  Status: FAIL (unauthorized modification detected)"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        OVERALL_RESULT=1
+    fi
+
+    # Cleanup
+    rm -rf "$WORKDIR"
+    trap - EXIT
+    echo ""
+done
+
+echo "=========================================="
+echo "Summary: $PASS_COUNT passed, $FAIL_COUNT failed"
+echo "=========================================="
+
+exit $OVERALL_RESULT
+I have no name!@2a680464a6b0:/home/user/policygate$

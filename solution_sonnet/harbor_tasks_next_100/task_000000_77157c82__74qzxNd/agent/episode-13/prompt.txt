@@ -1,0 +1,94 @@
+New Terminal Output:
+
+root@609cf789e441:/home/user/logpipe# cat > FIX_SUMMARY.md << 'EOF'
+> # Log Filter Bug Fix Summary
+>
+> ## Problem
+> - 40% of ERROR logs from payment-svc were being dropped
+> - They appeared in raw.log but not in errors.log
+> - Auth-service and inventory-service ERROR logs were captured correctly
+>
+> ## Root Cause
+> The `classify_line()` function in filter.py had overly broad logic to detect structured logs:
+>
+> ```python
+> if 'T' in line[:25] and ':' in line[:25]:
+>     return 'structured'
+> ```
+>
+> This incorrectly classified payment-svc logs as "structured" because:
+> - Payment-svc uses ISO 8601 timestamps: `2024-01-15T08:48:40+00:00 [ERROR] ...`
+> - The 'T' in the timestamp and ':' in the time triggered the false positive
+> - These logs were routed to structured.log instead of being processed by severity
+>
+> Auth-service and inventory-service use different timestamp format:
+> - `[ERROR] 2024-01-15 08:09:25 service=auth-service ...`
+> - No 'T' in first 25 chars, so they were correctly classified as plaintext
+>
+> ## Solution
+> Simplified the classify_line() function to only detect actual JSON:
+>
+> ```python
+> def classify_line(line):
+>     stripped = line.strip()
+>     if stripped.startswith('{') and stripped.endswith('}'):
+>         return 'structured'
+>     return 'plaintext'
+> ```
+>
+> ## Results
+> - Payment-svc ERROR logs: 76/76 now in errors.log (was ~45/76 before)
+> - Auth-service ERROR logs: 23/23 in errors.log (unchanged)
+> - Inventory-service ERROR logs: 28/28 in errors.log (unchanged)
+> - structured.log now only contains actual JSON logs (metrics-collector)
+>
+> ## Files Modified
+> - `/home/user/logpipe/filter.py` - Fixed classify_line() function
+> - Backup saved as `filter.py.backup`
+> EOF
+root@609cf789e441:/home/user/logpipe# cat FIX_SUMMARY.md
+# Log Filter Bug Fix Summary
+
+## Problem
+- 40% of ERROR logs from payment-svc were being dropped
+- They appeared in raw.log but not in errors.log
+- Auth-service and inventory-service ERROR logs were captured correctly
+
+## Root Cause
+The `classify_line()` function in filter.py had overly broad logic to detect structured logs:
+
+```python
+if 'T' in line[:25] and ':' in line[:25]:
+    return 'structured'
+```
+
+This incorrectly classified payment-svc logs as "structured" because:
+- Payment-svc uses ISO 8601 timestamps: `2024-01-15T08:48:40+00:00 [ERROR] ...`
+- The 'T' in the timestamp and ':' in the time triggered the false positive
+- These logs were routed to structured.log instead of being processed by severity
+
+Auth-service and inventory-service use different timestamp format:
+- `[ERROR] 2024-01-15 08:09:25 service=auth-service ...`
+- No 'T' in first 25 chars, so they were correctly classified as plaintext
+
+## Solution
+Simplified the classify_line() function to only detect actual JSON:
+
+```python
+def classify_line(line):
+    stripped = line.strip()
+    if stripped.startswith('{') and stripped.endswith('}'):
+        return 'structured'
+    return 'plaintext'
+```
+
+## Results
+- Payment-svc ERROR logs: 76/76 now in errors.log (was ~45/76 before)
+- Auth-service ERROR logs: 23/23 in errors.log (unchanged)
+- Inventory-service ERROR logs: 28/28 in errors.log (unchanged)
+- structured.log now only contains actual JSON logs (metrics-collector)
+
+## Files Modified
+- `/home/user/logpipe/filter.py` - Fixed classify_line() function
+- Backup saved as `filter.py.backup`
+root@609cf789e441:/home/user/logpipe#

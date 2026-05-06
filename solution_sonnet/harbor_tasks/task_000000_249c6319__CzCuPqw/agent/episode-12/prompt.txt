@@ -1,0 +1,31 @@
+New Terminal Output:
+
+root@3955e54a7bf9:/home/user/etl# grep 'TXN-XZAREIYA\|TXN-YRID3DNK\|TXN-D76SZN9D' output/transactions.csv
+TXN-XZAREIYA,2024-06-27T00:00:00,4188.53,EUR,Marketing,European supplier
+TXN-YRID3DNK,2024-04-07T00:00:00,9304.18,EUR,Engineering,European conference
+TXN-D76SZN9D,2024-01-25T00:00:00,6114.59,EUR,Legal,International shipping
+root@3955e54a7bf9:/home/user/etl# python3 << 'EOF'
+> import json
+> import csv
+>
+> # Calculate total from JSON
+> with open('input/transactions.json') as f:
+>     json_data = json.load(f)
+>     json_total = 0
+>     for txn in json_data:
+>         amount_str = txn['amount'].replace('$', '').replace('€', '').replace('£', '').replace('¥', '').replace(',', '')
+>         json_total += float(amount_str)
+>
+> # Calculate total from CSV
+> with open('output/transactions.csv') as f:
+>     reader = csv.DictReader(f)
+>     csv_total = sum(float(row['amount']) for row in reader)
+>
+> print(f"JSON total: ${json_total:,.2f}")
+> print(f"CSV total:  ${csv_total:,.2f}")
+> print(f"Match: {abs(json_total - csv_total) < 0.01}")
+> EOF
+JSON total: $1,823,421.34
+CSV total:  $1,823,421.34
+Match: True
+root@3955e54a7bf9:/home/user/etl#

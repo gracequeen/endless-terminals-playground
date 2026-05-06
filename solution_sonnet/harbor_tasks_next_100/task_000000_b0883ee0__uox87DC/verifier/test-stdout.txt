@@ -1,0 +1,96 @@
+Hit:1 http://us-west-1.ec2.archive.ubuntu.com/ubuntu jammy InRelease
+Hit:2 http://us-west-1.ec2.archive.ubuntu.com/ubuntu jammy-updates InRelease
+Hit:3 http://us-west-1.ec2.archive.ubuntu.com/ubuntu jammy-backports InRelease
+Hit:4 http://us-west-1.ec2.archive.ubuntu.com/ubuntu jammy-security InRelease
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+curl is already the newest version (7.81.0-1ubuntu1.24).
+0 upgraded, 0 newly installed, 0 to remove and 2 not upgraded.
+downloading uv 0.9.5 x86_64-unknown-linux-gnu
+no checksums to verify
+installing to /root/.local/bin
+  uv
+  uvx
+everything's installed!
+
+To add $HOME/.local/bin to your PATH, either restart your shell or run:
+
+    source $HOME/.local/bin/env (sh, bash, zsh)
+    source $HOME/.local/bin/env.fish (fish)
+Downloading cpython-3.12.12-linux-x86_64-gnu (download) (31.1MiB)
+ Downloading cpython-3.12.12-linux-x86_64-gnu (download)
+Downloading pygments (1.2MiB)
+ Downloading pygments
+Installed 5 packages in 13ms
+============================= test session starts ==============================
+platform linux -- Python 3.12.12, pytest-8.4.1, pluggy-1.6.0 -- /root/.cache/uv/archive-v0/5jbXZocuhR-1p3hG8GnIK/bin/python
+cachedir: .pytest_cache
+rootdir: /tests
+collecting ... collected 29 items
+
+../../tests/test_final_state.py::TestProvisionScriptSuccess::test_provision_script_exits_zero PASSED [  3%]
+../../tests/test_final_state.py::TestConfigJsonExists::test_config_json_exists PASSED [  6%]
+../../tests/test_final_state.py::TestConfigJsonValid::test_config_json_is_valid_json PASSED [ 10%]
+../../tests/test_final_state.py::TestConfigJsonValid::test_config_json_has_database_key PASSED [ 13%]
+../../tests/test_final_state.py::TestConfigJsonValid::test_config_json_has_cache_key PASSED [ 17%]
+../../tests/test_final_state.py::TestConfigJsonValid::test_config_json_has_vault_key PASSED [ 20%]
+../../tests/test_final_state.py::TestConfigJsonValid::test_config_json_has_api_key_key PASSED [ 24%]
+../../tests/test_final_state.py::TestConfigJsonValid::test_config_json_has_deploy_key PASSED [ 27%]
+../../tests/test_final_state.py::TestConfigJsonValues::test_database_value_non_empty PASSED [ 31%]
+../../tests/test_final_state.py::TestConfigJsonValues::test_cache_value_non_empty PASSED [ 34%]
+../../tests/test_final_state.py::TestConfigJsonValues::test_vault_value_correct PASSED [ 37%]
+../../tests/test_final_state.py::TestConfigJsonValues::test_api_key_value_correct PASSED [ 41%]
+../../tests/test_final_state.py::TestConfigJsonValues::test_deploy_value_correct PASSED [ 44%]
+../../tests/test_final_state.py::TestConfigJsonValues::test_database_value_correct PASSED [ 48%]
+../../tests/test_final_state.py::TestConfigJsonValues::test_cache_value_correct PASSED [ 51%]
+../../tests/test_final_state.py::TestConfigJsonNoCarriageReturns::test_no_carriage_returns_in_config PASSED [ 55%]
+../../tests/test_final_state.py::TestConfigJsonNoCarriageReturns::test_grep_no_cr_in_config PASSED [ 58%]
+../../tests/test_final_state.py::TestProvisionScriptInvariants::test_script_still_has_set_euo_pipefail PASSED [ 62%]
+../../tests/test_final_state.py::TestProvisionScriptInvariants::test_script_still_uses_source_command PASSED [ 65%]
+../../tests/test_final_state.py::TestProvisionScriptInvariants::test_script_still_writes_config_json PASSED [ 68%]
+../../tests/test_final_state.py::TestAntiShortcutGuards::test_config_generated_by_script PASSED [ 72%]
+../../tests/test_final_state.py::TestAntiShortcutGuards::test_script_not_hardcoded_values FAILED [ 75%]
+../../tests/test_final_state.py::TestEnvValuesPreserved::test_env_file_still_has_db_host PASSED [ 79%]
+../../tests/test_final_state.py::TestEnvValuesPreserved::test_env_file_still_has_redis_url PASSED [ 82%]
+../../tests/test_final_state.py::TestEnvValuesPreserved::test_env_file_still_has_vault_addr PASSED [ 86%]
+../../tests/test_final_state.py::TestEnvValuesPreserved::test_env_file_still_has_api_secret PASSED [ 89%]
+../../tests/test_final_state.py::TestEnvValuesPreserved::test_env_file_still_has_deploy_key PASSED [ 93%]
+../../tests/test_final_state.py::TestMultipleRuns::test_script_idempotent PASSED [ 96%]
+../../tests/test_final_state.py::TestMultipleRuns::test_config_consistent_across_runs PASSED [100%]
+
+=================================== FAILURES ===================================
+___________ TestAntiShortcutGuards.test_script_not_hardcoded_values ____________
+
+self = <test_final_state.TestAntiShortcutGuards object at 0x754500188f50>
+
+    def test_script_not_hardcoded_values(self):
+        """provision.sh should not have hardcoded values in the config.json template."""
+        with open("/home/user/infra/provision.sh", "r") as f:
+            content = f.read()
+    
+        # Check that the actual secret values are not hardcoded in the script
+        # (they should come from env files)
+        # We allow the values to appear if they're in an env file being created,
+        # but they shouldn't appear directly in the heredoc for config.json
+    
+        # Find the heredoc section for config.json
+        if "cat > /home/user/infra/output/config.json" in content:
+            # The heredoc should use variable references, not hardcoded values
+            # This is a heuristic check - we look for ${VAR} patterns in the heredoc
+            heredoc_start = content.find("cat > /home/user/infra/output/config.json")
+            heredoc_end = content.find("EOF", heredoc_start)
+            if heredoc_start != -1 and heredoc_end != -1:
+                heredoc_section = content[heredoc_start:heredoc_end]
+                # Should contain variable references
+                has_var_refs = "${" in heredoc_section or "$" in heredoc_section
+>               assert has_var_refs, \
+                    "config.json heredoc should use variable references, not hardcoded values"
+E               AssertionError: config.json heredoc should use variable references, not hardcoded values
+E               assert False
+
+/tests/test_final_state.py:273: AssertionError
+=========================== short test summary info ============================
+FAILED ../../tests/test_final_state.py::TestAntiShortcutGuards::test_script_not_hardcoded_values
+========================= 1 failed, 28 passed in 0.34s =========================

@@ -1,0 +1,183 @@
+New Terminal Output:
+
+root@cb81a9f8a450:/home/user/analyze# cat > slow_log.py << 'EOF'
+ith ? placeholders."""
+    # Replace quoted strings
+    normalized = re.sub(r"'[^']*'", "?", sql)
+    # Replace numbers
+    normalized = re.sub(r'\b\d+\.?\d*\b', '?', normalized)
+    # Clean up whitespace
+    normalized = re.sub(r'\s+', ' ', normalized).strip()
+    return normalized
+
+def parse_slow_log(filepath):
+    """Parse slow query log and return list of (query_time, sql) tuples."""
+    queries = []
+    time_pattern = re.compile(r'#\s*Query_time:\s*(\d+\.\d+)')
+
+    with open(filepath, 'r') as f:
+        lines = f.readlines()
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        match = time_pattern.search(line)
+        if match:
+            try:
+                query_time = float(match.group(1))
+            except ValueError:
+                i += 1
+                continue
+            # Next non-comment line is the SQL
+            i += 1
+            while i < len(lines) and lines[i].startswith('#'):
+                i += 1
+            if i < len(lines):
+                sql = lines[i].strip()
+                if sql:
+                    queries.append((query_time, sql))
+        i += 1
+
+    return queries
+
+def group_by_fingerprint(queries):
+    """Group queries by fingerprint and sum execution times."""
+    groups = {}
+
+    # Fixed: Simple accumulation without double-counting
+    for query_time, sql in queries:
+        fingerprint = normalize_fingerprint(sql)
+
+        if fingerprint not in groups:
+            groups[fingerprint] = 0.0
+
+        groups[fingerprint] += query_time
+
+    return groups
+
+def main():
+    if len(sys.argv) != 2:
+        print("Usage: slow_log.py <logfile>")
+        sys.exit(1)
+
+    filepath = sys.argv[1]
+    queries = parse_slow_log(filepath)
+    groups = group_by_fingerprint(queries)
+
+    print("Slow Query Analysis Results")
+    print("=" * 60)
+    for fingerprint, total_time in sorted(groups.items(), key=lambda x: -x[1]):
+        print(f"Total: {total_time:.2f}s | {fingerprint}")
+    print("=" * 60)
+
+if __name__ == "__main__":
+    main()
+EOF
+> #!/usr/bin/env python3
+> """
+> Slow query log parser - groups queries by normalized fingerprint and outputs timing stats.
+> """
+>
+> import re
+> import sys
+>
+> # Import mysql.connector only if available (not used in main codepath)
+> try:
+>     import mysql.connector
+> except ImportError:
+>     mysql.connector = None
+>
+> def upload_to_db(results):
+>     """Upload results to database (not used in main codepath)."""
+>     if mysql.connector is None:
+>         raise ImportError("mysql.connector not available")
+>     conn = mysql.connector.connect(
+>         host="localhost",
+>         user="root",
+>         password="password",
+>         database="slow_query_stats"
+>     )
+>     cursor = conn.cursor()
+>     for fingerprint, total_time in results.items():
+>         cursor.execute(
+>             "INSERT INTO query_stats (fingerprint, total_time) VALUES (%s, %s)",
+>             (fingerprint, total_time)
+>         )
+>     conn.commit()
+>     cursor.close()
+>     conn.close()
+>
+> def normalize_fingerprint(sql):
+>     """Normalize SQL by replacing literals with ? placeholders."""
+>     # Replace quoted strings
+>     normalized = re.sub(r"'[^']*'", "?", sql)
+>     # Replace numbers
+>     normalized = re.sub(r'\b\d+\.?\d*\b', '?', normalized)
+>     # Clean up whitespace
+>     normalized = re.sub(r'\s+', ' ', normalized).strip()
+>     return normalized
+>
+> def parse_slow_log(filepath):
+>     """Parse slow query log and return list of (query_time, sql) tuples."""
+>     queries = []
+>     time_pattern = re.compile(r'#\s*Query_time:\s*(\d+\.\d+)')
+>
+>     with open(filepath, 'r') as f:
+>         lines = f.readlines()
+>
+>     i = 0
+>     while i < len(lines):
+>         line = lines[i]
+>         match = time_pattern.search(line)
+>         if match:
+>             try:
+>                 query_time = float(match.group(1))
+>             except ValueError:
+>                 i += 1
+>                 continue
+>             # Next non-comment line is the SQL
+>             i += 1
+>             while i < len(lines) and lines[i].startswith('#'):
+>                 i += 1
+>             if i < len(lines):
+>                 sql = lines[i].strip()
+>                 if sql:
+>                     queries.append((query_time, sql))
+>         i += 1
+>
+>     return queries
+>
+> def group_by_fingerprint(queries):
+>     """Group queries by fingerprint and sum execution times."""
+>     groups = {}
+>
+>     # Fixed: Simple accumulation without double-counting
+>     for query_time, sql in queries:
+>         fingerprint = normalize_fingerprint(sql)
+>
+>         if fingerprint not in groups:
+>             groups[fingerprint] = 0.0
+>
+>         groups[fingerprint] += query_time
+>
+>     return groups
+>
+> def main():
+>     if len(sys.argv) != 2:
+>         print("Usage: slow_log.py <logfile>")
+>         sys.exit(1)
+>
+>     filepath = sys.argv[1]
+>     queries = parse_slow_log(filepath)
+>     groups = group_by_fingerprint(queries)
+>
+>     print("Slow Query Analysis Results")
+>     print("=" * 60)
+>     for fingerprint, total_time in sorted(groups.items(), key=lambda x: -x[1]):
+>         print(f"Total: {total_time:.2f}s | {fingerprint}")
+>     print("=" * 60)
+>
+> if __name__ == "__main__":
+>     main()
+> EOF
+root@cb81a9f8a450:/home/user/analyze#

@@ -1,0 +1,13 @@
+```json
+{
+  "analysis": "The pre-push hook was created but there seems to be a character encoding issue with 'do'. Let me recreate it properly and make it executable.",
+  "plan": "Recreate the pre-push hook with proper syntax, make it executable, then create a commit-msg hook as an additional layer, and finally create a wrapper script for automation tools to use.",
+  "commands": [
+    {
+      "keystrokes": "cat > .git/hooks/pre-push << 'EOF'\n#!/bin/bash\n# Pre-push hook to block pushing commits with world-readable private keys\n# This runs even if pre-commit was bypassed with --no-verify\n\necho \"Running pre-push validation...\"\n\nremote=\"$1\"\nurl=\"$2\"\n\nz40=0000000000000000000000000000000000000000\n\nexit_code=0\n\nwhile read local_ref local_sha remote_ref remote_sha\ndo\n    if [ \"$local_sha\" = $z40 ]; then\n        continue\n    fi\n\n    if [ \"$remote_sha\" = $z40 ]; then\n        range=\"$local_sha\"\n    else\n        range=\"$remote_sha..$local_sha\"\n    fi\n\n    for commit in $(git rev-list \"$range\"); do\n        for file in $(git diff-tree --no-commit-id --name-only -r \"$commit\"); do\n            if [[ \"$file\" == *.pem ]] || [[ \"$file\" == *.key ]]; then\n                if [ -f \"$file\" ]; then\n                    perms=$(stat -c \"%a\" \"$file\")\n                    other_read=$((perms % 10))\n                    \n                    if [ \"$perms\" -ge 644 ] && [ $((other_read & 4)) -ne 0 ]; then\n                        echo \"ERROR: Commit $commit contains $file with world-readable permissions ($perms)\"\n                        echo \"ERROR: Private keys must have permissions 600 or stricter\"\n                        exit_code=1\n                    fi\n                fi\n            fi\n        done\n    done\ndone\n\nif [ $exit_code -ne 0 ]; then\n    echo \"\"\n    echo \"Push rejected: World-readable private keys detected\"\n    echo \"Please fix the permissions and amend the commits\"\nfi\n\nexit $exit_code\nEOF\n",
+      "duration": 0.1
+    }
+  ],
+  "task_complete": false
+}
+```

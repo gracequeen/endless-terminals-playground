@@ -1,4 +1,5 @@
 FROM ubuntu:22.04
+RUN sed -i "s|archive.ubuntu.com|us-west-1.ec2.archive.ubuntu.com|g; s|security.ubuntu.com|us-west-1.ec2.archive.ubuntu.com|g" /etc/apt/sources.list 2>/dev/null || true
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -121,6 +122,7 @@ DROP TABLE IF EXISTS responses_clean;
 CREATE TABLE responses_clean AS
 SELECT r.*
 FROM responses r
+RUN sed -i "s|archive.ubuntu.com|us-west-1.ec2.archive.ubuntu.com|g; s|security.ubuntu.com|us-west-1.ec2.archive.ubuntu.com|g" /etc/apt/sources.list 2>/dev/null || true
 INNER JOIN (
     SELECT email, MIN(submitted_at) as first_sub
     FROM responses

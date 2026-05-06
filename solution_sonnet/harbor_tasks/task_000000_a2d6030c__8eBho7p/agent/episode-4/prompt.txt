@@ -1,0 +1,109 @@
+New Terminal Output:
+
+I have no name!@b2db95d242f0:/home/user/releaser$ cat release.py
+#!/usr/bin/env python3
+"""
+Release automation tool - main entry point.
+"""
+
+import os
+import subprocess
+import yaml
+
+from semver import Version
+from parse_commits import get_commits_since_tag, determine_bump_type
+from changelog import generate_changelog_entry, update_changelog
+
+
+def load_config(config_path='releaser.yaml'):
+    """Load configuration from YAML file."""
+    with open(config_path, 'r') as f:
+        return yaml.safe_load(f)
+
+
+def get_latest_tag(repo_path='.', prefix='v'):
+    """Get the latest version tag from the repository."""
+    try:
+        result = subprocess.run(
+            ['git', 'tag', '-l', f'{prefix}*', '--sort=-v:refname'],
+            capture_output=True,
+            text=True,
+            cwd=repo_path,
+            check=True
+        )
+        tags = result.stdout.strip().split('\n')
+        return tags[0] if tags and tags[0] else None
+    except subprocess.CalledProcessError:
+        return None
+
+
+def main():
+    """Main release workflow."""
+    # Load configuration
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(script_dir, 'releaser.yaml')
+    config = load_config(config_path)
+
+    repo_path = os.path.join(script_dir, 'project')
+    tag_prefix = config.get('tag_prefix', 'v')
+    changelog_path = config.get('changelog_path', './CHANGELOG.md')
+
+    # Make changelog path absolute relative to script dir
+    if not os.path.isabs(changelog_path):
+        changelog_path = os.path.join(script_dir, changelog_path)
+
+    # Get current version from latest tag
+    latest_tag = get_latest_tag(repo_path, tag_prefix)
+    if not latest_tag:
+        print("No existing version tag found, starting at 0.1.0")
+        current_version = Version("0.0.0", config)
+        latest_tag = "v0.0.0"
+    else:
+        print(f"Current version: {latest_tag}")
+        current_version = Version(latest_tag, config)
+
+    # Get commits since last tag
+    commits = get_commits_since_tag(latest_tag, repo_path)
+    if not commits:
+        print("No new commits since last release")
+        return
+
+    print(f"Found {len(commits)} commit(s) since {latest_tag}")
+
+    # Determine bump type
+    bump_type = determine_bump_type(commits)
+    print(f"Recommended bump type: {bump_type}")
+
+    # Check if major bump is allowed by policy
+    if bump_type == 'major' and not current_version.can_bump_major():
+        print(f"Warning: major bump requested but blocked by policy, using minor")
+        bump_type = 'minor'
+
+    # Calculate new version
+    if bump_type == 'major':
+        new_version = current_version.bump_major()
+    elif bump_type == 'minor':
+        new_version = current_version.bump_minor()
+    else:
+        new_version = current_version.bump_patch()
+
+    print(f"New version: {new_version}")
+
+    # Generate changelog entry
+    changelog_entry = generate_changelog_entry(str(new_version), commits, repo_path)
+
+    # Update changelog
+    update_changelog(changelog_path, changelog_entry)
+    print(f"Updated changelog at {changelog_path}")
+
+    print(f"\nRelease {new_version} prepared successfully!")
+    print(f"Next steps:")
+    print(f"  1. Review the changelog")
+    print(f"  2. Commit the changes")
+    print(f"  3. Create tag: git tag {tag_prefix}{new_version}")
+    print(f"  4. Push: git push && git push --tags")
+
+
+if __name__ == '__main__':
+    main()
+I have no name!@b2db95d242f0:/home/user/releaser$

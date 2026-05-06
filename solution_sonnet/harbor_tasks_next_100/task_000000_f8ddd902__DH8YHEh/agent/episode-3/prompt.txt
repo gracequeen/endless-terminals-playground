@@ -1,0 +1,92 @@
+New Terminal Output:
+
+root@8893f7e9b939:/home/user/edge-gateway# cat > gateway.py << 'EOF'
+Received: {message.payload}")
+
+async def start_mqtt(app):
+    """Start MQTT client as background task"""
+    app['mqtt_task'] = asyncio.create_task(mqtt_loop())
+
+async def cleanup_mqtt(app):
+    """Cleanup MQTT client on shutdown"""
+    if 'mqtt_task' in app:
+        app['mqtt_task'].cancel()
+        try:
+            await app['mqtt_task']
+        except asyncio.CancelledError:
+            pass
+
+def main():
+    app = create_app()
+    app.on_startup.append(start_mqtt)
+    app.on_cleanup.append(cleanup_mqtt)
+
+    # Run HTTP server properly with logging
+    with open('/home/user/edge-gateway/logs/gateway.log', 'a') as log:
+        log.write('Starting gateway server on port 8080\n')
+
+    web.run_app(app, host='0.0.0.0', port=8080, print=lambda x: open('/home/user/edge-gateway/logs/gateway.log', 'a').write(x + '\n'))
+
+if __name__ == '__main__':
+    main()
+EOF
+> import asyncio
+> from aiohttp import web
+> import aiomqtt
+>
+> mqtt_client = None
+>
+> async def health_handler(request):
+>     if mqtt_client and mqtt_client._client.is_connected():
+>         return web.json_response({"status": "healthy", "mqtt": "connected"})
+>     return web.json_response({"status": "degraded", "mqtt": "disconnected"}, status=503)
+>
+> async def sensor_handler(request):
+>     data = await request.json()
+>     if mqtt_client:
+>         await mqtt_client.publish("sensors/data", str(data))
+>     return web.json_response({"accepted": True})
+>
+> def create_app():
+>     app = web.Application()
+>     app.router.add_get('/health', health_handler)
+>     app.router.add_post('/sensor', sensor_handler)
+>     return app
+>
+> async def mqtt_loop():
+>     global mqtt_client
+>     async with aiomqtt.Client("localhost", 1883) as client:
+>         mqtt_client = client
+>         # Subscribe to a topic to keep connection alive
+>         await client.subscribe("sensors/#")
+>         async for message in client.messages:
+>             print(f"Received: {message.payload}")
+>
+> async def start_mqtt(app):
+>     """Start MQTT client as background task"""
+>     app['mqtt_task'] = asyncio.create_task(mqtt_loop())
+>
+> async def cleanup_mqtt(app):
+>     """Cleanup MQTT client on shutdown"""
+>     if 'mqtt_task' in app:
+>         app['mqtt_task'].cancel()
+>         try:
+>             await app['mqtt_task']
+>         except asyncio.CancelledError:
+>             pass
+>
+> def main():
+>     app = create_app()
+>     app.on_startup.append(start_mqtt)
+>     app.on_cleanup.append(cleanup_mqtt)
+>
+>     # Run HTTP server properly with logging
+>     with open('/home/user/edge-gateway/logs/gateway.log', 'a') as log:
+>         log.write('Starting gateway server on port 8080\n')
+>
+>     web.run_app(app, host='0.0.0.0', port=8080, print=lambda x: open('/home/user/edge-gateway/logs/gateway.log', 'a').write(x + '\n'))
+>
+> if __name__ == '__main__':
+>     main()
+> EOF
+root@8893f7e9b939:/home/user/edge-gateway#

@@ -1,0 +1,41 @@
+New Terminal Output:
+
+root@46178a71ffb6:/home/user/firewall# echo '=== Validation of Fixed Rules ==='
+=== Validation of Fixed Rules ===
+root@46178a71ffb6:/home/user/firewall# echo 'Checking for FORWARD chain rules (should exist):'
+Checking for FORWARD chain rules (should exist):
+root@46178a71ffb6:/home/user/firewall# grep -n 'FORWARD.*10.200.0.0/16.*5000.*ACCEPT' rules.sh
+19:iptables -A FORWARD -s 10.200.0.0/16 -d 10.100.0.42 -p tcp --dport 5000 -j ACCEPT
+root@46178a71ffb6:/home/user/firewall# echo 'Checking for incorrect INPUT chain rules (should NOT exist):'
+Checking for incorrect INPUT chain rules (should NOT exist):
+root@46178a71ffb6:/home/user/firewall# grep -n 'INPUT.*10.200.0.0/16.*5000' rules.sh || echo 'None found (correct)'
+None found (correct)
+root@46178a71ffb6:/home/user/firewall# echo 'Checking for DROP rules blocking traffic (should NOT exist):'
+Checking for DROP rules blocking traffic (should NOT exist):
+root@46178a71ffb6:/home/user/firewall# grep -n 'FORWARD.*10.200.0.0/16.*10.100.0.0/16.*DROP' rules.sh || echo 'None found (correct)'
+None found (correct)
+root@46178a71ffb6:/home/user/firewall# echo '=== Summary of changes made ==='
+=== Summary of changes made ===
+root@46178a71ffb6:/home/user/firewall# diff -u rules.sh.bak rules.sh
+--- rules.sh.bak        2026-05-05 20:12:43.628967663 +0000
++++ rules.sh    2026-05-05 20:12:43.732566948 +0000
+@@ -15,15 +15,11 @@
+ # Allow SSH to gateway
+ iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+
+-# Allow inference subnet to registry (THE USER'S RULE - WRONG CHAIN)
+-iptables -A INPUT -s 10.200.0.0/16 -p tcp --dport 5000 -j ACCEPT
++# Allow inference subnet to registry on port 5000 (FIXED: moved to FORWARD chain)
++iptables -A FORWARD -s 10.200.0.0/16 -d 10.100.0.42 -p tcp --dport 5000 -j ACCEPT
+
+ # NAT for outbound
+ iptables -t nat -A POSTROUTING -s 10.200.0.0/16 -o eth2 -j MASQUERADE
+
+-# Block known bad actors
+-iptables -A FORWARD -s 10.200.0.0/16 -d 10.100.0.0/16 -j LOG --log-prefix "FORWARD_DROP: "
+-iptables -A FORWARD -s 10.200.0.0/16 -d 10.100.0.0/16 -j DROP
+-
+-# General forwarding (added later, supposedly to fix things)
++# General forwarding between networks
+ iptables -A FORWARD -i eth1 -o eth2 -j ACCEPT
+root@46178a71ffb6:/home/user/firewall#

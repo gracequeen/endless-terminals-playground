@@ -1,0 +1,115 @@
+Current terminal state:
+New Terminal Output:
+
+(.venv) user@4b7555b9c666:/tmp$ cd /home/user/mlservice
+(.venv) user@4b7555b9c666:~/mlservice$ cat > DEPLOYMENT_NOTES.md << 'EOF'
+> # MLService Deployment Fix
+>
+> ## Problem
+> Service failed with "No module named 'tokenizers'" even though:
+> - tokenizers was in requirements.txt
+> - pip install -r requirements.txt exited successfully
+> - `python -c "import tokenizers"` worked fine
+>
+> ## Root Causes
+>
+> 1. **Shell alias override**: `~/.bashrc` contained `alias python='/usr/bin/python3'` which forced all `python` commands to use the system Python instead of th
+e virtual environment Python, even when the venv was activated.
+>
+> 2. **Wrong working directory**: The service must be run from `/home/user` (parent directory), not from `/home/user/mlservice`, because Python's `-m` flag need
+s to find the `mlservice` package in the Python path.
+>
+> ## Solution
+>
+> ### Fixed Issues:
+> 1. Commented out the problematic alias in `~/.bashrc`:
+>    ```bash
+>    #alias python='/usr/bin/python3'
+>    ```
+>
+> 2. Created `start.sh` launcher script that:
+>    - Changes to the correct working directory (`/home/user`)
+>    - Activates the virtual environment
+>    - Runs the service with the venv's Python
+>
+> ### Production Deployment
+>
+> **Use the launcher script:**
+> ```bash
+> /home/user/mlservice/start.sh
+> ```
+>
+> **Or manually:**
+> ```bash
+> cd /home/user
+> source mlservice/.venv/bin/activate
+> python -m mlservice
+> ```
+>
+> **Important:** Always run from `/home/user`, NOT from `/home/user/mlservice`!
+>
+> ## Why It Seemed to Work Sometimes
+>
+> The `python -c "import tokenizers"` test passed because:
+> - It was using the system Python (due to the alias)
+> - The system Python happened to have tokenizers installed globally
+> - But the service needed the venv's packages, which weren't accessible through the aliased Python
+>
+> EOF
+(.venv) user@4b7555b9c666:~/mlservice$ cat DEPLOYMENT_NOTES.md
+# MLService Deployment Fix
+
+## Problem
+Service failed with "No module named 'tokenizers'" even though:
+- tokenizers was in requirements.txt
+- pip install -r requirements.txt exited successfully
+- `python -c "import tokenizers"` worked fine
+
+## Root Causes
+
+1. **Shell alias override**: `~/.bashrc` contained `alias python='/usr/bin/python3'` which forced all `python` commands to use the system Python instead of the
+virtual environment Python, even when the venv was activated.
+
+2. **Wrong working directory**: The service must be run from `/home/user` (parent directory), not from `/home/user/mlservice`, because Python's `-m` flag needs
+to find the `mlservice` package in the Python path.
+
+## Solution
+
+### Fixed Issues:
+1. Commented out the problematic alias in `~/.bashrc`:
+   ```bash
+   #alias python='/usr/bin/python3'
+   ```
+
+2. Created `start.sh` launcher script that:
+   - Changes to the correct working directory (`/home/user`)
+   - Activates the virtual environment
+   - Runs the service with the venv's Python
+
+### Production Deployment
+
+**Use the launcher script:**
+```bash
+/home/user/mlservice/start.sh
+```
+
+**Or manually:**
+```bash
+cd /home/user
+source mlservice/.venv/bin/activate
+python -m mlservice
+```
+
+**Important:** Always run from `/home/user`, NOT from `/home/user/mlservice`!
+
+## Why It Seemed to Work Sometimes
+
+The `python -c "import tokenizers"` test passed because:
+- It was using the system Python (due to the alias)
+- The system Python happened to have tokenizers installed globally
+- But the service needed the venv's packages, which weren't accessible through the aliased Python
+
+(.venv) user@4b7555b9c666:~/mlservice$
+
+
+Are you sure you want to mark the task as complete? This will trigger your solution to be graded and you won't be able to make any further corrections. If so, include "task_complete": true in your JSON response again.

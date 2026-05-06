@@ -1,0 +1,240 @@
+[?2004huser@95422ae4d56b:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004huser@95422ae4d56b:~$ clear
+[?2004l[H[J[?2004huser@95422ae4d56b:~$ cd /home/user/monitoring
+[?2004l[?2004huser@95422ae4d56b:~/monitoring$ ls -la
+[?2004ltotal 24
+drwxrwxrwx 1 user user 4096 May  5 21:31 .
+drwxrwxrwx 1 user user 4096 May  5 21:32 ..
+-rwxrwxrwx 1 user user 1399 May  5 21:31 alerter.py
+-rwxrwxrwx 1 user user    0 May  5 21:31 alerts.log
+-rwxrwxrwx 1 user user   61 May  5 21:31 config.yaml
+-rwxrwxrwx 1 user user 1844 May  5 21:31 parse_logs.py
+drwxrwxrwx 1 user user 4096 May  5 21:31 summaries
+[?2004huser@95422ae4d56b:~/monitoring$ cat config.yaml
+[?2004lthreshold: 0.05
+summary_dir: summaries
+alert_log: alerts.log
+[?2004huser@95422ae4d56b:~/monitoring$ cat alerter.py
+[?2004l#!/usr/bin/env python3
+"""
+Alerter script that reads summaries and writes alerts when error_rate exceeds threshold.
+"""
+
+import json
+import os
+import yaml
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).parent
+
+def load_config():
+    """Load configuration from config.yaml."""
+    config_path = SCRIPT_DIR / "config.yaml"
+    with open(config_path, 'r') as f:
+        return yaml.safe_load(f)
+
+def main():
+    config = load_config()
+
+    # BUG: Typo 'treshold' instead of 'threshold'
+    # This silently defaults to 0.5 (50%) instead of 0.05 (5%)
+    threshold = config.get('treshold', 0.5)
+
+    summary_dir = SCRIPT_DIR / config.get('summary_dir', 'summaries')
+    alert_log = SCRIPT_DIR / config.get('alert_log', 'alerts.log')
+
+    alerts = []
+
+    for summary_file in sorted(summary_dir.glob("summary_*.json")):
+        with open(summary_file, 'r') as f:
+            summary = json.load(f)
+
+        error_rate = float(summary['error_rate'])
+
+        if error_rate > threshold:
+            alert_msg = f"ALERT: Hour {summary['hour']} had error_rate {error_rate:.4f} (threshold: {threshold})"
+            alerts.append(alert_msg)
+
+    with open(alert_log, 'a') as f:
+        for alert in alerts:
+            f.write(alert + "\n")
+
+    if alerts:
+        print(f"Wrote {len(alerts)} alerts to {alert_log}")
+    else:
+        print("No alerts generated")
+
+if __name__ == "__main__":
+    main()
+[?2004huser@95422ae4d56b:~/monitoring$ ls summaries/
+[?2004lsummary_20250609_00.json  summary_20250609_12.json  summary_20250610_00.json  summary_20250610_12.json	summary_20250611_00.json  summary_20250611_12.json
+summary_20250609_01.json  summary_20250609_13.json  summary_20250610_01.json  summary_20250610_13.json	summary_20250611_01.json  summary_20250611_13.json
+summary_20250609_02.json  summary_20250609_14.json  summary_20250610_02.json  summary_20250610_14.json	summary_20250611_02.json  summary_20250611_14.json
+summary_20250609_03.json  summary_20250609_15.json  summary_20250610_03.json  summary_20250610_15.json	summary_20250611_03.json  summary_20250611_15.json
+summary_20250609_04.json  summary_20250609_16.json  summary_20250610_04.json  summary_20250610_16.json	summary_20250611_04.json  summary_20250611_16.json
+summary_20250609_05.json  summary_20250609_17.json  summary_20250610_05.json  summary_20250610_17.json	summary_20250611_05.json  summary_20250611_17.json
+summary_20250609_06.json  summary_20250609_18.json  summary_20250610_06.json  summary_20250610_18.json	summary_20250611_06.json  summary_20250611_18.json
+summary_20250609_07.json  summary_20250609_19.json  summary_20250610_07.json  summary_20250610_19.json	summary_20250611_07.json  summary_20250611_19.json
+summary_20250609_08.json  summary_20250609_20.json  summary_20250610_08.json  summary_20250610_20.json	summary_20250611_08.json  summary_20250611_20.json
+summary_20250609_09.json  summary_20250609_21.json  summary_20250610_09.json  summary_20250610_21.json	summary_20250611_09.json  summary_20250611_21.json
+summary_20250609_10.json  summary_20250609_22.json  summary_20250610_10.json  summary_20250610_22.json	summary_20250611_10.json  summary_20250611_22.json
+summary_20250609_11.json  summary_20250609_23.json  summary_20250610_11.json  summary_20250610_23.json	summary_20250611_11.json  summary_20250611_23.json
+[?2004huser@95422ae4d56b:~/monitoring$ head -5 summaries/*.json
+[?2004l==> summaries/summary_20250609_00.json <==
+{"hour": "20250609_00", "total": 81, "errors": 2, "error_rate": "0.0247"}
+==> summaries/summary_20250609_01.json <==
+{"hour": "20250609_01", "total": 113, "errors": 2, "error_rate": "0.0177"}
+==> summaries/summary_20250609_02.json <==
+{"hour": "20250609_02", "total": 116, "errors": 2, "error_rate": "0.0172"}
+==> summaries/summary_20250609_03.json <==
+{"hour": "20250609_03", "total": 107, "errors": 3, "error_rate": "0.0280"}
+==> summaries/summary_20250609_04.json <==
+{"hour": "20250609_04", "total": 83, "errors": 2, "error_rate": "0.0241"}
+==> summaries/summary_20250609_05.json <==
+{"hour": "20250609_05", "total": 88, "errors": 2, "error_rate": "0.0227"}
+==> summaries/summary_20250609_06.json <==
+{"hour": "20250609_06", "total": 86, "errors": 1, "error_rate": "0.0116"}
+==> summaries/summary_20250609_07.json <==
+{"hour": "20250609_07", "total": 103, "errors": 1, "error_rate": "0.0097"}
+==> summaries/summary_20250609_08.json <==
+{"hour": "20250609_08", "total": 120, "errors": 3, "error_rate": "0.0250"}
+==> summaries/summary_20250609_09.json <==
+{"hour": "20250609_09", "total": 112, "errors": 2, "error_rate": "0.0179"}
+==> summaries/summary_20250609_10.json <==
+{"hour": "20250609_10", "total": 91, "errors": 2, "error_rate": "0.0220"}
+==> summaries/summary_20250609_11.json <==
+{"hour": "20250609_11", "total": 103, "errors": 3, "error_rate": "0.0291"}
+==> summaries/summary_20250609_12.json <==
+{"hour": "20250609_12", "total": 86, "errors": 2, "error_rate": "0.0233"}
+==> summaries/summary_20250609_13.json <==
+{"hour": "20250609_13", "total": 114, "errors": 3, "error_rate": "0.0263"}
+==> summaries/summary_20250609_14.json <==
+{"hour": "20250609_14", "total": 93, "errors": 2, "error_rate": "0.0215"}
+==> summaries/summary_20250609_15.json <==
+{"hour": "20250609_15", "total": 104, "errors": 3, "error_rate": "0.0288"}
+==> summaries/summary_20250609_16.json <==
+{"hour": "20250609_16", "total": 91, "errors": 2, "error_rate": "0.0220"}
+==> summaries/summary_20250609_17.json <==
+{"hour": "20250609_17", "total": 111, "errors": 2, "error_rate": "0.0180"}
+==> summaries/summary_20250609_18.json <==
+{"hour": "20250609_18", "total": 103, "errors": 2, "error_rate": "0.0194"}
+==> summaries/summary_20250609_19.json <==
+{"hour": "20250609_19", "total": 115, "errors": 1, "error_rate": "0.0087"}
+==> summaries/summary_20250609_20.json <==
+{"hour": "20250609_20", "total": 113, "errors": 1, "error_rate": "0.0088"}
+==> summaries/summary_20250609_21.json <==
+{"hour": "20250609_21", "total": 110, "errors": 2, "error_rate": "0.0182"}
+==> summaries/summary_20250609_22.json <==
+{"hour": "20250609_22", "total": 101, "errors": 2, "error_rate": "0.0198"}
+==> summaries/summary_20250609_23.json <==
+{"hour": "20250609_23", "total": 81, "errors": 2, "error_rate": "0.0247"}
+==> summaries/summary_20250610_00.json <==
+{"hour": "20250610_00", "total": 101, "errors": 3, "error_rate": "0.0297"}
+==> summaries/summary_20250610_01.json <==
+{"hour": "20250610_01", "total": 113, "errors": 1, "error_rate": "0.0088"}
+==> summaries/summary_20250610_02.json <==
+{"hour": "20250610_02", "total": 95, "errors": 3, "error_rate": "0.0316"}
+==> summaries/summary_20250610_03.json <==
+{"hour": "20250610_03", "total": 100, "errors": 2, "error_rate": "0.0200"}
+==> summaries/summary_20250610_04.json <==
+{"hour": "20250610_04", "total": 116, "errors": 3, "error_rate": "0.0259"}
+==> summaries/summary_20250610_05.json <==
+{"hour": "20250610_05", "total": 117, "errors": 3, "error_rate": "0.0256"}
+==> summaries/summary_20250610_06.json <==
+{"hour": "20250610_06", "total": 114, "errors": 4, "error_rate": "0.0351"}
+==> summaries/summary_20250610_07.json <==
+{"hour": "20250610_07", "total": 100, "errors": 2, "error_rate": "0.0200"}
+==> summaries/summary_20250610_08.json <==
+{"hour": "20250610_08", "total": 117, "errors": 1, "error_rate": "0.0085"}
+==> summaries/summary_20250610_09.json <==
+{"hour": "20250610_09", "total": 104, "errors": 2, "error_rate": "0.0192"}
+==> summaries/summary_20250610_10.json <==
+{"hour": "20250610_10", "total": 95, "errors": 1, "error_rate": "0.0105"}
+==> summaries/summary_20250610_11.json <==
+{"hour": "20250610_11", "total": 89, "errors": 1, "error_rate": "0.0112"}
+==> summaries/summary_20250610_12.json <==
+{"hour": "20250610_12", "total": 109, "errors": 1, "error_rate": "0.0092"}
+==> summaries/summary_20250610_13.json <==
+{"hour": "20250610_13", "total": 112, "errors": 3, "error_rate": "0.0268"}
+==> summaries/summary_20250610_14.json <==
+{"hour": "20250610_14", "total": 114, "errors": 13, "error_rate": "0.1140"}
+==> summaries/summary_20250610_15.json <==
+{"hour": "20250610_15", "total": 110, "errors": 2, "error_rate": "0.0182"}
+==> summaries/summary_20250610_16.json <==
+{"hour": "20250610_16", "total": 93, "errors": 1, "error_rate": "0.0108"}
+==> summaries/summary_20250610_17.json <==
+{"hour": "20250610_17", "total": 83, "errors": 1, "error_rate": "0.0120"}
+==> summaries/summary_20250610_18.json <==
+{"hour": "20250610_18", "total": 109, "errors": 1, "error_rate": "0.0092"}
+==> summaries/summary_20250610_19.json <==
+{"hour": "20250610_19", "total": 87, "errors": 2, "error_rate": "0.0230"}
+==> summaries/summary_20250610_20.json <==
+{"hour": "20250610_20", "total": 114, "errors": 2, "error_rate": "0.0175"}
+==> summaries/summary_20250610_21.json <==
+{"hour": "20250610_21", "total": 80, "errors": 0, "error_rate": "0.0000"}
+==> summaries/summary_20250610_22.json <==
+{"hour": "20250610_22", "total": 108, "errors": 1, "error_rate": "0.0093"}
+==> summaries/summary_20250610_23.json <==
+{"hour": "20250610_23", "total": 96, "errors": 2, "error_rate": "0.0208"}
+==> summaries/summary_20250611_00.json <==
+{"hour": "20250611_00", "total": 94, "errors": 3, "error_rate": "0.0319"}
+==> summaries/summary_20250611_01.json <==
+{"hour": "20250611_01", "total": 99, "errors": 1, "error_rate": "0.0101"}
+==> summaries/summary_20250611_02.json <==
+{"hour": "20250611_02", "total": 105, "errors": 2, "error_rate": "0.0190"}
+==> summaries/summary_20250611_03.json <==
+{"hour": "20250611_03", "total": 81, "errors": 1, "error_rate": "0.0123"}
+==> summaries/summary_20250611_04.json <==
+{"hour": "20250611_04", "total": 117, "errors": 2, "error_rate": "0.0171"}
+==> summaries/summary_20250611_05.json <==
+{"hour": "20250611_05", "total": 84, "errors": 1, "error_rate": "0.0119"}
+==> summaries/summary_20250611_06.json <==
+{"hour": "20250611_06", "total": 84, "errors": 2, "error_rate": "0.0238"}
+==> summaries/summary_20250611_07.json <==
+{"hour": "20250611_07", "total": 107, "errors": 1, "error_rate": "0.0093"}
+==> summaries/summary_20250611_08.json <==
+{"hour": "20250611_08", "total": 94, "errors": 3, "error_rate": "0.0319"}
+==> summaries/summary_20250611_09.json <==
+{"hour": "20250611_09", "total": 110, "errors": 8, "error_rate": "0.0727"}
+==> summaries/summary_20250611_10.json <==
+{"hour": "20250611_10", "total": 112, "errors": 4, "error_rate": "0.0357"}
+==> summaries/summary_20250611_11.json <==
+{"hour": "20250611_11", "total": 95, "errors": 2, "error_rate": "0.0211"}
+==> summaries/summary_20250611_12.json <==
+{"hour": "20250611_12", "total": 81, "errors": 1, "error_rate": "0.0123"}
+==> summaries/summary_20250611_13.json <==
+{"hour": "20250611_13", "total": 112, "errors": 2, "error_rate": "0.0179"}
+==> summaries/summary_20250611_14.json <==
+{"hour": "20250611_14", "total": 96, "errors": 1, "error_rate": "0.0104"}
+==> summaries/summary_20250611_15.json <==
+{"hour": "20250611_15", "total": 104, "errors": 1, "error_rate": "0.0096"}
+==> summaries/summary_20250611_16.json <==
+{"hour": "20250611_16", "total": 113, "errors": 2, "error_rate": "0.0177"}
+==> summaries/summary_20250611_17.json <==
+{"hour": "20250611_17", "total": 98, "errors": 3, "error_rate": "0.0306"}
+==> summaries/summary_20250611_18.json <==
+{"hour": "20250611_18", "total": 115, "errors": 4, "error_rate": "0.0348"}
+==> summaries/summary_20250611_19.json <==
+{"hour": "20250611_19", "total": 95, "errors": 2, "error_rate": "0.0211"}
+==> summaries/summary_20250611_20.json <==
+{"hour": "20250611_20", "total": 110, "errors": 1, "error_rate": "0.0091"}
+==> summaries/summary_20250611_21.json <==
+{"hour": "20250611_21", "total": 94, "errors": 3, "error_rate": "0.0319"}
+==> summaries/summary_20250611_22.json <==
+{"hour": "20250611_22", "total": 100, "errors": 2, "error_rate": "0.0200"}
+==> summaries/summary_20250611_23.json <==
+{"hour": "20250611_23", "total": 84, "errors": 2, "error_rate": "0.0238"}[?2004huser@95422ae4d56b:~/monitoring$ sed -i "s/config.get('treshold', 0.5)/config.get('threshold', 0.5)/g" alerter.py
+[?2004l[?2004huser@95422ae4d56b:~/monitoring$ grep -n "threshold" alerter.py
+[?2004l3:Alerter script that reads summaries and writes alerts when error_rate exceeds threshold.
+22:    # BUG: Typo 'treshold' instead of 'threshold'
+24:    threshold = config.get('threshold', 0.5)
+37:        if error_rate > threshold:
+38:            alert_msg = f"ALERT: Hour {summary['hour']} had error_rate {error_rate:.4f} (threshold: {threshold})"
+[?2004huser@95422ae4d56b:~/monitoring$ python3 alerter.py
+[?2004lWrote 2 alerts to /home/user/monitoring/alerts.log
+[?2004huser@95422ae4d56b:~/monitoring$ cat alerts.log
+[?2004lALERT: Hour 20250610_14 had error_rate 0.1140 (threshold: 0.05)
+ALERT: Hour 20250611_09 had error_rate 0.0727 (threshold: 0.05)
+[?2004huser@95422ae4d56b:~/monitoring$ 

@@ -1,0 +1,10 @@
+{
+  "analysis": "The tests don't cover the `can_bump_major()` method or the config-based policy logic. Looking back at the code, the issue is clear: In semver.py line 66, `return str(self.minor) < str(max_minor)` uses string comparison. When minor=9 and max_minor='9', it returns False (correctly blocking). But the method name and usage suggest it should return True when a major bump is allowed. Actually, looking at release.py line 77-79, the logic is: 'if bump_type == major and NOT can_bump_major()' then downgrade. So can_bump_major() should return True when major bumps ARE allowed. The bug is the string comparison: when minor=9, '9' < '9' = False (blocks major bump incorrectly). The fix is to use numeric comparison: int(self.minor) >= int(max_minor) - when we've reached the threshold, major bumps should be allowed.",
+  "plan": "Fix the can_bump_major() method in semver.py. Change line 66 from `return str(self.minor) < str(max_minor)` to `return int(self.minor) >= int(max_minor)`. This will return True when minor version has reached or exceeded the threshold, allowing major bumps.",
+  "commands": [
+    {
+      "keystrokes": "sed -i '66s/.*/        return int(self.minor) >= int(max_minor)/' semver.py\n",
+      "duration": 0.1
+    }
+  ]
+}

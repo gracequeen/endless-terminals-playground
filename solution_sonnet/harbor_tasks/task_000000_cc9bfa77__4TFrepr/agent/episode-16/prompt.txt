@@ -1,0 +1,41 @@
+New Terminal Output:
+
+user@b01184b52a1a:~/wal_recovery$ python3 << 'EOF'
+^ 0x00:02x}")
+print(f"Byte 14: {data[14]:02x} -> want 0x00, XOR key: {data[14] ^ 0x00:02x}")
+print(f"Byte 15: {data[15]:02x} -> want 0x03, XOR key: {data[15] ^ 0x03:02x}")
+EOF
+> # Let's try to understand the pattern better
+> # Check if there's a repeating XOR key pattern
+>
+> with open('primary_wal/000000010000000000000003', 'rb') as f:
+>     data = f.read(1024)
+>
+> # PostgreSQL WAL page header for first page should have:
+> # - magic: 0xF003 (for PG15) at offset 0
+> # - info: various flags at offset 2
+> # - tli: timeline ID (usually 1) at offset 4
+> # - pageaddr: should be 0x3000000 for segment 3 at offset 8
+> # - rem_len: at offset 16
+>
+> # Let's see if XOR pattern changes
+> print("Trying different XOR patterns:")
+> print(f"Byte 0: {data[0]:02x} -> want 0x03, XOR key: {data[0] ^ 0x03:02x}")
+> print(f"Byte 1: {data[1]:02x} -> want 0xf0, XOR key: {data[1] ^ 0xf0:02x}")
+> print(f"Byte 4: {data[4]:02x} -> want 0x01 (tli), XOR key: {data[4] ^ 0x01:02x}")
+> print(f"Byte 8: {data[8]:02x} -> want 0x00 (pageaddr low), XOR key: {data[8] ^ 0x00:02x}")
+> print(f"Byte 12: {data[12]:02x} -> want 0x00 (pageaddr mid), XOR key: {data[12] ^ 0x00:02x}")
+> print(f"Byte 13: {data[13]:02x} -> want 0x00, XOR key: {data[13] ^ 0x00:02x}")
+> print(f"Byte 14: {data[14]:02x} -> want 0x00, XOR key: {data[14] ^ 0x00:02x}")
+> print(f"Byte 15: {data[15]:02x} -> want 0x03, XOR key: {data[15] ^ 0x03:02x}")
+> EOF
+Trying different XOR patterns:
+Byte 0: fc -> want 0x03, XOR key: ff
+Byte 1: 0f -> want 0xf0, XOR key: ff
+Byte 4: 6b -> want 0x01 (tli), XOR key: 6a
+Byte 8: fc -> want 0x00 (pageaddr low), XOR key: fc
+Byte 12: 26 -> want 0x00 (pageaddr mid), XOR key: 26
+Byte 13: 0d -> want 0x00, XOR key: 0d
+Byte 14: b8 -> want 0x00, XOR key: b8
+Byte 15: c1 -> want 0x03, XOR key: c2
+user@b01184b52a1a:~/wal_recovery$

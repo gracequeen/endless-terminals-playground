@@ -1,0 +1,104 @@
+New Terminal Output:
+
+root@b5a5d368db2a:/home/user# ls -la /data/experiments/*/
+/data/experiments/llm-finetune/:
+total 16
+drwxrwxrwx 1 root root 4096 May  5 06:02 .
+drwxrwxrwx 1 root root 4096 May  5 05:58 ..
+
+/data/experiments/rl-baseline/:
+total 16
+drwxrwxrwx 1 root root 4096 May  5 06:02 .
+drwxrwxrwx 1 root root 4096 May  5 05:58 ..
+
+/data/experiments/vision-cls/:
+total 16
+drwxrwxrwx 1 root root 4096 May  5 06:02 .
+drwxrwxrwx 1 root root 4096 May  5 05:58 ..
+root@b5a5d368db2a:/home/user# find /data/experiments -name 'run_*' -type d
+root@b5a5d368db2a:/home/user# cat > /home/user/ops/FIX_SUMMARY.md << 'EOF'
+> # Cleanup Script Fix Summary
+>
+> ## Problem
+> The purge_old_runs.py script was running nightly via cron and exiting successfully (exit 0),
+> but was not actually deleting old experiment runs. Disk usage remained at 81-82% despite
+> the script claiming to process files.
+>
+> ## Root Causes Identified
+>
+> ### Bug 1: Wrong deletion method (Line 58)
+> **Issue**: Used `os.remove()` instead of `shutil.rmtree()`
+> - `os.remove()` only works on FILES, not directories
+> - Each run is a DIRECTORY containing subdirectories (checkpoints, logs, outputs) and files
+> - When os.remove() tried to delete a directory, it threw an exception
+> - The exception was caught and logged as "skipped", so the script appeared to run successfully
+>
+> **Fix**: Changed `os.remove(run_path)` to `shutil.rmtree(run_path)` and added `import shutil`
+>
+> ### Bug 2: Incompatible timestamp format (Line 41)
+> **Issue**: `datetime.fromisoformat()` doesn't support 'Z' timezone suffix in Python < 3.11
+> - metadata.json files contain timestamps like "2024-01-30T18:15:00Z"
+> - The 'Z' suffix indicates UTC timezone
+> - fromisoformat() raised ValueError on the 'Z' suffix
+> - Exception was caught, function returned None, so no runs were considered for deletion
+>
+> **Fix**: Added `.replace('Z', '+00:00')` to convert 'Z' to a format fromisoformat() accepts
+> Also updated cutoff calculation to use `datetime.now(created_at.tzinfo)` for proper timezone-aware comparison
+>
+> ## Results
+> - Before: 2.1GB used in /data/experiments, 20 old runs present
+> - After: 32KB used in /data/experiments, all 20 old runs deleted
+> - Reclaimed: ~2GB of disk space
+> - Script now properly deletes runs older than 30 days
+>
+> ## Changes Made
+> 1. Line 10: Added `import shutil`
+> 2. Line 41: Added `created_at_str = created_at_str.replace('Z', '+00:00')`
+> 3. Line 56: Changed `datetime.now()` to `datetime.now(created_at.tzinfo)`
+> 4. Line 62: Changed `os.remove(run_path)` to `shutil.rmtree(run_path)`
+>
+> Backup of original script saved to: /home/user/ops/purge_old_runs.py.bak
+> EOF
+root@b5a5d368db2a:/home/user# cat /home/user/ops/FIX_SUMMARY.md
+# Cleanup Script Fix Summary
+
+## Problem
+The purge_old_runs.py script was running nightly via cron and exiting successfully (exit 0),
+but was not actually deleting old experiment runs. Disk usage remained at 81-82% despite
+the script claiming to process files.
+
+## Root Causes Identified
+
+### Bug 1: Wrong deletion method (Line 58)
+**Issue**: Used `os.remove()` instead of `shutil.rmtree()`
+- `os.remove()` only works on FILES, not directories
+- Each run is a DIRECTORY containing subdirectories (checkpoints, logs, outputs) and files
+- When os.remove() tried to delete a directory, it threw an exception
+- The exception was caught and logged as "skipped", so the script appeared to run successfully
+
+**Fix**: Changed `os.remove(run_path)` to `shutil.rmtree(run_path)` and added `import shutil`
+
+### Bug 2: Incompatible timestamp format (Line 41)
+**Issue**: `datetime.fromisoformat()` doesn't support 'Z' timezone suffix in Python < 3.11
+- metadata.json files contain timestamps like "2024-01-30T18:15:00Z"
+- The 'Z' suffix indicates UTC timezone
+- fromisoformat() raised ValueError on the 'Z' suffix
+- Exception was caught, function returned None, so no runs were considered for deletion
+
+**Fix**: Added `.replace('Z', '+00:00')` to convert 'Z' to a format fromisoformat() accepts
+Also updated cutoff calculation to use `datetime.now(created_at.tzinfo)` for proper timezone-aware comparison
+
+## Results
+- Before: 2.1GB used in /data/experiments, 20 old runs present
+- After: 32KB used in /data/experiments, all 20 old runs deleted
+- Reclaimed: ~2GB of disk space
+- Script now properly deletes runs older than 30 days
+
+## Changes Made
+1. Line 10: Added `import shutil`
+2. Line 41: Added `created_at_str = created_at_str.replace('Z', '+00:00')`
+3. Line 56: Changed `datetime.now()` to `datetime.now(created_at.tzinfo)`
+4. Line 62: Changed `os.remove(run_path)` to `shutil.rmtree(run_path)`
+
+Backup of original script saved to: /home/user/ops/purge_old_runs.py.bak
+root@b5a5d368db2a:/home/user#

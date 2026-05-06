@@ -1,0 +1,80 @@
+New Terminal Output:
+
+root@63cb3c0c3c07:/home/user# cat > /tmp/fix_jars.sh << 'EOF'
+> #!/bin/bash
+>
+> CACHE_DIR="/home/user/artifact-sync/cache"
+> REPO_DIR="/var/repo/maven"
+>
+> echo "Finding and fixing zero-byte JAR files..."
+> echo ""
+>
+> find "$REPO_DIR" -name '*.jar' -size 0 | while read -r jar_file; do
+>     echo "Processing: $jar_file"
+>
+>     # Get relative path from repo
+>     rel_path="${jar_file#$REPO_DIR/}"
+>     cache_file="${CACHE_DIR}/${rel_path}"
+>     sha1_file="${jar_file}.sha1"
+>
+>     # Check if cache file exists
+>     if [ ! -f "$cache_file" ]; then
+>         echo "  ERROR: Cache file not found: $cache_file"
+>         continue
+>     fi
+>
+>     # Check if sha1 file exists
+>     if [ ! -f "$sha1_file" ]; then
+>         echo "  ERROR: SHA1 file not found: $sha1_file"
+>         continue
+>     fi
+>
+>     # Copy from cache
+>     cp "$cache_file" "$jar_file"
+>     echo "  Copied from cache ($(stat -c%s "$jar_file") bytes)"
+>
+>     # Verify SHA1
+>     expected_sha1=$(cat "$sha1_file" | tr -d '[:space:]')
+>     actual_sha1=$(sha1sum "$jar_file" | cut -d' ' -f1)
+>
+>     if [ "$expected_sha1" = "$actual_sha1" ]; then
+>         echo "  ✓ SHA1 verified: $actual_sha1"
+>     else
+>         echo "  ✗ SHA1 MISMATCH!"
+>         echo "    Expected: $expected_sha1"
+>         echo "    Actual:   $actual_sha1"
+>     fi
+>     echo ""
+> done
+>
+> echo "Verification complete. Checking for remaining zero-byte JARs..."
+> zero_count=$(find "$REPO_DIR" -name '*.jar' -size 0 | wc -l)
+> echo "Zero-byte JARs remaining: $zero_count"
+> EOF
+root@63cb3c0c3c07:/home/user# chmod +x /tmp/fix_jars.sh
+root@63cb3c0c3c07:/home/user# /tmp/fix_jars.sh
+Finding and fixing zero-byte JAR files...
+
+Processing: /var/repo/maven/net/tools/parser/4.0.1/parser-4.0.1.jar
+  Copied from cache (184320 bytes)
+  ✓ SHA1 verified: 224b918ebd008e2e90dd8c8df4cb8ba48680dfbc
+
+Processing: /var/repo/maven/com/example/utils/3.1.0/utils-3.1.0.jar
+  Copied from cache (122880 bytes)
+  ✓ SHA1 verified: f3d1630b0b79702e54a931ff43e6f2fd28cb115f
+
+Processing: /var/repo/maven/com/example/core/1.2.0/core-1.2.0.jar
+  Copied from cache (76800 bytes)
+  ✓ SHA1 verified: faf7dc7eb43c521f3d73578c729b048211f470af
+
+Processing: /var/repo/maven/org/internal/config/1.5.2/config-1.5.2.jar
+  Copied from cache (81920 bytes)
+  ✓ SHA1 verified: d05013c6dfe8f2e116a1b04c9e64b70d00e1e246
+
+Processing: /var/repo/maven/org/internal/logging/2.0.0/logging-2.0.0.jar
+  Copied from cache (153600 bytes)
+  ✓ SHA1 verified: 92bbcab45c7245de7db34cc1917e23ebbaeb5251
+
+Verification complete. Checking for remaining zero-byte JARs...
+Zero-byte JARs remaining: 0
+root@63cb3c0c3c07:/home/user#

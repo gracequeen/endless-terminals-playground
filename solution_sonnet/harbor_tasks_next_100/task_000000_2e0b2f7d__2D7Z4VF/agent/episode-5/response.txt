@@ -1,0 +1,15 @@
+{
+  "analysis": "The check scripts look fine - they're quick operations. The problem is definitely the 40-health.conf file which curls 50 endpoints with 2-second timeouts during config loading. This is unnecessary during deployment and should be removed or converted to a function that can be called only when needed (not during sourcing).",
+  "plan": "I'll fix the 40-health.conf file by keeping the configuration variables but removing the automatic execution of the curl loop. The health check endpoints can be defined, but the actual pre-warming should not run during config sourcing. I'll comment out or remove the problematic for loop.",
+  "commands": [
+    {
+      "keystrokes": "cp conf.d/40-health.conf conf.d/40-health.conf.bak\n",
+      "duration": 0.1
+    },
+    {
+      "keystrokes": "cat > conf.d/40-health.conf << 'EOF'\n# Health check configuration - added last sprint\nHEALTH_CHECK_ENABLED=true\nHEALTH_TIMEOUT=2\n\n# Build list of health endpoints for all service ports\nHEALTH_ENDPOINTS=$(for i in $(seq 1 50); do echo \"http://localhost:808$i/health\"; done)\n\n# Pre-warm health check connections to reduce deploy-time latency\n# NOTE: Disabled - this was causing 90+ second delays during config loading\n# The health checks should be done asynchronously or only when actually needed,\n# not during every config source operation.\n# for endpoint in $HEALTH_ENDPOINTS; do\n#     curl --connect-timeout 2 -s \"$endpoint\" >/dev/null 2>&1 || true\n# done\n\nHEALTH_STATUS=\"initialized\"\nEOF\n",
+      "duration": 0.1
+    }
+  ],
+  "task_complete": false
+}

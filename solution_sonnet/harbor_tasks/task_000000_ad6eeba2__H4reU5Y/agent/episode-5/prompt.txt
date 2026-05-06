@@ -1,0 +1,162 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@ded8071512ad:~$ cat > /home/user/inventory/process_assets.py << 'EOF'
+> import csv
+> import json
+> import re
+> from datetime import datetime
+> from collections import defaultdict
+>
+> def parse_date(date_str):
+>     """Parse dates in multiple formats and return ISO 8601 string"""
+>     if not date_str or not date_str.strip():
+>         return None
+>
+>     date_str = date_str.strip()
+>     formats = [
+>         '%m/%d/%Y',    # MM/DD/YYYY
+>         '%Y-%m-%d',    # YYYY-MM-DD
+>         '%d.%m.%Y',    # DD.MM.YYYY
+>         '%d/%m/%Y',    # DD/MM/YYYY
+>     ]
+>
+>     for fmt in formats:
+>         try:
+>             dt = datetime.strptime(date_str, fmt)
+>             return dt.strftime('%Y-%m-%d')
+>         except ValueError:
+>             continue
+>
+>     return None
+>
+> def parse_price(price_str):
+>     """Parse price and convert to cents (integer)"""
+>     if not price_str or not str(price_str).strip():
+>         return None
+>
+>     price_str = str(price_str).strip()
+>     # Remove dollar signs, commas, and spaces
+>     price_str = price_str.replace('$', '').replace(',', '').replace(' ', '')
+>
+>     try:
+>         price_float = float(price_str)
+>         if price_float < 0:
+>             return None  # Negative prices are invalid
+>         price_cents = int(round(price_float * 100))
+>         return price_cents if price_cents > 0 else None
+>     except (ValueError, OverflowError):
+>         return None
+>
+> def is_serial_format(value):
+>     """Check if a value looks like a serial number (starts with SN-)"""
+>     return value and str(value).strip().startswith('SN-')
+>
+> def process_row(row, row_num):
+>     """Process a single row and return (asset_dict, error_message)"""
+>     try:
+>         asset_id = row.get('id', '').strip()
+>         name = row.get('name', '').strip()
+>         serial = row.get('serial', '').strip()
+>         purchase_date_raw = row.get('purchase_date', '').strip()
+>         price_raw = row.get('price', '').strip()
+>         location = row.get('location', '').strip()
+>
+>         # Check if serial and name are swapped
+>         if not is_serial_format(serial) and is_serial_format(name):
+>             name, serial = serial, name
+>
+>         # Validate ID
+>         if not asset_id:
+>             return None, "Missing asset ID"
+>
+>         # Parse date
+>         purchase_date = parse_date(purchase_date_raw)
+>         if not purchase_date:
+>             return None, f"Invalid purchase date: {purchase_date_raw}"
+>
+>         # Parse price
+>         price_cents = parse_price(price_raw)
+>         if price_cents is None:
+>             return None, f"Invalid price: {price_raw}"
+>
+>         # Validate required fields
+>         if not name:
+>             return None, "Missing name"
+>         if not serial:
+>             return None, "Missing serial"
+>         if not location:
+>             return None, "Missing location"
+>
+>         asset = {
+>             'id': asset_id,
+>             'name': name,
+>             'serial': serial,
+>             'purchase_date': purchase_date,
+>             'price_cents': price_cents,
+>             'location': location
+>         }
+>
+>         return asset, None
+>
+>     except Exception as e:
+>         return None, f"Processing error: {str(e)}"
+>
+> def main():
+>     input_file = '/home/user/inventory/assets.csv'
+>     output_file = '/home/user/inventory/assets.json'
+>     rejected_file = '/home/user/inventory/rejected.json'
+>
+>     assets_by_id = {}  # For deduplication
+>     rejected = []
+>
+>     with open(input_file, 'r', encoding='utf-8') as f:
+>         reader = csv.DictReader(f)
+>
+>         for row_num, row in enumerate(reader, start=2):  # Start at 2 (header is row 1)
+>             asset, error = process_row(row, row_num)
+>
+>             if error:
+>                 rejected.append({
+>                     'original_row': dict(row),
+>                     'reason': error,
+>                     'row_number': row_num
+>                 })
+>             else:
+>                 asset_id = asset['id']
+>                 # Handle duplicates: keep the one with latest purchase date
+>                 if asset_id in assets_by_id:
+>                     existing_date = assets_by_id[asset_id]['purchase_date']
+>                     new_date = asset['purchase_date']
+>                     if new_date > existing_date:
+>                         assets_by_id[asset_id] = asset
+>                 else:
+>                     assets_by_id[asset_id] = asset
+>
+>     # Convert to list sorted by ID
+>     assets_list = [assets_by_id[aid] for aid in sorted(assets_by_id.keys())]
+>
+>     # Write output files
+>     with open(output_file, 'w', encoding='utf-8') as f:
+>         json.dump(assets_list, f, indent=2)
+>
+>     with open(rejected_file, 'w', encoding='utf-8') as f:
+>         json.dump(rejected, f, indent=2)
+>
+>     print(f"Processed {len(assets_list)} valid assets")
+>     print(f"Rejected {len(rejected)} invalid rows")
+>     print(f"Output written to {output_file}")
+>     print(f"Rejected rows written to {rejected_file}")
+>
+> if __name__ == '__main__':
+>     main()
+> EOF
+user@ded8071512ad:~$ python3 /home/user/inventory/process_assets.py
+Processed 809 valid assets
+Rejected 16 invalid rows
+Output written to /home/user/inventory/assets.json
+Rejected rows written to /home/user/inventory/rejected.json
+user@ded8071512ad:~$

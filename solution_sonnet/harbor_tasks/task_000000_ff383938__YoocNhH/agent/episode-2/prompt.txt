@@ -1,0 +1,184 @@
+New Terminal Output:
+
+user@1e27ad315da1:~$ cat /home/user/tools/capacity_report.py
+#!/usr/bin/env python3
+"""
+Capacity Report Generator
+
+Parses crontab entries and batch job logs to identify:
+1. Hours where jobs overlapped (one started before another finished)
+2. Hours that were genuinely idle (no jobs scheduled or running)
+
+Output: /home/user/reports/windows.json
+"""
+
+import os
+import re
+import json
+from datetime import datetime
+from pathlib import Path
+
+
+CRONTAB_PATH = "/var/spool/cron/crontabs/user"
+LOG_DIR = "/var/log/batch"
+OUTPUT_PATH = "/home/user/reports/windows.json"
+
+
+class Job:
+    def __init__(self, name, scheduled_hour, start_time=None, end_time=None):
+        self.name = name
+        self.scheduled_hour = scheduled_hour  # Bug 1: Only stores hour, loses minute
+        self.start_time = start_time
+        self.end_time = end_time
+
+    @property
+    def start_hour(self):
+        if self.start_time:
+            return self.start_time.hour
+        return self.scheduled_hour
+
+    @property
+    def end_hour(self):
+        if self.end_time:
+            return self.end_time.hour
+        return self.scheduled_hour
+
+
+def parse_crontab():
+    """Parse crontab file and extract job schedules."""
+    jobs = []
+
+    with open(CRONTAB_PATH, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+
+            parts = line.split()
+            if len(parts) >= 6:
+                minute = parts[0]
+                hour = parts[1]
+                command = parts[5]
+
+                # Bug 1: We only store the hour, ignoring minute field
+                # This means "30 2 * * *" is treated same as "0 2 * * *"
+                job_name = os.path.basename(command)
+                scheduled_hour = int(hour)
+
+                jobs.append(Job(job_name, scheduled_hour))
+
+    return jobs
+
+
+def parse_log_file(log_path):
+    """Parse a log file to extract start and end timestamps."""
+    start_time = None
+    end_time = None
+
+    with open(log_path, 'r') as f:
+        content = f.read()
+
+    # Match START timestamp
+    start_match = re.search(r'START\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+    if start_match:
+        start_time = datetime.strptime(start_match.group(1), '%Y-%m-%d %H:%M:%S')
+
+    # Match END timestamp
+    end_match = re.search(r'END\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', content)
+    if end_match:
+        end_time = datetime.strptime(end_match.group(1), '%Y-%m-%d %H:%M:%S')
+
+    return start_time, end_time
+
+
+def load_job_runtimes(jobs):
+    """Load actual runtime data from log files into job objects."""
+    log_dir = Path(LOG_DIR)
+
+    for job in jobs:
+        # Find corresponding log file
+        log_name = job.name.replace('.sh', '.log')
+        log_path = log_dir / log_name
+
+        if log_path.exists():
+            start_time, end_time = parse_log_file(log_path)
+            job.start_time = start_time
+            job.end_time = end_time
+
+    return jobs
+
+
+def find_overlapping_hours(jobs):
+    """Find hours where jobs overlapped."""
+    overlapping = set()
+
+    for i, job1 in enumerate(jobs):
+        for job2 in jobs[i+1:]:
+            if job1.start_time is None or job1.end_time is None:
+                continue
+            if job2.start_time is None or job2.end_time is None:
+                continue
+
+            # Bug 3: Using integer hour comparison instead of actual timestamps
+            # This misses overlaps within the same hour and boundary conditions
+            # Comparing end_hour > start_hour misses when they're equal
+            if job1.end_hour > job2.start_hour and job1.start_hour < job2.end_hour:
+                # Add the hours where overlap occurs
+                for h in range(job2.start_hour, job1.end_hour + 1):
+                    overlapping.add(h)
+            elif job2.end_hour > job1.start_hour and job2.start_hour < job1.end_hour:
+                for h in range(job1.start_hour, job2.end_hour + 1):
+                    overlapping.add(h)
+
+    return sorted(list(overlapping))
+
+
+def find_idle_hours(jobs):
+    """Find hours that were genuinely idle."""
+    idle = []
+
+    for hour in range(24):
+        is_idle = True
+
+        # Bug 2: Only checking if a job is SCHEDULED to start in this hour
+        # Not checking if a job from a previous hour is still running
+        for job in jobs:
+            if job.scheduled_hour == hour:
+                is_idle = False
+                break
+
+        if is_idle:
+            idle.append(hour)
+
+    return idle
+
+
+def main():
+    # Parse crontab to get scheduled jobs
+    jobs = parse_crontab()
+
+    # Load actual runtime data from logs
+    jobs = load_job_runtimes(jobs)
+
+    # Find overlapping and idle hours
+    overlapping_hours = find_overlapping_hours(jobs)
+    idle_hours = find_idle_hours(jobs)
+
+    # Write output
+    result = {
+        "overlapping_hours": overlapping_hours,
+        "idle_hours": idle_hours
+    }
+
+    os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
+    with open(OUTPUT_PATH, 'w') as f:
+        json.dump(result, f, indent=2)
+
+    print(f"Report written to {OUTPUT_PATH}")
+    print(f"Overlapping hours: {overlapping_hours}")
+    print(f"Idle hours: {idle_hours}")
+
+
+if __name__ == "__main__":
+    main()
+user@1e27ad315da1:~$

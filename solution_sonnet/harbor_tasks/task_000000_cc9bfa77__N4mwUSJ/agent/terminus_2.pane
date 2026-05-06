@@ -1,0 +1,744 @@
+[?2004huser@9365762ea513:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004huser@9365762ea513:~$ clear
+[?2004l[H[J[?2004huser@9365762ea513:~$ cd /home/user/wal_recovery
+[?2004l[?2004huser@9365762ea513:~/wal_recovery$ ls -lah
+[?2004ltotal 3.1M
+drwxrwxrwx 1 user user 4.0K May  5 07:25 .
+drwxrwxrwx 1 user user 4.0K May  5 07:26 ..
+-rwxrwxrwx 1 user user 3.0M May  5 07:25 base_backup.tar.gz
+-rwxrwxrwx 1 user user  146 May  5 07:25 manifest.json
+drwxrwxrwx 1 user user 4.0K May  5 07:25 primary_wal
+drwxrwxrwx 1 user user 4.0K May  5 07:25 replica_wal
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Primary WAL segments ==="
+[?2004l=== Primary WAL segments ===
+[?2004huser@9365762ea513:~/wal_recovery$ ls -lh primary_wal/ | head -20
+[?2004ltotal 56M
+-rwxrwxrwx 1 user user  16M May  5 07:25 000000010000000000000003
+-rwxrwxrwx 1 user user  16M May  5 07:25 000000010000000000000004
+-rwxrwxrwx 1 user user  16M May  5 07:25 000000010000000000000005
+-rwxrwxrwx 1 user user 8.0M May  5 07:25 000000010000000000000006
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Replica WAL segments ==="
+[?2004l=== Replica WAL segments ===
+[?2004huser@9365762ea513:~/wal_recovery$ ls -lh replica_wal/ | head -20
+[?2004ltotal 48M
+-rwxrwxrwx 1 user user 16M May  5 07:25 000000010000000000000003
+-rwxrwxrwx 1 user user 16M May  5 07:25 000000010000000000000004
+-rwxrwxrwx 1 user user 16M May  5 07:25 000000010000000000000005
+[?2004huser@9365762ea513:~/wal_recovery$ cat manifest.json
+[?2004l{"base_backup_lsn": "0/3000000", "crash_time": "2024-01-09T14:32:17Z", "primary_last_lsn": "0/6A00000", "replica_last_received_lsn": "0/5FFFFFF"}
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Checking WAL segment counts ==="
+[?2004l=== Checking WAL segment counts ===
+[?2004huser@9365762ea513:~/wal_recovery$ ls -1 primary_wal/ | wc -l
+[?2004l4
+[?2004huser@9365762ea513:~/wal_recovery$ ls -1 replica_wal/ | wc -l
+[?2004l3
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Computing checksums for primary WAL ==="
+[?2004l=== Computing checksums for primary WAL ===
+[?2004huser@9365762ea513:~/wal_recovery$ md5sum primary_wal/* | tee primary_checksums.txt
+[?2004ld7e3025feb8ed22e57eadb398e77406a  primary_wal/000000010000000000000003
+3423e5a28c522f4080def82b772559bc  primary_wal/000000010000000000000004
+1543434f9403e006faf53cf294537d55  primary_wal/000000010000000000000005
+bb9c41f5b4d1ffda70df761415fa1763  primary_wal/000000010000000000000006
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Computing checksums for replica WAL ==="
+[?2004l=== Computing checksums for replica WAL ===
+[?2004huser@9365762ea513:~/wal_recovery$ md5sum replica_wal/* | tee replica_checksums.txt
+[?2004ld7e3025feb8ed22e57eadb398e77406a  replica_wal/000000010000000000000003
+b3877ded10875a16eca5f53eb33b14ce  replica_wal/000000010000000000000004
+d6248c2929bce76efaf378abb631a8b1  replica_wal/000000010000000000000005
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Testing primary_wal/000000010000000000000003 ==="
+[?2004l=== Testing primary_wal/000000010000000000000003 ===
+[?2004huser@9365762ea513:~/wal_recovery$ pg_waldump primary_wal/000000010000000000000003 2>&1 | tail -20
+[?2004lpg_waldump: error: WAL segment size must be a power of two between 1 MB and 1 GB, but the WAL file "000000010000000000000003" header specifies 1547451063 bytes
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Testing primary_wal/000000010000000000000004 ==="
+[?2004l=== Testing primary_wal/000000010000000000000004 ===
+[?2004huser@9365762ea513:~/wal_recovery$ pg_waldump primary_wal/000000010000000000000004 2>&1 | tail -20
+[?2004lpg_waldump: error: WAL segment size must be a power of two between 1 MB and 1 GB, but the WAL file "000000010000000000000004" header specifies -1348176584 bytes
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Testing replica_wal/000000010000000000000004 ==="
+[?2004l=== Testing replica_wal/000000010000000000000004 ===
+[?2004huser@9365762ea513:~/wal_recovery$ pg_waldump replica_wal/000000010000000000000004 2>&1 | tail -20
+[?2004lpg_waldump: error: WAL segment size must be a power of two between 1 MB and 1 GB, but the WAL file "000000010000000000000004" header specifies -1348176584 bytes
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Checking file types ==="
+[?2004l=== Checking file types ===
+[?2004huser@9365762ea513:~/wal_recovery$ file primary_wal/*
+[?2004lbash: file: command not found
+[?2004huser@9365762ea513:~/wal_recovery$ file replica_wal/*
+[?2004lbash: file: command not found
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Examining first bytes of segment 3 ==="
+[?2004l=== Examining first bytes of segment 3 ===
+[?2004huser@9365762ea513:~/wal_recovery$ hexdump -C primary_wal/000000010000000000000003 | head -5
+[?2004lbash: hexdump: command not found
+[?2004huser@9365762ea513:~/wal_recovery$ hexdump -C replica_wal/000000010000000000000003 | head -5
+[?2004lbash: hexdump: command not found
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Examining primary segment 3 header ==="
+[?2004l=== Examining primary segment 3 header ===
+[?2004huser@9365762ea513:~/wal_recovery$ od -A x -t x1z -N 64 primary_wal/000000010000000000000003
+[?2004l000000 44 72 c3 07 2a 46 99 22 56 66 a1 ec 3b 14 76 5d  >Dr..*F."Vf..;.v]<
+000010 99 ff ef 5a 50 3a 10 cd 13 a2 c8 b3 dd 65 d9 2d  >...ZP:.......e.-<
+000020 b7 3a 3c 5c a4 7d b5 2f 7f 67 22 d3 3b 8d 3e de  >.:<\.}./.g".;.>.<
+000030 c4 36 08 6b 66 52 96 47 4d 76 b0 3a a8 fa 29 3b  >.6.kfR.GMv.:..);<
+000040
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Checking if files are gzipped ==="
+[?2004l=== Checking if files are gzipped ===
+[?2004huser@9365762ea513:~/wal_recovery$ head -c 2 primary_wal/000000010000000000000003 | od -A n -t x1
+[?2004l 44 72
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Trying to decompress segment 3 ==="
+[?2004l=== Trying to decompress segment 3 ===
+[?2004huser@9365762ea513:~/wal_recovery$ gunzip -c primary_wal/000000010000000000000003 > /tmp/test_seg3 2>&1 || echo "Not gzipped or decompression failed"
+[?2004lNot gzipped or decompression failed
+[?2004huser@9365762ea513:~/wal_recovery$ ls -lh /tmp/test_seg3 2>/dev/null || echo "No output file"
+[?2004l-rw-r--r-- 1 user user 64 May  5 07:27 /tmp/test_seg3
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Extracting base backup ==="
+[?2004l=== Extracting base backup ===
+[?2004huser@9365762ea513:~/wal_recovery$ mkdir -p /tmp/base_backup
+[?2004l[?2004huser@9365762ea513:~/wal_recovery$ tar -xzf base_backup.tar.gz -C /tmp/base_backup
+[?2004l[?2004huser@9365762ea513:~/wal_recovery$ ls -la /tmp/base_backup/
+[?2004ltotal 128
+drwx------ 19 user user  4096 May  5 07:25 .
+drwxrwxrwt  1 root root  4096 May  5 07:27 ..
+-rw-------  1 user user     3 May  5 07:25 PG_VERSION
+drwx------  5 user user  4096 May  5 07:25 base
+drwx------  2 user user  4096 May  5 07:25 global
+drwx------  2 user user  4096 May  5 07:25 pg_commit_ts
+drwx------  2 user user  4096 May  5 07:25 pg_dynshmem
+-rw-------  1 user user  4789 May  5 07:25 pg_hba.conf
+-rw-------  1 user user  1636 May  5 07:25 pg_ident.conf
+drwx------  4 user user  4096 May  5 07:25 pg_logical
+drwx------  4 user user  4096 May  5 07:25 pg_multixact
+drwx------  2 user user  4096 May  5 07:25 pg_notify
+drwx------  2 user user  4096 May  5 07:25 pg_replslot
+drwx------  2 user user  4096 May  5 07:25 pg_serial
+drwx------  2 user user  4096 May  5 07:25 pg_snapshots
+drwx------  2 user user  4096 May  5 07:25 pg_stat
+drwx------  2 user user  4096 May  5 07:25 pg_stat_tmp
+drwx------  2 user user  4096 May  5 07:25 pg_subtrans
+drwx------  2 user user  4096 May  5 07:25 pg_tblspc
+drwx------  2 user user  4096 May  5 07:25 pg_twophase
+drwx------  2 user user  4096 May  5 07:25 pg_wal
+drwx------  2 user user  4096 May  5 07:25 pg_xact
+-rw-------  1 user user    88 May  5 07:25 postgresql.auto.conf
+-rw-------  1 user user 29527 May  5 07:25 postgresql.conf
+[?2004huser@9365762ea513:~/wal_recovery$ find /tmp/base_backup -name "PG_VERSION" -o -name "postgresql.conf" -o -name "*.control" | head -10
+[?2004l/tmp/base_backup/base/4/PG_VERSION
+/tmp/base_backup/base/1/PG_VERSION
+/tmp/base_backup/base/5/PG_VERSION
+/tmp/base_backup/postgresql.conf
+/tmp/base_backup/PG_VERSION
+[?2004huser@9365762ea513:~/wal_recovery$ cat /tmp/base_backup/PG_VERSION
+[?2004l15
+[?2004huser@9365762ea513:~/wal_recovery$ ls -la /tmp/base_backup/pg_wal/
+[?2004ltotal 8
+drwx------  2 user user 4096 May  5 07:25 .
+drwx------ 19 user user 4096 May  5 07:25 ..
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Checking for control file ==="
+[?2004l=== Checking for control file ===
+[?2004huser@9365762ea513:~/wal_recovery$ ls -la /tmp/base_backup/global/pg_control 2>/dev/null || echo "No pg_control found"
+[?2004l-rw------- 1 user user 8192 May  5 07:25 /tmp/base_backup/global/pg_control
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Trying pg_waldump with segment size parameter ==="
+[?2004l=== Trying pg_waldump with segment size parameter ===
+[?2004huser@9365762ea513:~/wal_recovery$ pg_waldump --help 2>&1 | grep -i segment
+[?2004l  -p, --path=PATH        directory in which to find log segment files or a
+[?2004huser@9365762ea513:~/wal_recovery$ pg_controldata /tmp/base_backup
+[?2004lpg_control version number:            1300
+Catalog version number:               202209061
+Database system identifier:           7636305587799150611
+Database cluster state:               shut down
+pg_control last modified:             Tue May  5 07:25:45 2026
+Latest checkpoint location:           0/14FDEE0
+Latest checkpoint's REDO location:    0/14FDEE0
+Latest checkpoint's REDO WAL file:    000000010000000000000001
+Latest checkpoint's TimeLineID:       1
+Latest checkpoint's PrevTimeLineID:   1
+Latest checkpoint's full_page_writes: on
+Latest checkpoint's NextXID:          0:724
+Latest checkpoint's NextOID:          13553
+Latest checkpoint's NextMultiXactId:  1
+Latest checkpoint's NextMultiOffset:  0
+Latest checkpoint's oldestXID:        716
+Latest checkpoint's oldestXID's DB:   1
+Latest checkpoint's oldestActiveXID:  0
+Latest checkpoint's oldestMultiXid:   1
+Latest checkpoint's oldestMulti's DB: 1
+Latest checkpoint's oldestCommitTsXid:0
+Latest checkpoint's newestCommitTsXid:0
+Time of latest checkpoint:            Tue May  5 07:25:45 2026
+Fake LSN counter for unlogged rels:   0/3E8
+Minimum recovery ending location:     0/0
+Min recovery ending loc's timeline:   0
+Backup start location:                0/0
+Backup end location:                  0/0
+End-of-backup record required:        no
+wal_level setting:                    replica
+wal_log_hints setting:                off
+max_connections setting:              100
+max_worker_processes setting:         8
+max_wal_senders setting:              10
+max_prepared_xacts setting:           0
+max_locks_per_xact setting:           64
+track_commit_timestamp setting:       off
+Maximum data alignment:               8
+Database block size:                  8192
+Blocks per segment of large relation: 131072
+WAL block size:                       8192
+Bytes per WAL segment:                16777216
+Maximum length of identifiers:        64
+Maximum columns in an index:          32
+Maximum size of a TOAST chunk:        1996
+Size of a large-object chunk:         2048
+Date/time type storage:               64-bit integers
+Float8 argument passing:              by value
+Data page checksum version:           0
+Mock authentication nonce:            1e93b764d4ebfc7c6d5bc0e1bfd291f03b22502effa4cc086974a97bde23b749
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Checking WAL segment size from control data ==="
+[?2004l=== Checking WAL segment size from control data ===
+[?2004huser@9365762ea513:~/wal_recovery$ pg_controldata /tmp/base_backup | grep -i "wal\|segment\|checkpoint\|lsn"
+[?2004lLatest checkpoint location:           0/14FDEE0
+Latest checkpoint's REDO location:    0/14FDEE0
+Latest checkpoint's REDO WAL file:    000000010000000000000001
+Latest checkpoint's TimeLineID:       1
+Latest checkpoint's PrevTimeLineID:   1
+Latest checkpoint's full_page_writes: on
+Latest checkpoint's NextXID:          0:724
+Latest checkpoint's NextOID:          13553
+Latest checkpoint's NextMultiXactId:  1
+Latest checkpoint's NextMultiOffset:  0
+Latest checkpoint's oldestXID:        716
+Latest checkpoint's oldestXID's DB:   1
+Latest checkpoint's oldestActiveXID:  0
+Latest checkpoint's oldestMultiXid:   1
+Latest checkpoint's oldestMulti's DB: 1
+Latest checkpoint's oldestCommitTsXid:0
+Latest checkpoint's newestCommitTsXid:0
+Time of latest checkpoint:            Tue May  5 07:25:45 2026
+Fake LSN counter for unlogged rels:   0/3E8
+wal_level setting:                    replica
+wal_log_hints setting:                off
+max_wal_senders setting:              10
+Blocks per segment of large relation: 131072
+WAL block size:                       8192
+Bytes per WAL segment:                16777216
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Looking for WAL page magic in primary segment 3 ==="
+[?2004l=== Looking for WAL page magic in primary segment 3 ===
+[?2004huser@9365762ea513:~/wal_recovery$ dd if=primary_wal/000000010000000000000003 bs=8192 count=10 2>/dev/null | od -A x -t x2 -N 160 | head -20
+[?2004l000000 7244 07c3 462a 2299 6656 eca1 143b 5d76
+000010 ff99 5aef 3a50 cd10 a213 b3c8 65dd 2dd9
+000020 3ab7 5c3c 7da4 2fb5 677f d322 8d3b de3e
+000030 36c4 6b08 5266 4796 764d 3ab0 faa8 3b29
+000040 07e0 d56c de2f 4de2 54ac 0c3a 0b1e ccf7
+000050 1016 7091 7da8 feb5 b21c b4b9 0e2e 50f2
+000060 52dc 187c 00b9 7d25 a133 aed4 0a85 7684
+000070 51ed a627 203f 242d 0696 8ffb 0c59 6706
+000080 7e2f 39c9 ed7c e555 67ff b1d0 2423 b8e7
+000090 c2aa ef5e 557c 7a5d 26ac 6fcd ecb2 dad7
+0000a0
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Comparing first 512 bytes of primary vs replica segment 3 ==="
+[?2004l=== Comparing first 512 bytes of primary vs replica segment 3 ===
+[?2004huser@9365762ea513:~/wal_recovery$ cmp -l primary_wal/000000010000000000000003 replica_wal/000000010000000000000003 | head -20
+[?2004l[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Checking for any README or notes ==="
+[?2004l=== Checking for any README or notes ===
+[?2004huser@9365762ea513:~/wal_recovery$ ls -la /home/user/wal_recovery/ | grep -v "^d"
+[?2004ltotal 3100
+-rwxrwxrwx 1 user user 3137976 May  5 07:25 base_backup.tar.gz
+-rwxrwxrwx 1 user user     146 May  5 07:25 manifest.json
+-rw-r--r-- 1 user user     284 May  5 07:26 primary_checksums.txt
+-rw-r--r-- 1 user user     213 May  5 07:26 replica_checksums.txt
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Checking if there's a pattern (XOR with 0xFF test) ==="
+[?2004l=== Checking if there's a pattern (XOR with 0xFF test) ===
+[?2004huser@9365762ea513:~/wal_recovery$ dd if=primary_wal/000000010000000000000003 bs=1 count=32 2>/dev/null | od -A n -t x1
+[?2004l 44 72 c3 07 2a 46 99 22 56 66 a1 ec 3b 14 76 5d
+ 99 ff ef 5a 50 3a 10 cd 13 a2 c8 b3 dd 65 d9 2d
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Testing XOR decryption with various keys ==="
+[?2004l=== Testing XOR decryption with various keys ===
+[?2004huser@9365762ea513:~/wal_recovery$ python3 -c "import sys; data = open('primary_wal/000000010000000000000003', 'rb').read(32); print('First 32 bytes:', ' '.join(f'{b:02x}' for b in data)); xored = bytes([b ^ 0x42 for b in data]); print('XOR 0x42:', ' '.join(f'{b:02x}' for b in xored[:16]))"
+[?2004lFirst 32 bytes: 44 72 c3 07 2a 46 99 22 56 66 a1 ec 3b 14 76 5d 99 ff ef 5a 50 3a 10 cd 13 a2 c8 b3 dd 65 d9 2d
+XOR 0x42: 06 30 81 45 68 04 db 60 14 24 e3 ae 79 56 34 1f
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Searching for WAL magic number D097 (little-endian 97D0) ==="
+[?2004l=== Searching for WAL magic number D097 (little-endian 97D0) ===
+[?2004huser@9365762ea513:~/wal_recovery$ python3 -c "data = open('primary_wal/000000010000000000000003', 'rb').read(); import re; matches = [(i, data[i:i+4].hex()) for i in range(0, min(len(data), 100000), 8192) if len(data[i:i+4]) == 4]; print('\n'.join([f'Offset {m[0]:08x}: {m[1]}' for m in matches[:20]]))"
+[?2004lOffset 00000000: 4472c307
+Offset 00002000: 6155a925
+Offset 00004000: 6732c737
+Offset 00006000: 6b754bde
+Offset 00008000: 399254e3
+Offset 0000a000: 1510d2b2
+Offset 0000c000: 6ab12a0b
+Offset 0000e000: 0f34a6f0
+Offset 00010000: 97744311
+Offset 00012000: 2ef51586
+Offset 00014000: a54c55dc
+Offset 00016000: b0aba78a
+Offset 00018000: 208fa18d
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Trying to find XOR key by comparing with expected WAL header ==="
+[?2004l=== Trying to find XOR key by comparing with expected WAL header ===
+[?2004huser@9365762ea513:~/wal_recovery$ python3 << 'XOREOF'
+[?2004l[?2004h> data = open('primary_wal/000000010000000000000003', 'rb').read(24)
+[?2004l[?2004h> print(f"First 24 bytes: {data.hex()}")
+[?2004l[?2004h> # WAL page header magic is typically D097 or D093 (little-endian)
+[?2004l[?2004h> # Let's see if XORing first 2 bytes gives us the magic
+[?2004l[?2004h> for magic in [0xD097, 0xD093, 0xD07E, 0xD081]:
+[?2004l[?2004h>     key1 = data[0] ^ (magic & 0xFF)
+[?2004l[?2004h>     key2 = data[1] ^ ((magic >> 8) & 0xFF)
+[?2004l[?2004h>     if key1 == key2:
+[?2004l[?2004h>         print(f"Possible XOR key: 0x{key1:02x} for magic 0x{magic:04x}")
+[?2004l[?2004h>         xored = bytes([b ^ key1 for b in data[:24]])
+[?2004l[?2004h>         print(f"XORed result: {xored.hex()}")
+[?2004l[?2004h> XOREOF
+[?2004lFirst 24 bytes: 4472c3072a4699225666a1ec3b14765d99ffef5a503a10cd
+[?2004huser@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+[?2004l[?2004h> import struct
+[?2004l[?2004h> 
+[?2004l[?2004h> data = open('primary_wal/000000010000000000000003', 'rb').read(48)
+[?2004l[?2004h> print(f"First 48 bytes hex: {data.hex()}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # PostgreSQL WAL long page header structure:
+[?2004l[?2004h> # uint16 xlp_magic (0xD097 for PG 13+)
+[?2004l[?2004h> # uint16 xlp_info
+[?2004l[?2004h> # uint32 xlp_tli (timeline ID = 1)
+[?2004l[?2004h> # uint64 xlp_pageaddr (should be 0x3000000 for segment 3)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Try to find XOR key from known pageaddr
+[?2004l[?2004h> expected_pageaddr = 0x0000000003000000  # LSN 0/3000000 in big-endian format
+[?2004l[?2004h> actual_bytes = data[8:16]
+[?2004l[?2004h> print(f"Bytes at offset 8-16: {actual_bytes.hex()}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Try different byte orders
+[?2004l[?2004h> for bo in ['little', 'big']:
+[?2004l[?2004h>     expected = expected_pageaddr.to_bytes(8, bo)
+[?2004l[?2004h>     print(f"Expected pageaddr ({bo}-endian): {expected.hex()}")
+[?2004l[?2004h>     xor_key = bytes([a ^ e for a, e in zip(actual_bytes, expected)])
+[?2004l[?2004h>     print(f"Derived XOR key: {xor_key.hex()}")
+[?2004l[?2004h>     if len(set(xor_key)) == 1:
+[?2004l[?2004h>         print(f"  -> Constant key found: 0x{xor_key[0]:02x}")
+[?2004l[?2004h>         break
+[?2004l[?2004h> EOF
+[?2004lFirst 48 bytes hex: 4472c3072a4699225666a1ec3b14765d99ffef5a503a10cd13a2c8b3dd65d92db73a3c5ca47db52f7f6722d33b8d3ede
+Bytes at offset 8-16: 5666a1ec3b14765d
+Expected pageaddr (little-endian): 0000000300000000
+Derived XOR key: 5666a1ef3b14765d
+Expected pageaddr (big-endian): 0000000003000000
+Derived XOR key: 5666a1ec3814765d
+[?2004huser@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+[?2004l 0:
+            xor_key[i % key_len] = data[i] ^ expected[i]
+    print(f"Key length {key_len:2d}: {xor_key.hex()}")
+EOF
+[?2004h> import struct
+[?2004l[?2004h> 
+[?2004l[?2004h> data = open('primary_wal/000000010000000000000003', 'rb').read(32)
+[?2004l[?2004h> print(f"First 32 bytes: {data.hex()}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Expected values for WAL segment 3, page 0:
+[?2004l[?2004h> # Offset 0-2: magic 0xD097 (little-endian: 97 D0)
+[?2004l[?2004h> # Offset 4-8: timeline ID 1 (little-endian: 01 00 00 00)
+[?2004l[?2004h> # Offset 8-16: pageaddr 0x3000000 (little-endian: 00 00 00 03 00 00 00 00)
+[?2004l[?2004h> 
+[?2004l[?2004h> expected = bytearray(32)
+[?2004l[?2004h> expected[0:2] = [0x97, 0xD0]  # magic
+[?2004l[?2004h> expected[4:8] = [0x01, 0x00, 0x00, 0x00]  # timeline
+[?2004l[?2004h> expected[8:16] = [0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00]  # pageaddr
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"Expected pattern: {expected.hex()}")
+[?2004l[?2004h> print("\nXOR key derivation:")
+[?2004l[?2004h> for i in range(16):
+[?2004l[?2004h>     if expected[i] != 0:
+[?2004l[?2004h>         xor_val = data[i] ^ expected[i]
+[?2004l[?2004h>         print(f"Offset {i:2d}: {data[i]:02x} ^ {expected[i]:02x} = {xor_val:02x}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Check for repeating pattern
+[?2004l[?2004h> print("\nLooking for repeating XOR key pattern...")
+[?2004l[?2004h> key_candidates = []
+[?2004l[?2004h> for key_len in [1, 2, 4, 8, 16]:
+[?2004l[?2004h>     xor_key = bytearray(key_len)
+[?2004l[?2004h>     for i in range(16):
+[?2004l[?2004h>         if expected[i] != 0:
+[?2004l[?2004h>             xor_key[i % key_len] = data[i] ^ expected[i]
+[?2004l[?2004h>     print(f"Key length {key_len:2d}: {xor_key.hex()}")
+[?2004l[?2004h> EOF
+[?2004lFirst 32 bytes: 4472c3072a4699225666a1ec3b14765d99ffef5a503a10cd13a2c8b3dd65d92d
+Expected pattern: 97d0000001000000000000030000000000000000000000000000000000000000
+
+XOR key derivation:
+Offset  0: 44 ^ 97 = d3
+Offset  1: 72 ^ d0 = a2
+Offset  4: 2a ^ 01 = 2b
+Offset 11: ec ^ 03 = ef
+
+Looking for repeating XOR key pattern...
+Key length  1: ef
+Key length  2: 2bef
+Key length  4: 2ba200ef
+Key length  8: d3a200ef2b000000
+Key length 16: d3a200002b000000000000ef00000000
+[?2004huser@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+[?2004l[?2004h> # Let's try a 16-byte repeating XOR key
+[?2004l[?2004h> # Key pattern from multiple offsets: d3 a2 ?? ?? 2b ?? ?? ?? ?? ?? ?? ef
+[?2004l[?2004h> 
+[?2004l[?2004h> data = open('primary_wal/000000010000000000000003', 'rb').read()
+[?2004l[?2004h> 
+[?2004l[?2004h> # Try the key: d3a2????2b??????ef (let's guess the missing bytes)
+[?2004l[?2004h> # Common pattern might be d3a2d3a22bd3d3ef or similar
+[?2004l[?2004h> 
+[?2004l[?2004h> # Let's look at more known values to derive full key
+[?2004l[?2004h> # Check second page (offset 8192) which should have pageaddr 0x3002000
+[?2004l[?2004h> page2 = data[8192:8192+16]
+[?2004l[?2004h> print(f"Page 2 (offset 8192) first 16 bytes: {page2.hex()}")
+[?2004l[?2004h> print(f"Expected pageaddr for page 2: {(0x3000000 + 8192).to_bytes(8, 'little').hex()}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Page address at offset 8 in each page
+[?2004l[?2004h> page2_addr = page2[8:16]
+[?2004l[?2004h> expected_addr = (0x3000000 + 8192).to_bytes(8, 'little')
+[?2004l[?2004h> print(f"\nPage 2 address bytes: {page2_addr.hex()}")
+[?2004l[?2004h> print(f"Expected: {expected_addr.hex()}")
+[?2004l[?2004h> xor_derived = bytes([a ^ e for a, e in zip(page2_addr, expected_addr)])
+[?2004l[?2004h> print(f"XOR key from page 2: {xor_derived.hex()}")
+[?2004l[?2004h> EOF
+[?2004lPage 2 (offset 8192) first 16 bytes: 6155a925c23efd599400a71351896a7a
+Expected pageaddr for page 2: 0020000300000000
+
+Page 2 address bytes: 9400a71351896a7a
+Expected: 0020000300000000
+XOR key from page 2: 9420a71051896a7a
+[?2004huser@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+[?2004l[?2004h> # System identifier from pg_control: 7636305587799150611
+[?2004l[?2004h> # Let's see if this is used as XOR key
+[?2004l[?2004h> 
+[?2004l[?2004h> sys_id = 7636305587799150611
+[?2004l[?2004h> data = open('primary_wal/000000010000000000000003', 'rb').read(64)
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"System ID: {sys_id}")
+[?2004l[?2004h> print(f"System ID hex: {sys_id:016x}")
+[?2004l[?2004h> print(f"System ID bytes (LE): {sys_id.to_bytes(8, 'little').hex()}")
+[?2004l[?2004h> print(f"System ID bytes (BE): {sys_id.to_bytes(8, 'big').hex()}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Try XOR with system ID as repeating 8-byte key
+[?2004l[?2004h> key = sys_id.to_bytes(8, 'little')
+[?2004l[?2004h> print(f"\nXOR key (8 bytes): {key.hex()}")
+[?2004l[?2004h> 
+[?2004l[?2004h> decrypted = bytearray()
+[?2004l[?2004h> for i in range(64):
+[?2004l[?2004h>     decrypted.append(data[i] ^ key[i % 8])
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"\nFirst 64 bytes decrypted: {decrypted.hex()}")
+[?2004l[?2004h> print(f"\nFirst 2 bytes (should be magic 97d0): {decrypted[0]:02x}{decrypted[1]:02x}")
+[?2004l[?2004h> print(f"Timeline at offset 4 (should be 01000000): {decrypted[4:8].hex()}")
+[?2004l[?2004h> print(f"Pageaddr at offset 8 (should be 0000000300000000): {decrypted[8:16].hex()}")
+[?2004l[?2004h> EOF
+[?2004lSystem ID: 7636305587799150611
+System ID hex: 69f99b7925195013
+System ID bytes (LE): 13501925799bf969
+System ID bytes (BE): 69f99b7925195013
+
+XOR key (8 bytes): 13501925799bf969
+
+First 64 bytes decrypted: 5722da2253dd604b4536b8c9428f8f348aaff67f29a1e9a400f2d196a4fe2044a46a2579dde64c466c373bf64216c7b7d766114e1fc96f2e5e26a91fd161d052
+
+First 2 bytes (should be magic 97d0): 5722
+Timeline at offset 4 (should be 01000000): 53dd604b
+Pageaddr at offset 8 (should be 0000000300000000): 4536b8c9428f8f34
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Trying pg_waldump with start LSN ==="
+[?2004l=== Trying pg_waldump with start LSN ===
+[?2004huser@9365762ea513:~/wal_recovery$ pg_waldump -p primary_wal -s 0/3000000 2>&1 | head -30
+[?2004lpg_waldump: error: WAL segment size must be a power of two between 1 MB and 1 GB, but the WAL file "000000010000000000000003" header specifies 1547451063 bytes
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Trying with bkp_details ==="
+[?2004l=== Trying with bkp_details ===
+[?2004huser@9365762ea513:~/wal_recovery$ pg_waldump -p primary_wal -s 0/3000000 -b 2>&1 | head -30
+[?2004lpg_waldump: error: WAL segment size must be a power of two between 1 MB and 1 GB, but the WAL file "000000010000000000000003" header specifies 1547451063 bytes
+[?2004huser@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+[?2004l)}")
+EOF
+[?2004h> import struct
+[?2004l[?2004h> 
+[?2004l[?2004h> # WAL page header is:
+[?2004l[?2004h> # 0-2: magic (uint16)
+[?2004l[?2004h> # 2-4: info (uint16) 
+[?2004l[?2004h> # 4-8: tli (uint32)
+[?2004l[?2004h> # 8-16: pageaddr (uint64)
+[?2004l[?2004h> # 16-20: xlp_rem_len (uint32)
+[?2004l[?2004h> 
+[?2004l[?2004h> # But for LONG header (first page of segment):
+[?2004l[?2004h> # After standard header, there's XLogLongPageHeaderData:
+[?2004l[?2004h> # uint64 xlp_sysid
+[?2004l[?2004h> # uint32 xlp_seg_size  <- This is what pg_waldump is reading!
+[?2004l[?2004h> # uint32 xlp_xlog_blcksz
+[?2004l[?2004h> 
+[?2004l[?2004h> # So xlp_seg_size should be at offset 24 (16 + 8)
+[?2004l[?2004h> 
+[?2004l[?2004h> for seg_name in ['000000010000000000000003', '000000010000000000000004', '000000010000000000000005', '000000010000000000000006']:
+[?2004l[?2004h>     try:
+[?2004l[?2004h>         data = open(f'primary_wal/{seg_name}', 'rb').read(32)
+[?2004l[?2004h>         seg_size_bytes = data[24:28]
+[?2004l[?2004h>         seg_size = struct.unpack('<I', seg_size_bytes)[0]
+[?2004l[?2004h>         print(f"{seg_name}: seg_size at offset 24 = {seg_size} (0x{seg_size:08x}) [{seg_size_bytes.hex()}]")
+[?2004l[?2004h>     except:
+[?2004l[?2004h>         print(f"{seg_name}: not found")
+[?2004l[?2004h>         
+[?2004l[?2004h> print(f"\nExpected seg_size: 16777216 (0x{16777216:08x})")
+[?2004l[?2004h> print(f"Expected bytes (LE): {struct.pack('<I', 16777216).hex()}")
+[?2004l[?2004h> EOF
+[?2004l000000010000000000000003: seg_size at offset 24 = 3016270355 (0xb3c8a213) [13a2c8b3]
+000000010000000000000004: seg_size at offset 24 = 3506071325 (0xd0fa671d) [1d67fad0]
+000000010000000000000005: seg_size at offset 24 = 1614775644 (0x603f855c) [5c853f60]
+000000010000000000000006: seg_size at offset 24 = 2496269127 (0x94ca0b47) [470bca94]
+
+Expected seg_size: 16777216 (0x01000000)
+Expected bytes (LE): 00000001
+[?2004huser@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+[?2004l[?2004h> import struct
+[?2004l[?2004h> 
+[?2004l[?2004h> sys_id_expected = 7636305587799150611
+[?2004l[?2004h> seg_size_expected = 16777216
+[?2004l[?2004h> blk_size_expected = 8192
+[?2004l[?2004h> 
+[?2004l[?2004h> print("Expected values:")
+[?2004l[?2004h> print(f"  System ID: {sys_id_expected} (0x{sys_id_expected:016x})")
+[?2004l[?2004h> print(f"  Seg size: {seg_size_expected} (0x{seg_size_expected:08x})")
+[?2004l[?2004h> print(f"  Block size: {blk_size_expected} (0x{blk_size_expected:08x})")
+[?2004l[?2004h> print()
+[?2004l[?2004h> 
+[?2004l[?2004h> data = open('primary_wal/000000010000000000000003', 'rb').read(32)
+[?2004l[?2004h> print(f"Segment 3 bytes 16-32: {data[16:32].hex()}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Extract actual values
+[?2004l[?2004h> actual_sysid_bytes = data[16:24]
+[?2004l[?2004h> actual_segsize_bytes = data[24:28]
+[?2004l[?2004h> actual_blksize_bytes = data[28:32]
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"\nActual bytes:")
+[?2004l[?2004h> print(f"  Sys ID (16-24): {actual_sysid_bytes.hex()}")
+[?2004l[?2004h> print(f"  Seg size (24-28): {actual_segsize_bytes.hex()}")
+[?2004l[?2004h> print(f"  Blk size (28-32): {actual_blksize_bytes.hex()}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Derive XOR key from these known values
+[?2004l[?2004h> expected_bytes = sys_id_expected.to_bytes(8, 'little') + seg_size_expected.to_bytes(4, 'little') + blk_size_expected.to_bytes(4, 'little')
+[?2004l[?2004h> actual_bytes = data[16:32]
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"\nExpected bytes (16-32): {expected_bytes.hex()}")
+[?2004l[?2004h> xor_key = bytes([a ^ e for a, e in zip(actual_bytes, expected_bytes)])
+[?2004l[?2004h> print(f"XOR key (16 bytes): {xor_key.hex()}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Check if it's a repeating pattern
+[?2004l[?2004h> print(f"\nChecking for repeating pattern:")
+[?2004l[?2004h> for key_len in [1, 2, 4, 8, 16]:
+[?2004l[?2004h>     if key_len <= 16:
+[?2004l[?2004h>         key_pattern = xor_key[:key_len]
+[?2004l[?2004h>         matches = all(xor_key[i] == key_pattern[i % key_len] for i in range(16))
+[?2004l[?2004h>         print(f"  {key_len}-byte pattern: {key_pattern.hex()} - {'MATCH' if matches else 'no match'}")
+[?2004l[?2004h> EOF
+[?2004lExpected values:
+  System ID: 7636305587799150611 (0x69f99b7925195013)
+  Seg size: 16777216 (0x01000000)
+  Block size: 8192 (0x00002000)
+
+Segment 3 bytes 16-32: 99ffef5a503a10cd13a2c8b3dd65d92d
+
+Actual bytes:
+  Sys ID (16-24): 99ffef5a503a10cd
+  Seg size (24-28): 13a2c8b3
+  Blk size (28-32): dd65d92d
+
+Expected bytes (16-32): 13501925799bf9690000000100200000
+XOR key (16 bytes): 8aaff67f29a1e9a413a2c8b2dd45d92d
+
+Checking for repeating pattern:
+  1-byte pattern: 8a - no match
+  2-byte pattern: 8aaf - no match
+  4-byte pattern: 8aaff67f - no match
+  8-byte pattern: 8aaff67f29a1e9a4 - no match
+  16-byte pattern: 8aaff67f29a1e9a413a2c8b2dd45d92d - MATCH
+[?2004huser@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+[?2004l[?2004h> import os
+[?2004l[?2004h> 
+[?2004l[?2004h> xor_key = bytes.fromhex('8aaff67f29a1e9a413a2c8b2dd45d92d')
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"XOR key: {xor_key.hex()}")
+[?2004l[?2004h> print(f"Key length: {len(xor_key)} bytes")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Create decrypted directory
+[?2004l[?2004h> os.makedirs('decrypted_wal', exist_ok=True)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Decrypt all primary WAL segments
+[?2004l[?2004h> for seg_file in ['000000010000000000000003', '000000010000000000000004', 
+[?2004l[?2004h>                  '000000010000000000000005', '000000010000000000000006']:
+[?2004l[?2004h>     input_path = f'primary_wal/{seg_file}'
+[?2004l[?2004h>     output_path = f'decrypted_wal/{seg_file}'
+[?2004l[?2004h>     
+[?2004l[?2004h>     if os.path.exists(input_path):
+[?2004l[?2004h>         with open(input_path, 'rb') as f:
+[?2004l[?2004h>             data = f.read()
+[?2004l[?2004h>         
+[?2004l[?2004h>         decrypted = bytearray()
+[?2004l[?2004h>         for i, byte in enumerate(data):
+[?2004l[?2004h>             decrypted.append(byte ^ xor_key[i % len(xor_key)])
+[?2004l[?2004h>         
+[?2004l[?2004h>         with open(output_path, 'wb') as f:
+[?2004l[?2004h>             f.write(decrypted)
+[?2004l[?2004h>         
+[?2004l[?2004h>         print(f"Decrypted {seg_file}: {len(data)} bytes -> {output_path}")
+[?2004l[?2004h> 
+[?2004l[?2004h> print("\nDecryption complete!")
+[?2004l[?2004h> EOF
+[?2004lXOR key: 8aaff67f29a1e9a413a2c8b2dd45d92d
+Key length: 16 bytes
+ls -lh decrypted_wal/
+echo "=== Testing decrypted segment 3 with pg_waldump ==="
+pg_waldump decrypted_wal/000000010000000000000003 2>&1 | head -20
+Decrypted 000000010000000000000003: 16777216 bytes -> decrypted_wal/000000010000000000000003
+Decrypted 000000010000000000000004: 16777216 bytes -> decrypted_wal/000000010000000000000004
+Decrypted 000000010000000000000005: 16777216 bytes -> decrypted_wal/000000010000000000000005
+Decrypted 000000010000000000000006: 8388608 bytes -> decrypted_wal/000000010000000000000006
+
+Decryption complete!
+[?2004huser@9365762ea513:~/wal_recovery$ ls -lh decrypted_wal/
+[?2004ltotal 56M
+-rw-r--r-- 1 user user  16M May  5 07:30 000000010000000000000003
+-rw-r--r-- 1 user user  16M May  5 07:30 000000010000000000000004
+-rw-r--r-- 1 user user  16M May  5 07:30 000000010000000000000005
+-rw-r--r-- 1 user user 8.0M May  5 07:30 000000010000000000000006
+[?2004huser@9365762ea513:~/wal_recovery$ echo "=== Testing decrypted segment 3 with pg_waldump ==="
+[?2004l=== Testing decrypted segment 3 with pg_waldump ===
+[?2004huser@9365762ea513:~/wal_recovery$ pg_waldump decrypted_wal/000000010000000000000003 2>&1 | head -20
+[?2004lpg_waldump: error: WAL segment size must be a power of two between 1 MB and 1 GB, but the WAL file "000000010000000000000003" header specifies 600479037 bytes
+[?2004huser@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+[?2004l[?2004h> import struct
+[?2004l[?2004h> 
+[?2004l[?2004h> # Check what we got after decryption
+[?2004l[?2004h> data = open('decrypted_wal/000000010000000000000003', 'rb').read(32)
+[?2004l[?2004h> print(f"Decrypted segment 3, first 32 bytes: {data.hex()}")
+[?2004l[?2004h> print()
+[?2004l[?2004h> 
+[?2004l[?2004h> # Parse the header
+[?2004l[?2004h> magic = struct.unpack('<H', data[0:2])[0]
+[?2004l[?2004h> info = struct.unpack('<H', data[2:4])[0]
+[?2004l[?2004h> tli = struct.unpack('<I', data[4:8])[0]
+[?2004l[?2004h> pageaddr = struct.unpack('<Q', data[8:16])[0]
+[?2004l[?2004h> sysid = struct.unpack('<Q', data[16:24])[0]
+[?2004l[?2004h> segsize = struct.unpack('<I', data[24:28])[0]
+[?2004l[?2004h> blksize = struct.unpack('<I', data[28:32])[0]
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"Magic: 0x{magic:04x} (expected 0xd097)")
+[?2004l[?2004h> print(f"Info: 0x{info:04x}")
+[?2004l[?2004h> print(f"Timeline: {tli} (expected 1)")
+[?2004l[?2004h> print(f"Page addr: 0x{pageaddr:016x} (expected 0x3000000)")
+[?2004l[?2004h> print(f"System ID: {sysid} (expected {7636305587799150611})")
+[?2004l[?2004h> print(f"Seg size: {segsize} (expected 16777216)")
+[?2004l[?2004h> print(f"Blk size: {blksize} (expected 8192)")
+[?2004l[?2004h> EOF
+[?2004lDecrypted segment 3, first 32 bytes: cedd357803e7708645c4695ee651af7013501925799bf9690000000100200000
+
+Magic: 0xddce (expected 0xd097)
+Info: 0x7835
+Timeline: 2255546115 (expected 1)
+Page addr: 0x70af51e65e69c445 (expected 0x3000000)
+System ID: 7636305587799150611 (expected 7636305587799150611)
+Seg size: 16777216 (expected 16777216)
+Blk size: 8192 (expected 8192)
+[?2004huser@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+[?2004lf"\nComparing:")
+print(f"Part1[0-16]: {xor_key_part1.hex()}")
+print(f"Part2[0-16]: {xor_key_part2.hex()}")
+
+# Full 16-byte repeating key
+full_key = xor_key_part2  # Use the one we derived from bytes 16-32
+print(f"\nFull 16-byte key: {full_key.hex()}")
+EOF
+[?2004h> import struct
+[?2004l[?2004h> 
+[?2004l[?2004h> # Read original encrypted data
+[?2004l[?2004h> data_enc = open('primary_wal/000000010000000000000003', 'rb').read(32)
+[?2004l[?2004h> print(f"Original encrypted (0-32): {data_enc.hex()}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Expected values for first 16 bytes
+[?2004l[?2004h> expected = bytearray(16)
+[?2004l[?2004h> expected[0:2] = struct.pack('<H', 0xd097)  # magic
+[?2004l[?2004h> # info at 2-4: unknown, skip
+[?2004l[?2004h> expected[4:8] = struct.pack('<I', 1)  # timeline
+[?2004l[?2004h> expected[8:16] = struct.pack('<Q', 0x3000000)  # pageaddr
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"Expected (0-16): {expected.hex()}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Derive XOR key for first 16 bytes
+[?2004l[?2004h> xor_key_part1 = bytearray(16)
+[?2004l[?2004h> for i in [0, 1, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:  # skip info bytes 2-3
+[?2004l[?2004h>     if expected[i] != 0 or i >= 8:  # pageaddr includes zeros
+[?2004l[?2004h>         xor_key_part1[i] = data_enc[i] ^ expected[i]
+[?2004l[?2004h> 
+[?2004l[?2004h> print(f"XOR key part 1 (0-16): {xor_key_part1.hex()}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # We already know the key for bytes 16-32
+[?2004l[?2004h> xor_key_part2 = bytes.fromhex('8aaff67f29a1e9a413a2c8b2dd45d92d')
+[?2004l[?2004h> print(f"XOR key part 2 (16-32): {xor_key_part2.hex()}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Check if part1 is just the first half of part2
+[?2004l[?2004h> print(f"\nComparing:")
+[?2004l[?2004h> print(f"Part1[0-16]: {xor_key_part1.hex()}")
+[?2004l[?2004h> print(f"Part2[0-16]: {xor_key_part2.hex()}")
+[?2004l[?2004h> 
+[?2004l[?2004h> # Full 16-byte repeating key
+[?2004l[?2004h> full_key = xor_key_part2  # Use the one we derived from bytes 16-32
+[?2004l[?2004h> print(f"\nFull 16-byte key: {full_key.hex()}")
+[?2004l[?2004h> EOF
+[?2004lOriginal encrypted (0-32): 4472c3072a4699225666a1ec3b14765d99ffef5a503a10cd13a2c8b3dd65d92d
+Expected (0-16): 97d00000010000000000000300000000
+XOR key part 1 (0-16): d3a200002b0000005666a1ef3b14765d
+XOR key part 2 (16-32): 8aaff67f29a1e9a413a2c8b2dd45d92d
+
+Comparing:
+Part1[0-16]: d3a200002b0000005666a1ef3b14765d
+Part2[0-16]: 8aaff67f29a1e9a413a2c8b2dd45d92d
+
+Full 16-byte key: 8aaff67f29a1e9a413a2c8b2dd45d92d
+[?2004huser@9365762ea513:~/wal_recovery$ python3 << 'EOF'
+[?2004l[?2004h> import struct
+[?2004l[?2004h> 
+[?2004l[?2004h> # Read more data to understand the pattern
+[?2004l[?2004h> data_enc = open('primary_wal/000000010000000000000003', 'rb').read(64)
+[?2004l[?2004h> 
+[?2004l[?2004h> # Build expected values for bytes 0-32
+[?2004l[?2004h> expected = bytearray(32)
+[?2004l[?2004h> expected[0:2] = struct.pack('<H', 0xd097)  # magic
+[?2004l[?2004h> expected[4:8] = struct.pack('<I', 1)  # timeline  
+[?2004l[?2004h> expected[8:16] = struct.pack('<Q', 0x3000000)  # pageaddr
+[?2004l[?2004h> expected[16:24] = struct.pack('<Q', 7636305587799150611)  # sysid
+[?2004l[?2004h> expected[24:28] = struct.pack('<I', 16777216)  # segsize
+[?2004l[?2004h> expected[28:32] = struct.pack('<I', 8192)  # blksize
+[?2004l[?2004h> 
+[?2004l[?2004h> print("Expected header (0-32):")
+[?2004l[?2004h> print(expected.hex())
+[?2004l[?2004h> print("\nActual encrypted (0-32):")
+[?2004l[?2004h> print(data_enc[:32].hex())
+[?2004l[?2004h> 
+[?2004l[?2004h> # Derive 32-byte XOR key
+[?2004l[?2004h> xor_key_32 = bytearray(32)
+[?2004l[?2004h> for i in range(32):
+[?2004l[?2004h>     if i not in [2, 3]:  # skip unknown info field
+[?2004l[?2004h>         xor_key_32[i] = data_enc[i] ^ expected[i]
+[?2004l[?2004h> 
+[?2004l[?2004h> print("\nDerived 32-byte XOR key:")
+[?2004l[?2004h> print(xor_key_32.hex())
+[?2004l[?2004h> 
+[?2004l[?2004h> # Check if it repeats at 32 bytes
+[?2004l[?2004h> print("\nChecking next 32 bytes (32-64):")
+[?2004l[?2004h> for i in range(32, 64):
+[?2004l[?2004h>     decrypted_byte = data_enc[i] ^ xor_key_32[i % 32]
+[?2004l[?2004h>     print(f"{i:2d}: {data_enc[i]:02x} ^ {xor_key_32[i%32]:02x} = {decrypted_byte:02x}", end="")
+[?2004l[?2004h>     if (i - 31) % 8 == 0:
+[?2004l[?2004h>         print()
+[?2004l[?2004h>     else:
+[?2004l[?2004h>         print(" ", end="")
+[?2004l[?2004h> EOF
+[?2004lExpected header (0-32):
+97d0000001000000000000030000000013501925799bf9690000000100200000
+
+Actual encrypted (0-32):
+4472c3072a4699225666a1ec3b14765d99ffef5a503a10cd13a2c8b3dd65d92d
+
+Derived 32-byte XOR key:
+d3a200002b4699225666a1ef3b14765d8aaff67f29a1e9a413a2c8b2dd45d92d
+
+Checking next 32 bytes (32-64):
+32: b7 ^ d3 = 64 33: 3a ^ a2 = 98 34: 3c ^ 00 = 3c 35: 5c ^ 00 = 5c 36: a4 ^ 2b = 8f 37: 7d ^ 46 = 3b 38: b5 ^ 99 = 2c 39: 2f ^ 22 = 0d
+40: 7f ^ 56 = 29 41: 67 ^ 66 = 01 42: 22 ^ a1 = 83 43: d3 ^ ef = 3c 44: 3b ^ 3b = 00 45: 8d ^ 14 = 99 46: 3e ^ 76 = 48 47: de ^ 5d = 83
+48: c4 ^ 8a = 4e 49: 36 ^ af = 99 50: 08 ^ f6 = fe 51: 6b ^ 7f = 14 52: 66 ^ 29 = 4f 53: 52 ^ a1 = f3 54: 96 ^ e9 = 7f 55: 47 ^ a4 = e3
+56: 4d ^ 13 = 5e 57: 76 ^ a2 = d4 58: b0 ^ c8 = 78 59: 3a ^ b2 = 88 60: a8 ^ dd = 75 61: fa ^ 45 = bf 62: 29 ^ d9 = f0 63: 3b ^ 2d = 16
+[?2004huser@9365762ea513:~/wal_recovery$ 

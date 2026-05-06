@@ -1,0 +1,64 @@
+New Terminal Output:
+
+user@ebd676d3f649:~$ cat > process_memory.sh << 'EOF'
+> #!/bin/bash
+>
+> # Output file
+> OUTPUT="/home/user/low_memory_report.txt"
+>
+> # Temporary file for collecting results
+> TEMP_FILE=$(mktemp)
+>
+> # Process each host file
+> for hostfile in /home/user/memstats/host*.txt; do
+>     hostname=$(basename "$hostfile" .txt)
+>
+>     # Extract MemTotal and MemAvailable, handling missing values
+>     mem_total=$(grep -E '^MemTotal:' "$hostfile" 2>/dev/null | awk '{print $2}')
+>     mem_available=$(grep -E '^MemAvailable:' "$hostfile" 2>/dev/null | awk '{print $2}')
+>
+>     # Skip if either value is missing or empty
+>     if [[ -z "$mem_total" ]] || [[ -z "$mem_available" ]]; then
+>         continue
+>     fi
+>
+>     # Calculate percentage available (using bc for floating point)
+>     percentage=$(echo "scale=2; ($mem_available * 100) / $mem_total" | bc)
+>
+>     # Check if less than 20%
+>     is_low=$(echo "$percentage < 20" | bc)
+>
+>     if [[ $is_low -eq 1 ]]; then
+>         # Store for sorting: percentage, hostname, percentage (for output)
+>         echo "$percentage$hostname$percentage" >> "$TEMP_FILE"
+>     fi
+> done
+>
+> # Sort by percentage (ascending = worst first) and output hostname + percentage
+> if [[ -f "$TEMP_FILE" ]] && [[ -s "$TEMP_FILE" ]]; then
+>     sort -n "$TEMP_FILE" | awk -F'\t' '{print $2 "\t" $3}' > "$OUTPUT"
+> else
+>     # Create empty file if no hosts meet criteria
+>     touch "$OUTPUT"
+> fi
+>
+> # Cleanup
+> rm -f "$TEMP_FILE"
+> EOF
+user@ebd676d3f649:~$ chmod +x process_memory.sh
+user@ebd676d3f649:~$ ./process_memory.sh
+./process_memory.sh: line 23: bc: command not found
+./process_memory.sh: line 26: bc: command not found
+./process_memory.sh: line 23: bc: command not found
+./process_memory.sh: line 26: bc: command not found
+./process_memory.sh: line 23: bc: command not found
+./process_memory.sh: line 26: bc: command not found
+./process_memory.sh: line 23: bc: command not found
+./process_memory.sh: line 26: bc: command not found
+./process_memory.sh: line 23: bc: command not found
+./process_memory.sh: line 26: bc: command not found
+./process_memory.sh: line 23: bc: command not found
+./process_memory.sh: line 26: bc: command not found
+./process_memory.sh: line 23: bc: command not found
+./process_memory.sh: line 26: bc: command not found
+user@ebd676d3f649:~$

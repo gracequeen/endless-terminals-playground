@@ -1,0 +1,65 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+root@b51493795d53:/home/user/releaser# cat semver.py
+"""
+Semantic versioning logic for the release tooling.
+"""
+
+
+def parse_version(version_str):
+    """Parse a version string into (major, minor, patch) tuple."""
+    parts = version_str.strip().split('.')
+    return int(parts[0]), int(parts[1]), int(parts[2])
+
+
+def format_version(major, minor, patch):
+    """Format version tuple back to string."""
+    return f"{major}.{minor}.{patch}"
+
+
+def bump_major(version_str):
+    """Bump the major version, reset minor and patch."""
+    major, minor, patch = parse_version(version_str)
+    return format_version(major + 1, 0, 0)
+
+
+def bump_minor(version_str):
+    """Bump the minor version, reset patch."""
+    major, minor, patch = parse_version(version_str)
+    return format_version(major, minor + 1, 0)
+
+
+def bump_patch(version_str):
+    """Bump the patch version."""
+    major, minor, patch = parse_version(version_str)
+    return format_version(major, minor, patch + 1)
+
+
+def bump_version(current, commit_tags, config):
+    """
+    Determine the appropriate version bump based on commit tags and config rules.
+
+    Priority: major > minor > patch
+    Iterates through commit tags and checks against rules.
+    """
+    rules = config['version_rules']
+
+    # Check from highest to lowest priority
+    for tag in commit_tags:
+        # Normalize tag to uppercase for comparison
+        normalized_tag = tag.upper()
+
+        if normalized_tag in rules['major_triggers']:
+            return bump_major(current)
+        if normalized_tag in rules['minor_triggers']:
+            return bump_minor(current)
+        if normalized_tag in rules['patch_triggers']:
+            return bump_patch(current)
+
+    # No matching rule found
+    return None
+root@b51493795d53:/home/user/releaser#

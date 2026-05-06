@@ -1,0 +1,59 @@
+New Terminal Output:
+
+root@6983e8e593e8:/home/user/edge-gateway# cat > gateway.py << 'EOF'
+> import asyncio
+> from aiohttp import web
+> import aiomqtt
+>
+> mqtt_client = None
+>
+> async def health_handler(request):
+>     if mqtt_client and mqtt_client._client.is_connected():
+>         return web.json_response({"status": "healthy", "mqtt": "connected"})
+>     return web.json_response({"status": "degraded", "mqtt": "disconnected"}, status=503)
+>
+> async def sensor_handler(request):
+>     data = await request.json()
+>     if mqtt_client:
+>         await mqtt_client.publish("sensors/data", str(data))
+>     return web.json_response({"accepted": True})
+>
+> def create_app():
+>     app = web.Application()
+>     app.router.add_get('/health', health_handler)
+>     app.router.add_post('/sensor', sensor_handler)
+>     return app
+>
+> async def mqtt_loop():
+>     global mqtt_client
+>     async with aiomqtt.Client("localhost", 1883) as client:
+>         mqtt_client = client
+>         # Subscribe to a topic to keep the connection alive
+>         await client.subscribe("sensors/#")
+>         async for message in client.messages:
+>             print(f"Received: {message.payload}")
+>
+> async def run_http_server(app):
+>     runner = web.AppRunner(app)
+>     await runner.setup()
+>     site = web.TCPSite(runner, '0.0.0.0', 8080)
+>     await site.start()
+>     print("HTTP server started on port 8080")
+>     # Keep running forever
+>     await asyncio.Event().wait()
+>
+> async def main_async():
+>     app = create_app()
+>     # Run both HTTP server and MQTT loop concurrently
+>     await asyncio.gather(
+>         run_http_server(app),
+>         mqtt_loop()
+>     )
+>
+> def main():
+>     asyncio.run(main_async())
+>
+> if __name__ == '__main__':
+>     main()
+> EOF
+root@6983e8e593e8:/home/user/edge-gateway#

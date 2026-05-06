@@ -1,0 +1,76 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+}root@3fbfc0d9b59d:/home/user/monitor# cat check_all.py
+#!/usr/bin/env python3
+"""
+Health check dashboard script.
+Polls internal services and writes status report to status.json.
+"""
+
+import json
+import requests
+from datetime import datetime
+
+# Service configuration
+SERVICES = {
+    "inventory": "http://127.0.0.1:8081/health",
+    "pricing": "http://127.0.0.1:8082/health",
+    "fulfillment": "http://127.0.0.1:8083/health",
+}
+
+# Timeout for requests (bumped to 30s to rule out timeout issues)
+REQUEST_TIMEOUT = 30
+
+
+def check_service(name, url):
+    """
+    Check a single service's health endpoint.
+    Returns dict with status information.
+    """
+    try:
+        response = requests.get(url, timeout=REQUEST_TIMEOUT)
+        # TODO: also check X-Service-Ready header
+        if response.status_code == 200:
+            data = response.json()
+            # Check if service reports healthy state
+            if data.get("state") == "ok":
+                return {"status": "healthy", "response_time_ms": response.elapsed.total_seconds() * 1000}
+        return {"status": "degraded", "reason": "unhealthy response"}
+    except requests.exceptions.Timeout:
+        return {"status": "degraded", "reason": "timeout"}
+    except requests.exceptions.ConnectionError:
+        return {"status": "degraded", "reason": "connection_failed"}
+    except Exception as e:
+        return {"status": "degraded", "reason": str(e)}
+
+
+def main():
+    """Main entry point - check all services and write report."""
+    results = {}
+    all_healthy = True
+
+    for name, url in SERVICES.items():
+        result = check_service(name, url)
+        results[name] = result
+        if result["status"] != "healthy":
+            all_healthy = False
+
+    report = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "services": results,
+        "healthy": all_healthy,
+    }
+
+    with open("/home/user/monitor/status.json", "w") as f:
+        json.dump(report, f, indent=2)
+
+    return 0 if all_healthy else 1
+
+
+if __name__ == "__main__":
+    exit(main())
+root@3fbfc0d9b59d:/home/user/monitor#

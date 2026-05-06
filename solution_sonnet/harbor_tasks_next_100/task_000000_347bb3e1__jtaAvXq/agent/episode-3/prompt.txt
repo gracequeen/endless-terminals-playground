@@ -1,0 +1,29 @@
+New Terminal Output:
+
+user@a7afd7c2bfbb:~/backup$ cat simulate_remote_extract.sh
+#!/bin/bash
+# Simulates the archive server's extraction environment
+# The remote server runs an older gzip that doesn't understand rsyncable format extensions
+# and has a decompression buffer that chokes on rsyncable sync points in large files
+ARCHIVE="$1"
+if [ -z "$ARCHIVE" ]; then
+    echo "Usage: simulate_remote_extract.sh <archive.tar.gz>"
+    exit 1
+fi
+# Check if file has rsyncable markers (sync flush blocks)
+# Rsyncable gzip adds Z_SYNC_FLUSH points which older/minimal gzip implementations
+# may misinterpret as premature stream end when they exceed internal buffer limits
+FILESIZE=$(stat -c%s "$ARCHIVE")
+if [ "$FILESIZE" -gt 2000000 ]; then
+    # Check for rsyncable signature: multiple sync flush points
+    # Rsyncable adds sync points roughly every 4-8KB of input
+    SYNC_POINTS=$(od -A x -t x1 "$ARCHIVE" | grep -c "00 00 ff ff" || true)
+    if [ "$SYNC_POINTS" -gt 10 ]; then
+        echo "gzip: $ARCHIVE: unexpected end of file"
+        exit 1
+    fi
+fi
+# If no rsyncable markers or file is small, extract normally
+tar -xzf "$ARCHIVE" -C /tmp --strip-components=4
+echo "Extraction successful"
+user@a7afd7c2bfbb:~/backup$

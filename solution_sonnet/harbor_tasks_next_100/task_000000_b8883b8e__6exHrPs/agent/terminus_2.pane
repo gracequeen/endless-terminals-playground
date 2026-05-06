@@ -1,0 +1,55 @@
+[?2004huser@5bd4aa0862df:~$ asciinema rec --stdin /logs/agent/recording.cast
+[?2004l[0;32masciinema: recording asciicast to /logs/agent/recording.cast[0m
+[0;32masciinema: press <ctrl-d> or type "exit" when you're done[0m
+[?2004huser@5bd4aa0862df:~$ clear
+[?2004l[H[J[?2004huser@5bd4aa0862df:~$ cd /home/user/pentest
+[?2004l[?2004huser@5bd4aa0862df:~/pentest$ ls -la
+[?2004ltotal 40
+drwxrwxrwx 1 user user  4096 May  5 18:12 .
+drwxrwxrwx 1 user user  4096 May  5 18:13 ..
+drwxrwxrwx 1 user user  4096 May  5 18:12 app
+-rw-r--r-- 1 user user 28672 May  5 18:12 inventory.db
+[?2004huser@5bd4aa0862df:~/pentest$ sqlite3 inventory.db '.tables'
+[?2004l_legacy_auth  api_keys      audit_log     sessions      users       
+[?2004huser@5bd4aa0862df:~/pentest$ sqlite3 inventory.db '.schema'
+[?2004lCREATE TABLE users (
+    id INTEGER PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL
+);
+CREATE TABLE sessions (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    session_token TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE TABLE api_keys (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    key_hash TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE TABLE audit_log (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    details TEXT,
+    timestamp TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE TABLE _legacy_auth (
+    id INTEGER PRIMARY KEY,
+    username TEXT NOT NULL,
+    pin TEXT NOT NULL
+);
+[?2004huser@5bd4aa0862df:~/pentest$ sqlite3 inventory.db 'SELECT * FROM _legacy_auth;'
+[?2004l1|alice|1234
+2|bob|5678
+3|admin|0000
+[?2004huser@5bd4aa0862df:~/pentest$ sqlite3 inventory.db "SELECT username || ':' || pin FROM _legacy_auth;" > /home/user/pentest/findings.txt
+[?2004l[?2004huser@5bd4aa0862df:~/pentest$ cat /home/user/pentest/findings.txt
+[?2004lalice:1234
+bob:5678
+admin:0000
+[?2004huser@5bd4aa0862df:~/pentest$ 

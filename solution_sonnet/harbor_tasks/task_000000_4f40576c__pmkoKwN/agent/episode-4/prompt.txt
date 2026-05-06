@@ -1,0 +1,93 @@
+Previous response had warnings:
+WARNINGS: - Extra text detected before JSON object
+- Extra text detected after JSON object
+
+New Terminal Output:
+
+user@e1ed81a2c0ee:~/archive_pipeline$ cat extract.py
+#!/usr/bin/env python3
+"""
+extract.py - Extract a .carch archive bundle
+
+Usage: python3 extract.py <archive.carch> <dest_dir>
+"""
+
+import sys
+import os
+import json
+import struct
+import subprocess
+
+
+def extract_archive(carch_path, dest_dir):
+    """Extract a .carch archive to destination directory."""
+    if not os.path.isfile(carch_path):
+        raise ValueError(f"Archive does not exist: {carch_path}")
+
+    # Create destination directory if needed
+    os.makedirs(dest_dir, exist_ok=True)
+
+    with open(carch_path, 'rb') as f:
+        # Read and verify magic
+        magic = f.read(4)
+        if magic != b'CARC':
+            raise ValueError(f"Invalid archive: bad magic bytes")
+
+        # Read header length
+        header_len = struct.unpack('<I', f.read(4))[0]
+
+        # Read and parse metadata
+        metadata_bytes = f.read(header_len)
+        metadata = json.loads(metadata_bytes.decode('utf-8'))
+
+        print(f"Extracting archive...")
+        print(f"  Source: {metadata.get('source_path', 'unknown')}")
+        print(f"  Files: {metadata.get('file_count', 'unknown')}")
+        print(f"  Original size: {metadata.get('total_size', 'unknown')} bytes")
+
+        # Calculate payload offset and seek to it
+        # The payload starts after magic + header_len field + metadata
+        payload_offset = header_len
+        f.seek(payload_offset)
+
+        # Read the compressed payload
+        payload = f.read()
+
+        # Decompress with zstd and extract with tar
+        zstd_proc = subprocess.Popen(
+            ['zstd', '-d', '-c'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+
+        tar_proc = subprocess.Popen(
+            ['tar', '-x', '-C', dest_dir],
+            stdin=zstd_proc.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+
+        zstd_proc.stdout.close()
+
+        # Send payload to zstd
+        zstd_proc.stdin.write(payload)
+        zstd_proc.stdin.close()
+
+        # Wait for processes to complete
+        tar_out, tar_err = tar_proc.communicate()
+        zstd_proc.wait()
+
+        # Note: We don't strictly check return codes because zstd/tar
+        # can sometimes return non-zero even on partial success
+
+        print(f"Extracted to: {dest_dir}")
+
+
+if __name__ == '__main__':
+    if len(sys.argv) != 3:
+        print(f"Usage: {sys.argv[0]} <archive.carch> <dest_dir>")
+        sys.exit(1)
+
+    extract_archive(sys.argv[1], sys.argv[2])
+user@e1ed81a2c0ee:~/archive_pipeline$
