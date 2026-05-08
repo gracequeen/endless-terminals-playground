@@ -1,0 +1,3 @@
+Policy scanner in /home/user/scanner keeps getting different results depending on which machine I run it on — same repo, same rules, different findings. One run flags 12 violations, another gives 9, another gives 14. Thought maybe it was file ordering so I added a sort, but nope still inconsistent. The rules themselves are deterministic regex matches, nothing probabilistic.
+
+Started a fresh clone of our test repo at /home/user/test-repo with known policy violations planted. The scanner at /home/user/scanner/scan.sh should find exactly 8 violations when pointed at that repo. Right now it's giving me anywhere from 6 to 11 depending on... something. Need it stable — same 8 violations every time, order doesn't matter but count does.

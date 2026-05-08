@@ -1,0 +1,1 @@
+I need to clear out /home/user/.cache/pip — it's eating like 2GB and I'm tight on space. Don't just rm -rf it though, pip has a proper cache purge command that's supposed to be cleaner. Just nuke the whole pip cache.

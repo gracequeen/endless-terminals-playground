@@ -1,0 +1,3 @@
+Data reconciliation job at /home/user/pipeline keeps dying overnight — it's supposed to pull from three upstream CSVs in /home/user/pipeline/incoming/, merge them, and write a clean output to /home/user/pipeline/output/merged.csv. Cron runs `python3 /home/user/pipeline/reconcile.py` at 2am and I'm waking up to empty output files every morning.
+
+Logs in /home/user/pipeline/logs/ aren't super helpful, just says it completed but the row counts are way off. Should be around 1500 rows in the merged output based on the source files, getting like 12. Pretty sure the logic was working last month before we onboarded that new vendor whose data comes in through vendor_c.csv — might be something funky with their format but I haven't had time to dig in.
