@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from aicore_llm_access import ClaudeModels, get_anthropic_completion, model_aliases
+from generator.aicore_llm_access import ClaudeModels, get_anthropic_completion, model_aliases
 from generate_harbor_solutions import _extract_action, compute_pass_at_k
 
 
@@ -68,7 +68,7 @@ class TestGetAnthropicCompletion:
         mock_client.converse.return_value = _make_bedrock_response(text)
         mock_session = mock.MagicMock()
         mock_session.client.return_value = mock_client
-        return mock.patch("aicore_llm_access.Session", return_value=mock_session)
+        return mock.patch("generator.aicore_llm_access.Session", return_value=mock_session)
 
     def test_returns_string(self):
         with self._patch_session("Hello world"):
@@ -95,7 +95,7 @@ class TestGetAnthropicCompletion:
         mock_session = mock.MagicMock()
         mock_session.client.return_value = mock_client
 
-        with mock.patch("aicore_llm_access.Session", return_value=mock_session):
+        with mock.patch("generator.aicore_llm_access.Session", return_value=mock_session):
             get_anthropic_completion(
                 messages=[
                     {"role": "system", "content": "You are helpful."},
@@ -122,8 +122,8 @@ class TestGetAnthropicCompletion:
         mock_session = mock.MagicMock()
         mock_session.client.return_value = mock_client
 
-        with mock.patch("aicore_llm_access.Session", return_value=mock_session):
-            with mock.patch("aicore_llm_access.REQUEST_TIMEOUT_SEC", 0.05):
+        with mock.patch("generator.aicore_llm_access.Session", return_value=mock_session):
+            with mock.patch("generator.aicore_llm_access.REQUEST_TIMEOUT_SEC", 0.05):
                 with pytest.raises(RuntimeError, match="timed out"):
                     get_anthropic_completion(
                         messages=[{"role": "user", "content": "Hi"}],
@@ -138,8 +138,8 @@ class TestGetAnthropicCompletion:
 class TestAICoreAnthropicLLMFormatMessages:
     @pytest.fixture
     def llm(self):
-        from aicore_llm import AICoreAnthropicLLM
-        with mock.patch("aicore_llm.Session"):
+        from generator.aicore_llm import AICoreAnthropicLLM
+        with mock.patch("generator.aicore_llm.Session"):
             return AICoreAnthropicLLM(model_name="claude_4_5")
 
     def test_plain_user_message(self, llm):
@@ -170,8 +170,8 @@ class TestAICoreAnthropicLLMFormatMessages:
         assert conv_msgs[0]["content"] == [{"text": "block"}]
 
     def test_unknown_model_raises(self):
-        from aicore_llm import AICoreAnthropicLLM
-        with mock.patch("aicore_llm.Session"):
+        from generator.aicore_llm import AICoreAnthropicLLM
+        with mock.patch("generator.aicore_llm.Session"):
             with pytest.raises(ValueError, match="Unknown model"):
                 AICoreAnthropicLLM(model_name="invalid_model")
 

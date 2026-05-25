@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from aicore_llm_access import get_anthropic_completion, model_aliases
+from generator.aicore_llm_access import get_anthropic_completion, model_aliases
 
 
 MAX_OUTPUT_LENGTH = 50_000

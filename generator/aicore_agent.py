@@ -20,7 +20,7 @@ from typing import Any
 
 from harbor.agents.terminus_2.terminus_2 import Terminus2
 
-from aicore_llm import AICoreAnthropicLLM
+from generator.aicore_llm import AICoreAnthropicLLM
 
 
 class AICoreTerminus2(Terminus2):
