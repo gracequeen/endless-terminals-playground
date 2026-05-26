@@ -54,14 +54,51 @@ if __name__ == "__main__":
     parser.add_argument("--build-sif", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-workers", type=int, default=20, help="Number of parallel workers for building containers")
+    parser.add_argument(
+        "--source", choices=["stage1", "stage2"], default=None,
+        help=(
+            "Task filtering mode. 'stage1': filter by solutions/o3_summary.json pass@16>0 "
+            "(vLLM/Apptainer tasks). 'stage2': filter by solution/solution.json num_success>0 "
+            "(Harbor/Docker tasks). Auto-detected if not set."
+        ),
+    )
 
     args = parser.parse_args()
     random.seed(args.seed)
     task_dir_names = [f for f in os.listdir(args.task_dir) if "task" in f]
-    # check if task dir has o3 summary
-    task_dir_names = [f for f in task_dir_names if (Path(args.task_dir) / f / "solutions" / "o3_summary.json").exists()]
-    # check if o3 suummary pass @16 is greater than 0
-    task_dir_names = [f for f in task_dir_names if json.load(open(Path(args.task_dir) / f / "solutions" / "o3_summary.json"))["pass_at_k"]["16"] > 0]
+
+    # Auto-detect source if not specified: prefer stage2 if any task has solution/solution.json
+    source = args.source
+    if source is None:
+        has_stage2 = any(
+            (Path(args.task_dir) / f / "solution" / "solution.json").exists()
+            for f in task_dir_names
+        )
+        source = "stage2" if has_stage2 else "stage1"
+        print(f"Auto-detected source: {source}")
+
+    if source == "stage2":
+        # Stage 2 (Harbor): keep tasks with solution/solution.json and num_success > 0
+        def _harbor_solved(f):
+            p = Path(args.task_dir) / f / "solution" / "solution.json"
+            if not p.exists():
+                return False
+            try:
+                return json.load(open(p)).get("num_success", 0) > 0
+            except (json.JSONDecodeError, OSError):
+                return False
+        task_dir_names = [f for f in task_dir_names if _harbor_solved(f)]
+    else:
+        # Stage 1 (vLLM/Apptainer): keep tasks with o3_summary pass@16 > 0
+        task_dir_names = [
+            f for f in task_dir_names
+            if (Path(args.task_dir) / f / "solutions" / "o3_summary.json").exists()
+        ]
+        task_dir_names = [
+            f for f in task_dir_names
+            if json.load(open(Path(args.task_dir) / f / "solutions" / "o3_summary.json"))["pass_at_k"]["16"] > 0
+        ]
+
     task_dir_names = list(sorted(task_dir_names))
     random.shuffle(task_dir_names)
     task_descriptions = [json.load(open(Path(args.task_dir) / f / "task.json"))["description"] for f in task_dir_names]
