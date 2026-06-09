@@ -1,0 +1,33 @@
+%% User-Defined Category Generation — Full Flow
+%% Render with Mermaid (https://mermaid.live)
+
+flowchart TD
+    A([User: natural-language query\n+ optional test instructions]) --> B
+
+    subgraph INPUT ["Input Layer"]
+        B["query_to_config.py\n(single LLM call → JSON)"]
+        B --> C[generation_config.json\nwritten to disk]
+        C --> D["Config Validator\n(schema + weight + coverage checks)"]
+        D -->|warnings| E{User reviews\nwarnings + config}
+        E -->|edit config manually| C
+        E -->|satisfied| F
+    end
+
+    subgraph PIPELINE ["Generation Pipeline"]
+        F["generate_tasks.py --config\n(reads categories + difficulty weights\nfrom config; calls generate_templates_batch)"]
+        F --> G[Task output dirs\ntasks/task_XXXXXX_*/]
+    end
+
+    subgraph REPORT ["Report + Tests"]
+        G --> H["distribution_report.py\n– actual vs. requested per category\n– difficulty breakdown\n– zero-hit flags\n– success rate"]
+        H --> I{Coverage tests\nPASS?}
+        I -->|PASS| J{User satisfied?}
+        J -->|yes| K([Done — task set accepted])
+        J -->|no| L
+        I -->|FAIL| L[User reviews report\nprovides new query\nor edits config directly]
+        L --> B
+    end
+
+    style INPUT fill:#f0f4ff,stroke:#99b
+    style PIPELINE fill:#f0fff4,stroke:#9b9
+    style REPORT fill:#fff8f0,stroke:#bb9
