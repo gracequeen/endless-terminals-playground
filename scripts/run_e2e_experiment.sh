@@ -15,9 +15,12 @@ export PATH="$HOME/.local/bin:$PATH"
 export HF_HUB_ENABLE_HF_TRANSFER=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export VLLM_USE_V1=0
+export VLLM_DISABLE_CUMEM=1   # disable cumem allocator to avoid wake_up OOM on T4
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_DIR"
+
+PYTHON="$REPO_DIR/.venv/bin/python3"
 
 MODEL="Qwen/Qwen3.5-0.8B"
 MODEL_SHORT="Qwen3.5-0.8B"
@@ -40,7 +43,7 @@ mkdir -p "$RESULTS_DIR"
 start_vllm() {
     local model_path="$1"
     echo "[e2e] Starting vLLM server for $model_path on port $VLLM_PORT ..."
-    python3 -m vllm.entrypoints.openai.api_server \
+    $PYTHON -m vllm.entrypoints.openai.api_server \
         --model "$model_path" \
         --dtype float16 \
         --port "$VLLM_PORT" \
@@ -77,7 +80,7 @@ stop_vllm() {
 # Log experiment config (pre-train phase)
 # ---------------------------------------------------------------------------
 echo "[e2e] === Phase 0: Logging experiment config ==="
-python3 train/harbor/log_experiment.py \
+$PYTHON train/harbor/log_experiment.py \
     --model "$MODEL" \
     --manifest "$MANIFEST" \
     --output "$RESULTS_DIR/experiment_config.json" \
@@ -96,9 +99,9 @@ python3 train/harbor/log_experiment.py \
 echo "[e2e] === Phase 1: Pre-training eval (base model, test split) ==="
 start_vllm "$MODEL"
 
-python3 train/harbor/eval_harbor.py \
+$PYTHON train/harbor/eval_harbor.py \
     --split test \
-    --model "$MODEL_SHORT" \
+    --model "$MODEL" \
     --api-base "$VLLM_API_BASE" \
     --manifest "$MANIFEST" \
     --task-dir harbor_tasks \
@@ -112,7 +115,7 @@ python3 train/harbor/eval_harbor.py \
 
 stop_vllm
 
-python3 train/harbor/log_experiment.py \
+$PYTHON train/harbor/log_experiment.py \
     --model "$MODEL" \
     --manifest "$MANIFEST" \
     --output "$RESULTS_DIR/experiment_config.json" \
@@ -144,9 +147,9 @@ echo "[e2e] Using checkpoint: $HF_CKPT"
 
 start_vllm "$HF_CKPT"
 
-python3 train/harbor/eval_harbor.py \
+$PYTHON train/harbor/eval_harbor.py \
     --split test \
-    --model "$MODEL_SHORT" \
+    --model "$MODEL" \
     --api-base "$VLLM_API_BASE" \
     --manifest "$MANIFEST" \
     --task-dir harbor_tasks \
@@ -160,8 +163,8 @@ python3 train/harbor/eval_harbor.py \
 
 stop_vllm
 
-python3 train/harbor/log_experiment.py \
-    --model "$HF_CKPT" \
+$PYTHON train/harbor/log_experiment.py \
+    --model "$HF_CKPT (fine-tuned from $MODEL)" \
     --manifest "$MANIFEST" \
     --output "$RESULTS_DIR/experiment_config.json" \
     --phase post_train \
@@ -171,7 +174,7 @@ python3 train/harbor/log_experiment.py \
 # Phase 4: Compare pass@1
 # ---------------------------------------------------------------------------
 echo "[e2e] === Phase 4: Comparing pre vs post training ==="
-python3 - <<'PYEOF'
+$PYTHON - <<'PYEOF'
 import json
 from pathlib import Path
 

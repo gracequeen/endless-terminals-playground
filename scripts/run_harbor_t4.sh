@@ -8,7 +8,9 @@ export PATH="$HOME/.local/bin:$PATH"
 export HF_HUB_ENABLE_HF_TRANSFER=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export VLLM_USE_V1=0          # vLLM v1 engine crashes on T4; use v0
+export VLLM_DISABLE_CUMEM=1   # disable cumem allocator to avoid wake_up OOM on T4
 
+PYTHON="$(cd "$(dirname "$0")/.." && pwd)/.venv/bin/python3"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_DIR"
 
@@ -32,7 +34,7 @@ mkdir -p "$RESULTS_DIR"
 # ---------------------------------------------------------------------------
 # Build train/eval data lists from split manifest
 # ---------------------------------------------------------------------------
-TRAIN_DATA=$(python3 -c "
+TRAIN_DATA=$($PYTHON -c "
 import json, sys
 from pathlib import Path
 manifest = json.load(open('$MANIFEST'))
@@ -41,7 +43,7 @@ paths = [str(task_dir / name) for name in manifest['train']]
 print('[' + ','.join(repr(p) for p in paths) + ']')
 ")
 
-VAL_DATA=$(python3 -c "
+VAL_DATA=$($PYTHON -c "
 import json, sys
 from pathlib import Path
 manifest = json.load(open('$MANIFEST'))
@@ -53,7 +55,7 @@ print('[' + ','.join(repr(p) for p in paths) + ']')
 # ---------------------------------------------------------------------------
 # Log experiment config
 # ---------------------------------------------------------------------------
-python3 train/harbor/log_experiment.py \
+$PYTHON train/harbor/log_experiment.py \
   --model "$MODEL" \
   --manifest "$MANIFEST" \
   --output "$RESULTS_DIR/experiment_config.json" \
@@ -64,7 +66,7 @@ python3 train/harbor/log_experiment.py \
     trainer.train_batch_size=$MINI_BATCH_SIZE \
     trainer.policy.optimizer_config.lr=$LR \
     generator.n_samples_per_prompt=$N_SAMPLES \
-    generator.inference_engine.gpu_memory_utilization=0.40 \
+    generator.inference_engine.gpu_memory_utilization=0.30 \
     trainer.algorithm.advantage_estimator=grpo \
     trainer.algorithm.max_seq_len=$MAX_MODEL_LEN \
     harbor_trial_config.agent.kwargs.max_turns=16 \
@@ -73,7 +75,7 @@ python3 train/harbor/log_experiment.py \
 # ---------------------------------------------------------------------------
 # Train
 # ---------------------------------------------------------------------------
-python3 -m train.harbor.entrypoints.main_harbor \
+$PYTHON -m train.harbor.entrypoints.main_harbor \
   "data.train_data=$TRAIN_DATA" \
   "data.val_data=$VAL_DATA" \
   trainer.policy.model.path="$MODEL" \
@@ -95,7 +97,7 @@ python3 -m train.harbor.entrypoints.main_harbor \
   generator.inference_engine.run_engines_locally=true \
   generator.inference_engine.weight_sync_backend=nccl \
   generator.inference_engine.async_engine=true \
-  generator.inference_engine.gpu_memory_utilization=0.40 \
+  generator.inference_engine.gpu_memory_utilization=0.30 \
   generator.inference_engine.enforce_eager=true \
   generator.inference_engine.vllm_v1_disable_multiproc=true \
   generator.inference_engine.engine_init_kwargs.max_model_len=$MAX_MODEL_LEN \
