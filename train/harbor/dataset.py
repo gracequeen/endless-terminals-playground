@@ -1,3 +1,4 @@
+import json
 from loguru import logger
 from typing import List
 from pathlib import Path
@@ -102,3 +103,32 @@ class HarborTaskDataset:
     def collate_fn(self, item_list):
         """Collate function for batching task dictionaries."""
         return item_list
+
+    @classmethod
+    def load_split(cls, manifest_path: str | Path, split: str) -> "HarborTaskDataset":
+        """
+        Load a dataset from a split manifest produced by split_tasks.py.
+
+        Args:
+            manifest_path: Path to the JSON manifest (e.g. data/harbor_split.json).
+            split: One of "train", "eval", or "test".
+
+        Returns:
+            HarborTaskDataset containing only the task paths for the requested split.
+        """
+        manifest_path = Path(manifest_path)
+        if not manifest_path.exists():
+            raise FileNotFoundError(f"Manifest not found: {manifest_path}")
+
+        with manifest_path.open() as fh:
+            manifest = json.load(fh)
+
+        valid_splits = {"train", "eval", "test"}
+        if split not in valid_splits:
+            raise ValueError(f"split must be one of {valid_splits}, got {split!r}")
+
+        entries = manifest.get(split, [])
+        paths = [entry["path"] if isinstance(entry, dict) else entry for entry in entries]
+
+        logger.info(f"load_split: loading {len(paths)} tasks for split={split!r} from {manifest_path}")
+        return cls(data_files=paths)
