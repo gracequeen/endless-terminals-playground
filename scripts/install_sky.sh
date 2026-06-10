@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Run from: endless-terminals-playground/
+git clone https://github.com/novasky-ai/SkyRL.git
 
 python3.12 -m venv /tmp/sky
 source /tmp/sky/bin/activate
