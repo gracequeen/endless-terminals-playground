@@ -17,9 +17,14 @@ sed -i '/causal.conv1d/d' SkyRL/pyproject.toml
 pip install -e "SkyRL[fsdp]" --no-build-isolation
 pip install "ray[default]==2.51.1"
 pip install -e .
+pip uninstall flash-attn -y || true
 
 cd SkyRL
 git apply ../scripts/skyrl_patches.patch || echo "Patch already applied or not needed, skipping."
 cd ..
+
+# Fix prometheus_fastapi_instrumentator routing bug
+sed -i 's/route_name = route.path/route_name = getattr(route, "path", None)/' \
+  /tmp/sky/lib64/python3.12/site-packages/prometheus_fastapi_instrumentator/routing.py
 
 echo "Done. Activate with: source /tmp/sky/bin/activate"
