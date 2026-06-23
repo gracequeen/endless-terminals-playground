@@ -29,19 +29,16 @@ export PATH="$CUDA_HOME/bin:$PATH"
 echo "Using CUDA_HOME=$CUDA_HOME"
 
 pip install torch --index-url https://download.pytorch.org/whl/cu126
-pip install packaging wheel
+pip install packaging wheel setuptools_scm "setuptools<75"
 
-cd SkyRL
-git apply ../scripts/skyrl_patches.patch || echo "Patch already applied or not needed, skipping."
-cd ..
+# Apply patches to SkyRL (idempotent — safe to re-run)
+python3.13 scripts/_apply_patches.py
 
-pip install -e "SkyRL[fsdp]" --no-build-isolation
+PIP_NO_BUILD_ISOLATION=1 pip install -e "SkyRL[fsdp]"
 pip install "ray[default]==2.51.1"
 pip install -e .
 
 # Symlink nvcc into the venv's nvidia package so flashinfer JIT finds it
-# (flashinfer constructs the nvcc path from the nvidia package in the active
-# Python env — the venv's nvidia/cu13 has headers/libs but no compiler)
 VENV_NVCC_DIR="/tmp/sky/lib64/python3.13/site-packages/nvidia/cu13/bin"
 if [ ! -f "$VENV_NVCC_DIR/nvcc" ]; then
   mkdir -p "$VENV_NVCC_DIR"
@@ -50,7 +47,6 @@ if [ ! -f "$VENV_NVCC_DIR/nvcc" ]; then
 fi
 
 # Symlink lib64 -> lib in CUDA_HOME so the linker finds libcudart
-# (flashinfer's build.ninja uses -L<cuda_home>/lib64 but libraries live in lib)
 if [ ! -e "$CUDA_HOME/lib64" ]; then
   ln -sf "$CUDA_HOME/lib" "$CUDA_HOME/lib64"
   echo "Symlinked $CUDA_HOME/lib64 -> lib"
