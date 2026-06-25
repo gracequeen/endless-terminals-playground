@@ -16,7 +16,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from generator.aicore_llm_access import ClaudeModels, get_anthropic_completion, model_aliases
-from generate_harbor_solutions import _extract_action, compute_pass_at_k
+from generator.sample_solutions import _extract_action
+from generator.collect_harbor_results import compute_pass_at_k
 
 
 # ---------------------------------------------------------------------------

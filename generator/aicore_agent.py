@@ -36,8 +36,12 @@ class AICoreTerminus2(Terminus2):
         aicore_model = model_name or "claude_opus"
 
         _LITELLM_NAMES = {
-            "claude_opus": "anthropic/claude-opus-4-5-20251101",
+            # Claude 4.5
             "claude_4_5": "anthropic/claude-4.5-sonnet-20250514",
+            "claude_opus_4_5": "anthropic/claude-opus-4-5-20251101",
+            # Claude 4.6
+            "claude_4_6": "claude-sonnet-4-6",
+            "claude_opus": "claude-opus-4-6",
         }
         litellm_model = _LITELLM_NAMES.get(aicore_model)
         if litellm_model is None:

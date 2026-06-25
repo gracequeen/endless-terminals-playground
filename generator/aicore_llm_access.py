@@ -11,8 +11,10 @@ REQUEST_TIMEOUT_SEC = 180
 
 load_dotenv() 
 
-DEPLOYMENT_ID_OPUS = os.getenv("DEPLOYMENT_ID_OPUS")
-DEPLOYMENT_ID_SONNET = os.getenv("DEPLOYMENT_ID_SONNET")
+DEPLOYMENT_ID_OPUS_4_5 = os.getenv("DEPLOYMENT_ID_OPUS")
+DEPLOYMENT_ID_SONNET_4_5 = os.getenv("DEPLOYMENT_ID_SONNET")
+DEPLOYMENT_ID_OPUS = os.getenv("AICORE_CLAUDE4.6_OPUS_DEPLOYMENT_ID")
+DEPLOYMENT_ID_SONNET = os.getenv("AICORE_CLAUDE4.6_SONNET_DEPLOYMENT_ID")
 
 DEFAULT_MESSAGES = [
     {
@@ -31,8 +33,12 @@ DEFAULT_MESSAGES = [
 
 class ClaudeModels(enum.Enum):
     """Enum for Claude AI models with aliases and deployment IDs."""
-    CLAUDE_4_5 = ("claude_4_5", "anthropic--claude-4.5-sonnet", DEPLOYMENT_ID_SONNET)
-    CLAUDE_OPUS = ("claude_opus", "anthropic--claude-4.5-opus", DEPLOYMENT_ID_OPUS)
+    # Claude 4.5
+    CLAUDE_4_5 = ("claude_4_5", "anthropic--claude-4.5-sonnet", DEPLOYMENT_ID_SONNET_4_5)
+    CLAUDE_OPUS_4_5 = ("claude_opus_4_5", "anthropic--claude-4.5-opus", DEPLOYMENT_ID_OPUS_4_5)
+    # Claude 4.6
+    CLAUDE_4_6 = ("claude_4_6", "anthropic--claude-4.6-sonnet", DEPLOYMENT_ID_SONNET)
+    CLAUDE_OPUS = ("claude_opus", "anthropic--claude-4.6-opus", DEPLOYMENT_ID_OPUS)
 
     def __init__(self, alias: str, model_name: str, deployment_id: str):
         """Initialize Claude model with deployment ID.
