@@ -56,7 +56,7 @@ if __name__ == "__main__":
     # check if task dir has solution
     task_dir_names = [f for f in task_dir_names if (Path(args.task_dir) / f / "solution" / "solution.json").exists()]
     # check if solution pass @16 is greater than 0
-    task_dir_names = [f for f in task_dir_names if json.load(open(Path(args.task_dir) / f / "solution" / "solution.json"))["pass_at_k"].get("16", 0) > 0]
+    task_dir_names = [f for f in task_dir_names if any(v > 0 for v in json.load(open(Path(args.task_dir) / f / "solution" / "solution.json"))["pass_at_k"].values())]
     task_dir_names = list(sorted(task_dir_names))
     random.shuffle(task_dir_names)
     task_descriptions = [json.load(open(Path(args.task_dir) / f / "environment" / "task.json"))["description"] for f in task_dir_names]

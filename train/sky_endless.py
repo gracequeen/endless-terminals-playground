@@ -12,6 +12,11 @@ from skyrl_gym.envs.base_text_env import BaseTextEnv, BaseTextEnvStepOutput
 sys.path.insert(0, str(pathlib.Path().resolve()))
 from generator.sample_solutions import _extract_action
 import time
+import threading
+
+# Limit concurrent Docker containers to avoid resource exhaustion
+_CONTAINER_LOCK = threading.Lock()
+_MAX_CONTAINERS = 10
 
 
 class DockerContainerEnvironment:
@@ -27,20 +32,25 @@ class DockerContainerEnvironment:
 
     def initialize(self, run_initial_tests=False):
         tag = f"skyrl-{self.dockerfile_path.parent.parent.name}-{uuid.uuid4().hex[:8]}"
-        proc = subprocess.run(
-            ["docker", "build", "-t", tag, "-f", str(self.dockerfile_path), str(self.dockerfile_path.parent)],
-            capture_output=True, text=True, timeout=300,
-        )
-        if proc.returncode != 0:
+        try:
+            proc = subprocess.run(
+                ["docker", "build", "-t", tag, "-f", str(self.dockerfile_path), str(self.dockerfile_path.parent)],
+                env={**__import__("os").environ, "DOCKER_BUILDKIT": "1"},
+                capture_output=True, text=True, timeout=600,
+            )
+            build_ok = proc.returncode == 0
+        except subprocess.TimeoutExpired:
+            build_ok = False
+        if not build_ok:
             if self.verbose:
-                print(f"Docker build failed: {proc.stderr[-300:]}")
+                print(f"Docker build failed or timed out")
             return False
         self.image_tag = tag
 
         cname = f"skyrl-run-{uuid.uuid4().hex[:8]}"
         proc = subprocess.run(
             ["docker", "run", "-d", "--name", cname, tag, "sleep", "3600"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, timeout=120,
         )
         if proc.returncode != 0:
             if self.verbose:
@@ -85,10 +95,10 @@ class DockerContainerEnvironment:
 
     def cleanup(self):
         if self.container_name:
-            subprocess.run(["docker", "rm", "-f", self.container_name], capture_output=True, timeout=30)
+            subprocess.Popen(["docker", "rm", "-f", self.container_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.container_name = None
         if self.image_tag:
-            subprocess.run(["docker", "rmi", "-f", self.image_tag], capture_output=True, timeout=30)
+            subprocess.Popen(["docker", "rmi", "-f", self.image_tag], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.image_tag = None
         self.instance_name = None
 

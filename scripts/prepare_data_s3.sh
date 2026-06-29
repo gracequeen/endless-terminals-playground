@@ -11,9 +11,10 @@ S3_BUCKET="s3://endless-terminals-training"
 S3_DATA="$S3_BUCKET/data"
 S3_PREPARED="$S3_BUCKET/prepared_data"
 WORK_DIR="/tmp/data_work"
+TASKS_BASE="/home/ec2-user/xin/harbor_tasks"  # permanent — needed at training time
 OUTPUT_DIR="$WORK_DIR/parquet"
 
-mkdir -p "$OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR" "$TASKS_BASE"
 
 BATCHES="part2_2-1 part2_2-2 part2_2-3 part2_2-4"
 
@@ -23,7 +24,7 @@ for BATCH in $BATCHES; do
   echo "Processing batch: $BATCH"
   echo "=========================================="
 
-  TASKS_DIR="$WORK_DIR/tasks_$BATCH"
+  TASKS_DIR="$TASKS_BASE/tasks_$BATCH"
   JOBS_DIR="$WORK_DIR/jobs_$BATCH"
 
   mkdir -p "$TASKS_DIR" "$JOBS_DIR"
@@ -35,22 +36,24 @@ for BATCH in $BATCHES; do
   # Step 2: Download solutions (4.6 sonnet only)
   echo "[2/4] Downloading solutions..."
   aws s3 sync "$S3_DATA/harbor_solutions_claude4.6_sonnet/harbor_tasks_$BATCH/" "$JOBS_DIR/" --no-progress
+  # collect_harbor_results.py needs a config.json at the job dir root to treat it as a single job
+  echo '{}' > "$JOBS_DIR/config.json"
 
   # Step 3: Merge solutions into tasks using collect_harbor_results.py
   echo "[3/4] Merging solutions into tasks..."
-  python collect_harbor_results.py --jobs-dir "$JOBS_DIR" --tasks-dir "$TASKS_DIR"
+  python3.13 collect_harbor_results.py --jobs-dir "$JOBS_DIR" --tasks-dir "$TASKS_DIR"
 
   # Step 4: Generate parquet (append to existing)
   echo "[4/4] Preparing parquet..."
-  python train/prepare_endless.py \
+  python3.13 train/prepare_endless.py \
     --task-dir "$TASKS_DIR" \
     --output-dir "$OUTPUT_DIR/$BATCH"
 
-  echo "Batch $BATCH done. Train: $(python3 -c "import pandas as pd; df=pd.read_parquet('$OUTPUT_DIR/$BATCH/train.parquet'); print(len(df))") rows"
+  echo "Batch $BATCH done. Train: $(python3.13 -c "import pandas as pd; df=pd.read_parquet('$OUTPUT_DIR/$BATCH/train.parquet'); print(len(df))") rows"
 
-  # Clean up raw data for this batch
-  rm -rf "$TASKS_DIR" "$JOBS_DIR"
-  echo "Cleaned up raw data for $BATCH"
+  # Clean up only the jobs dir — keep tasks dir for training time
+  rm -rf "$JOBS_DIR"
+  echo "Cleaned up jobs for $BATCH (tasks kept at $TASKS_DIR)"
 done
 
 # Merge all batch parquets into one train + validation
@@ -58,7 +61,7 @@ echo ""
 echo "=========================================="
 echo "Merging all batches into final parquet..."
 echo "=========================================="
-python3 - << 'PYEOF'
+python3.13 - << 'PYEOF'
 import pandas as pd
 import os
 from pathlib import Path
