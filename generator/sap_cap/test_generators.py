@@ -72,7 +72,7 @@ def generate_cap_final_test(task_data: Dict[str, Any]) -> str:
     """
     category = task_data.get("category", "data_modeling")
     required_files = task_data.get("required_files", ["db/schema.cds"])
-    entities = task_data.get("entities", [])
+    entities = list(dict.fromkeys(task_data.get("entities", [])))
 
     # Build test code based on category
     test_code = """import subprocess
