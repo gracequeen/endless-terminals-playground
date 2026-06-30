@@ -132,6 +132,23 @@ task_{id}_{hash}/
 
 `--skip-build` to skip Docker image building during generation, `--batch-size` to control how many are processed per LLM call.
 
+#### Deduplication
+
+After generation, remove near-duplicate tasks based on description similarity:
+
+```bash
+python dedup_harbor_tasks.py --input-dir harbor_tasks --output-dir harbor_tasks_deduped
+```
+
+Arguments:
+- `--input-dir`: directory of generated tasks to deduplicate
+- `--output-dir`: destination for unique tasks (must not already exist)
+- `--threshold`: cosine similarity threshold above which a task is considered a duplicate (default: `0.85`)
+
+Uses `all-MiniLM-L6-v2` sentence embeddings. Two tasks are considered duplicates if their description similarity meets or exceeds the threshold. Tasks are processed in order — earlier tasks are kept, later near-duplicates are dropped.
+
+A `dedup_report.json` is written to `--output-dir` with the full decision log: each task's status (`kept` or `dropped`), and for dropped tasks the name of the task it duplicates and the similarity score.
+
 ### II. Generating Solutions
 
 Modify choices of arguments:
