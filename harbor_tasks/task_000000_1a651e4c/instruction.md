@@ -1,1 +1,0 @@
-Need to scan /home/user/webapp for any PHP files that have `eval($_` in them — legacy codebase we inherited and I'm paranoid about RCE vectors. Just dump the list of matching filenames to /home/user/suspicious.txt, one per line. Should be quick grep job.
