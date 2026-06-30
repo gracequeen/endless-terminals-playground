@@ -14,6 +14,7 @@
 #                           Required for --sol-only
 #   --gen-concurrency N     LLM concurrency during task generation (default: 16)
 #   --gen-batch-size N      Batch size for task generation (default: 16)
+#   --gen-pipeline-depth N  Number of batches to run concurrently (default: 4)
 #   --gen-model MODEL       Model for task generation (default: claude_opus)
 #   --skip-build            Skip Docker build during task generation
 #   --n-attempts N          Solution attempts per task (default: 8)
@@ -21,7 +22,6 @@
 #   --sol-model MODEL       Model for solution generation (default: claude_4_6)
 #   --sol-subdir DIR        Subfolder under solution_grace/ (default: claude4.6_sonnet)
 #   --job-name NAME         Harbor job name (default: <task-out-dir basename>)
-#   --monitor-interval N    Status log interval in seconds (default: 1800)
 #   --help                  Show this message
 
 set -euo pipefail
@@ -36,6 +36,7 @@ NUM_TASKS=1000
 TASK_OUT_DIR=""
 GEN_CONCURRENCY=16
 GEN_BATCH_SIZE=16
+GEN_PIPELINE_DEPTH=4
 GEN_MODEL="claude_opus"
 SKIP_BUILD=""
 N_ATTEMPTS=8
@@ -43,7 +44,6 @@ SOL_CONCURRENCY=10
 SOL_MODEL="claude_4_6"          # newest claude sonnet in aicore
 SOL_SUBDIR="claude4.6_sonnet"
 JOB_NAME=""
-MONITOR_INTERVAL=1800
 
 # ── Argument parsing ─────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
@@ -54,6 +54,7 @@ while [[ $# -gt 0 ]]; do
         --task-out-dir)     TASK_OUT_DIR="$2";    shift 2 ;;
         --gen-concurrency)  GEN_CONCURRENCY="$2"; shift 2 ;;
         --gen-batch-size)   GEN_BATCH_SIZE="$2";  shift 2 ;;
+        --gen-pipeline-depth) GEN_PIPELINE_DEPTH="$2"; shift 2 ;;
         --gen-model)        GEN_MODEL="$2";       shift 2 ;;
         --skip-build)       SKIP_BUILD="--skip-build"; shift ;;
         --n-attempts)       N_ATTEMPTS="$2";      shift 2 ;;
@@ -61,7 +62,6 @@ while [[ $# -gt 0 ]]; do
         --sol-model)        SOL_MODEL="$2";       shift 2 ;;
         --sol-subdir)       SOL_SUBDIR="$2";      shift 2 ;;
         --job-name)         JOB_NAME="$2";        shift 2 ;;
-        --monitor-interval) MONITOR_INTERVAL="$2"; shift 2 ;;
         --help)
             sed -n '3,30p' "$0"
             exit 0 ;;
@@ -131,7 +131,7 @@ fi
 # ── Step 2: Task generation ───────────────────────────────────────────────────
 if [[ "$MODE" == "both" || "$MODE" == "gen-only" ]]; then
     log "Starting task generation: $NUM_TASKS tasks → $TASK_OUT_DIR"
-    log "  gen-model=$GEN_MODEL  concurrency=$GEN_CONCURRENCY  batch-size=$GEN_BATCH_SIZE  ${SKIP_BUILD:+skip-build}"
+    log "  gen-model=$GEN_MODEL  concurrency=$GEN_CONCURRENCY  batch-size=$GEN_BATCH_SIZE  pipeline-depth=$GEN_PIPELINE_DEPTH  ${SKIP_BUILD:+--skip-build}"
 
     nohup .venv/bin/python generate_harbor_tasks.py \
         --num-tasks "$NUM_TASKS" \
@@ -139,18 +139,21 @@ if [[ "$MODE" == "both" || "$MODE" == "gen-only" ]]; then
         --model "$GEN_MODEL" \
         --max-concurrency "$GEN_CONCURRENCY" \
         --batch-size "$GEN_BATCH_SIZE" \
+        --pipeline-depth "$GEN_PIPELINE_DEPTH" \
         ${SKIP_BUILD} \
         >> "$GEN_LOG" 2>&1 &
     GEN_PID=$!
     log "Task generation PID: $GEN_PID  log: $GEN_LOG"
 
-    log "Monitoring task generation every $(( MONITOR_INTERVAL / 60 )) min..."
-    while kill -0 "$GEN_PID" 2>/dev/null; do
-        sleep "$MONITOR_INTERVAL"
+    sleep 300
+    if kill -0 "$GEN_PID" 2>/dev/null; then
         STATUS=$(check_gen_status "$GEN_PID")
-        log "[GEN] $STATUS"
-    done
+        log "[GEN] $STATUS — process alive, safe to leave."
+    else
+        log "[GEN] process exited within 5 min — check $GEN_LOG for errors."
+    fi
 
+    wait "$GEN_PID" || true
     log "Task generation complete. Tasks saved: $(ls "$TASK_OUT_DIR" 2>/dev/null | wc -l)"
 fi
 
