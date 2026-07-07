@@ -1,1 +1,0 @@
-rsync keeps skipping dotfiles when I sync /home/user/project to /home/user/backup — pretty sure it's the exclude pattern in /home/user/.rsyncrc that's too greedy. Just need dotfiles included like everything else.
