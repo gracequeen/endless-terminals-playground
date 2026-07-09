@@ -200,3 +200,15 @@ if f.exists():
         print('default.yaml: terminus-2 not found, skipping')
 else:
     print('default.yaml: file not found, skipping')
+
+# --- default.yaml: set environment type to docker ---
+f = pathlib.Path('SkyRL/examples/train_integrations/harbor/harbor_trial_config/default.yaml')
+if f.exists():
+    txt = f.read_text()
+    if 'type: docker' in txt:
+        print('default.yaml environment type already docker, skipping')
+    elif 'type: daytona' in txt:
+        f.write_text(txt.replace('  type: daytona', '  type: docker'))
+        print('Patched default.yaml: environment type set to docker')
+    else:
+        print('default.yaml: daytona not found, skipping')
