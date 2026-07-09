@@ -212,3 +212,18 @@ if f.exists():
         print('Patched default.yaml: environment type set to docker')
     else:
         print('default.yaml: daytona not found, skipping')
+
+# --- default.yaml: set cost_limit and OPENAI_API_KEY for mini-swe-agent ---
+f = pathlib.Path('SkyRL/examples/train_integrations/harbor/harbor_trial_config/default.yaml')
+if f.exists():
+    txt = f.read_text()
+    if 'cost_limit' in txt:
+        print('default.yaml cost_limit already set, skipping')
+    else:
+        old = '    # Maximum number of agent episodes/iterations\n    max_turns: 32'
+        new = '    # Maximum number of agent episodes/iterations\n    max_turns: 32\n\n    # Cost limit for mini-swe-agent (set high since we use local vLLM with zero cost)\n    cost_limit: "999"\n\n    # API key for local vLLM endpoint\n    env:\n      OPENAI_API_KEY: "nokey"'
+        if old in txt:
+            f.write_text(txt.replace(old, new))
+            print('Patched default.yaml: added cost_limit and OPENAI_API_KEY')
+        else:
+            print('default.yaml: max_turns pattern not found, skipping')
