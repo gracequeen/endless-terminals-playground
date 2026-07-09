@@ -187,17 +187,17 @@ if f.exists():
 else:
     print('layerwise_reload.py: file not found, skipping')
 
-# --- default.yaml: set agent to mini-swe-agent ---
+# --- default.yaml: set agent to terminus-2 ---
 f = pathlib.Path('SkyRL/examples/train_integrations/harbor/harbor_trial_config/default.yaml')
 if f.exists():
     txt = f.read_text()
-    if 'name: mini-swe-agent' in txt:
-        print('default.yaml already patched, skipping')
-    elif 'name: terminus-2' in txt:
-        f.write_text(txt.replace('name: terminus-2', 'name: mini-swe-agent'))
-        print('Patched default.yaml: agent set to mini-swe-agent')
+    if 'name: terminus-2' in txt:
+        print('default.yaml agent already terminus-2, skipping')
+    elif 'name: mini-swe-agent' in txt:
+        f.write_text(txt.replace('name: mini-swe-agent', 'name: terminus-2'))
+        print('Patched default.yaml: agent set to terminus-2')
     else:
-        print('default.yaml: terminus-2 not found, skipping')
+        print('default.yaml: agent name not found, skipping')
 else:
     print('default.yaml: file not found, skipping')
 
