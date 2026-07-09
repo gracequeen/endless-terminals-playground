@@ -167,7 +167,7 @@ log "Starting solution generation: $JOBS_DIR  job=$JOB_NAME"
 log "  sol-model=$SOL_MODEL  n-attempts=$N_ATTEMPTS  concurrency=$SOL_CONCURRENCY"
 
 nohup .venv/bin/harbor run \
-    --agent-import-path aicore_agent:AICoreTerminus2 \
+    --agent-import-path generator.aicore_agent:AICoreTerminus2 \
     --model "$SOL_MODEL" \
     --path "$TASK_OUT_DIR" \
     --n-attempts "$N_ATTEMPTS" \
