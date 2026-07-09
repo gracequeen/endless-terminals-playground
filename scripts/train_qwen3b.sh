@@ -28,8 +28,8 @@ rm -rf ~/.cache/flashinfer
 DATA_DIR="/home/ec2-user/xin/data_qwen3b_v3"
 mkdir -p "$DATA_DIR"
 echo "Downloading parquet data from S3..."
-aws s3 cp s3://endless-terminals-training/prepared_data/train.parquet "$DATA_DIR/train.parquet"
-aws s3 cp s3://endless-terminals-training/prepared_data/validation.parquet "$DATA_DIR/validation.parquet"
+aws s3 cp s3://endless-terminals-training/prepared_data/train_4.5opus-task_4.6sonnet-sol.parquet "$DATA_DIR/train.parquet"
+aws s3 cp s3://endless-terminals-training/prepared_data/validation_4.5opus-task_4.6sonnet-sol.parquet "$DATA_DIR/validation.parquet"
 echo "Data ready."
 
 # Auto-detect resume mode

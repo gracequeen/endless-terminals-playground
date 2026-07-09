@@ -36,6 +36,7 @@ python3.13 scripts/_apply_patches.py
 
 PIP_NO_BUILD_ISOLATION=1 pip install -e "SkyRL[fsdp]"
 pip install "ray[default]==2.51.1"
+pip install harbor --upgrade  # Install latest harbor with mini-swe-agent support
 pip install -e .
 
 # Symlink nvcc into the venv's nvidia package so flashinfer JIT finds it

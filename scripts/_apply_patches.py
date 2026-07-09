@@ -167,3 +167,32 @@ elif old_status in txt:
     print('Patched worker.py explained_variance')
 else:
     print('worker.py: critic status pattern not found, skipping')
+
+
+# --- layerwise_reload.py: fix attribute names to match new_inference_worker_wrap.py ---
+f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/layerwise_reload.py')
+if f.exists():
+    txt = f.read_text()
+    if '_skyrl_weight_update_active' in txt or '_skyrl_is_checkpoint_format' in txt:
+        txt = txt.replace('_skyrl_weight_update_active', '_weight_update_active')
+        txt = txt.replace('_skyrl_is_checkpoint_format', '_is_checkpoint_format')
+        f.write_text(txt)
+        print('Patched layerwise_reload.py attribute names')
+    else:
+        print('layerwise_reload.py already patched, skipping')
+else:
+    print('layerwise_reload.py: file not found, skipping')
+
+# --- default.yaml: set agent to mini-swe-agent ---
+f = pathlib.Path('SkyRL/examples/train_integrations/harbor/harbor_trial_config/default.yaml')
+if f.exists():
+    txt = f.read_text()
+    if 'name: mini-swe-agent' in txt:
+        print('default.yaml already patched, skipping')
+    elif 'name: terminus-2' in txt:
+        f.write_text(txt.replace('name: terminus-2', 'name: mini-swe-agent'))
+        print('Patched default.yaml: agent set to mini-swe-agent')
+    else:
+        print('default.yaml: terminus-2 not found, skipping')
+else:
+    print('default.yaml: file not found, skipping')

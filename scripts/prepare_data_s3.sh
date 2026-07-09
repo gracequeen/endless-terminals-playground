@@ -1,7 +1,9 @@
 #!/bin/bash
 set -e
 
-# Streamline script: for each batch, download tasks + claude4.6 solutions, prepare parquet, upload, clean up
+# Prepares training parquet from two data sources:
+#   1. harbor_tasks_claude4.5_opus + harbor_4.5opus_tasks_4.6sonnet_solutions (4 batches)
+#   2. harbor_4.6opus_tasks_herodoc_fixed_3k + harbor_4.6opus_tasks_herodoc_fixed_3k_solutions (flat)
 # Run from project root: bash scripts/prepare_data_s3.sh
 
 cd "$(dirname "$0")/.."
@@ -16,12 +18,15 @@ OUTPUT_DIR="$WORK_DIR/parquet"
 
 mkdir -p "$OUTPUT_DIR" "$TASKS_BASE"
 
+# ============================================================
+# SOURCE 1: Claude 4.5 Opus tasks + Claude 4.6 Sonnet solutions (4 batches)
+# ============================================================
 BATCHES="part2_2-1 part2_2-2 part2_2-3 part2_2-4"
 
 for BATCH in $BATCHES; do
   echo ""
   echo "=========================================="
-  echo "Processing batch: $BATCH"
+  echo "Processing 4.5opus batch: $BATCH"
   echo "=========================================="
 
   TASKS_DIR="$TASKS_BASE/tasks_$BATCH"
@@ -29,34 +34,63 @@ for BATCH in $BATCHES; do
 
   mkdir -p "$TASKS_DIR" "$JOBS_DIR"
 
-  # Step 1: Download tasks
   echo "[1/4] Downloading tasks..."
   aws s3 sync "$S3_DATA/harbor_tasks_claude4.5_opus/harbor_tasks_$BATCH/" "$TASKS_DIR/" --no-progress
 
-  # Step 2: Download solutions (4.6 sonnet only)
   echo "[2/4] Downloading solutions..."
-  aws s3 sync "$S3_DATA/harbor_solutions_claude4.6_sonnet/harbor_tasks_$BATCH/" "$JOBS_DIR/" --no-progress
-  # collect_harbor_results.py needs a config.json at the job dir root to treat it as a single job
+  aws s3 sync "$S3_DATA/harbor_4.5opus_tasks_4.6sonnet_solutions/harbor_tasks_$BATCH/" "$JOBS_DIR/" --no-progress
   echo '{}' > "$JOBS_DIR/config.json"
 
-  # Step 3: Merge solutions into tasks using collect_harbor_results.py
   echo "[3/4] Merging solutions into tasks..."
   python3.13 collect_harbor_results.py --jobs-dir "$JOBS_DIR" --tasks-dir "$TASKS_DIR"
 
-  # Step 4: Generate parquet (append to existing)
   echo "[4/4] Preparing parquet..."
   python3.13 train/prepare_endless.py \
     --task-dir "$TASKS_DIR" \
-    --output-dir "$OUTPUT_DIR/$BATCH"
+    --output-dir "$OUTPUT_DIR/4.5opus_$BATCH"
 
-  echo "Batch $BATCH done. Train: $(python3.13 -c "import pandas as pd; df=pd.read_parquet('$OUTPUT_DIR/$BATCH/train.parquet'); print(len(df))") rows"
+  echo "Batch $BATCH done. Train: $(python3.13 -c "import pandas as pd; df=pd.read_parquet('$OUTPUT_DIR/4.5opus_$BATCH/train.parquet'); print(len(df))") rows"
 
-  # Clean up only the jobs dir — keep tasks dir for training time
   rm -rf "$JOBS_DIR"
   echo "Cleaned up jobs for $BATCH (tasks kept at $TASKS_DIR)"
 done
 
-# Merge all batch parquets into one train + validation
+# ============================================================
+# SOURCE 2: Claude 4.6 Opus herodoc-fixed 3k tasks + solutions (flat structure)
+# ============================================================
+echo ""
+echo "=========================================="
+echo "Processing herodoc-fixed 3k tasks"
+echo "=========================================="
+
+HERODOC_TASKS_DIR="$TASKS_BASE/tasks_herodoc_3k"
+HERODOC_JOBS_DIR="$WORK_DIR/jobs_herodoc_3k"
+
+mkdir -p "$HERODOC_TASKS_DIR" "$HERODOC_JOBS_DIR"
+
+echo "[1/4] Downloading herodoc tasks..."
+aws s3 sync "$S3_DATA/harbor_4.6opus_tasks_herodoc_fixed_3k/" "$HERODOC_TASKS_DIR/" --no-progress
+
+echo "[2/4] Downloading herodoc solutions..."
+aws s3 sync "$S3_DATA/harbor_4.6opus_tasks_herodoc_fixed_3k_solutions/" "$HERODOC_JOBS_DIR/" --no-progress
+echo '{}' > "$HERODOC_JOBS_DIR/config.json"
+
+echo "[3/4] Merging solutions into tasks..."
+python3.13 collect_harbor_results.py --jobs-dir "$HERODOC_JOBS_DIR" --tasks-dir "$HERODOC_TASKS_DIR"
+
+echo "[4/4] Preparing parquet..."
+python3.13 train/prepare_endless.py \
+  --task-dir "$HERODOC_TASKS_DIR" \
+  --output-dir "$OUTPUT_DIR/herodoc_3k"
+
+echo "Herodoc done. Train: $(python3.13 -c "import pandas as pd; df=pd.read_parquet('$OUTPUT_DIR/herodoc_3k/train.parquet'); print(len(df))") rows"
+
+rm -rf "$HERODOC_JOBS_DIR"
+echo "Cleaned up herodoc jobs (tasks kept at $HERODOC_TASKS_DIR)"
+
+# ============================================================
+# Merge all parquets — 90/10 train/val split
+# ============================================================
 echo ""
 echo "=========================================="
 echo "Merging all batches into final parquet..."
@@ -79,10 +113,13 @@ for batch_dir in sorted(Path(output_dir).iterdir()):
     if val_f.exists():
         val_dfs.append(pd.read_parquet(val_f))
 
-train = pd.concat(train_dfs, ignore_index=True)
-val = pd.concat(val_dfs, ignore_index=True)
-train.to_parquet(f"{final_dir}/train.parquet", index=False)
-val.to_parquet(f"{final_dir}/validation.parquet", index=False)
+all_data = pd.concat(train_dfs + val_dfs, ignore_index=True).sample(frac=1, random_state=42)
+split = int(len(all_data) * 0.9)
+train = all_data[:split]
+val = all_data[split:]
+
+train.to_parquet(f"{final_dir}/train_4.5opus-4.6opus-task_4.6sonnet-sol_combined.parquet", index=False)
+val.to_parquet(f"{final_dir}/validation_4.5opus-4.6opus-task_4.6sonnet-sol_combined.parquet", index=False)
 print(f"Final train: {len(train)} rows, val: {len(val)} rows")
 PYEOF
 
@@ -92,5 +129,3 @@ aws s3 sync /tmp/data_work/final/ "$S3_PREPARED/" --no-progress
 
 echo ""
 echo "Done! Parquet available at $S3_PREPARED/"
-echo "  train.parquet"
-echo "  validation.parquet"
