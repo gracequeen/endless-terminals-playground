@@ -115,6 +115,15 @@ s3://endless-terminals-training/
 2. **Disk space** — Each checkpoint is ~20GB. Use `max_ckpts_to_keep=1` and S3 uploader.
 3. **Docker heredoc syntax** — Add `# syntax=docker/dockerfile:1` to all Dockerfiles.
 4. **Instance IP changes** — Update `~/.ssh/config` with the new IP on restart.
-5. **Terminus2 vs mini-swe-agent** — `mini-swe-agent` is recommended (Harbor 0.16.1+). Set in `default.yaml`, auto-patched by `_apply_patches.py`.
+5. **mini-swe-agent setup (TODO)** — `mini-swe-agent` runs as a CLI tool inside the Docker container and needs to call an external LLM API. To use it with local vLLM you need:
+   - `OPENAI_API_KEY=nokey` (any dummy value)
+   - `OPENAI_BASE_URL=http://<host_ip>:<vllm_port>/v1` pointing to your vLLM server
+   - `cost_limit` set to a non-zero value (e.g. `"999"`)
+   - Docker container must be able to reach the host IP (add host IP to `extra_allowed_hosts` in `default.yaml`)
+   - These are set in `default.yaml` under `agent.kwargs`
+   
+   **Current status:** Using `terminus-2` which works reliably with local vLLM. Mini-swe-agent can be revisited after training completes.
+   
+   **Reference:** https://www.harborframework.com/docs/agents#existing-agents
 6. **Harbor requires GRPO** — Harbor step-wise training is incompatible with GAE (PPO). Use GRPO.
 7. **Docker Compose v2** — Harbor requires `docker compose` (v2). Install: `sudo mkdir -p /usr/local/lib/docker/cli-plugins && sudo curl -SL https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose && sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose`
