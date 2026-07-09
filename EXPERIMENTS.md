@@ -71,16 +71,17 @@
 
 | Field | Value |
 |-------|-------|
-| **Experiment name** | 20260702_4.5opus-4.6opus-task_harbor-miniswe_grpo_qwen3.5-9b_Xsteps |
+| **Experiment name** | 20260702_4.5opus-4.6opus-task_harbor-miniswe_grpo_qwen3.5-9b_228steps |
 | **Task generation model** | Claude 4.5 Opus + Claude 4.6 Opus (herodoc-fixed) |
 | **Solution generation model** | Claude 4.6 Sonnet (used to filter solvable tasks via `prepare_data_s3.sh`) |
-| **Training tasks** | ~6,100 (harbor_tasks_claude4.5_opus batches 1-3 + harbor_4.6opus_tasks_herodoc_fixed_3k) |
-| **Val tasks** | ~1,000 (harbor_tasks_claude4.5_opus batch 4) |
+| **Training tasks** | 1,020 (harbor_tasks_claude4.5_opus batches 1-3 + harbor_4.6opus_tasks_herodoc_fixed_3k) |
+| **Val tasks** | 114 (harbor_tasks_claude4.5_opus batch 4) |
 | **Algorithm** | GRPO (required for Harbor step-wise training) |
 | **Agent** | mini-swe-agent |
 | **Environment** | Harbor + Docker |
 | **Base model** | Qwen/Qwen3.5-9B |
-| **Max steps** | 50 |
+| **Total steps** | 228 (1 epoch) |
+| **Checkpoint interval** | Every 50 steps |
 | **Batch size** | 4 tasks × 4 samples = 16 rollouts/step |
 | **Max turns per rollout** | 8 |
 | **Max seq len** | 8192 tokens |
@@ -97,9 +98,9 @@
 
 | Artifact | Location |
 |----------|----------|
-| Training log | `s3://endless-terminals-training/20260702_4.5opus-4.6opus-task_harbor-miniswe_grpo_qwen3.5-9b_Xsteps/train_debug.log` |
-| Eval results | `s3://endless-terminals-training/20260702_4.5opus-4.6opus-task_harbor-miniswe_grpo_qwen3.5-9b_Xsteps/evals/` |
-| Model checkpoints | `s3://endless-terminals-training/20260702_4.5opus-4.6opus-task_harbor-miniswe_grpo_qwen3.5-9b_Xsteps/global_step_*/` |
+| Training log | `s3://endless-terminals-training/20260702_4.5opus-4.6opus-task_harbor-miniswe_grpo_qwen3.5-9b_228steps/train_debug.log` |
+| Eval results | `s3://endless-terminals-training/20260702_4.5opus-4.6opus-task_harbor-miniswe_grpo_qwen3.5-9b_228steps/evals/` |
+| Model checkpoints | `s3://endless-terminals-training/20260702_4.5opus-4.6opus-task_harbor-miniswe_grpo_qwen3.5-9b_228steps/global_step_*/` |
 | Tasks on disk (4.5opus) | `/home/ec2-user/xin/harbor_tasks_4.5opus/` |
 | Tasks on disk (herodoc 3k) | `/home/ec2-user/xin/harbor_tasks_herodoc_3k/` |
 

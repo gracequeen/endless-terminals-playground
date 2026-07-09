@@ -23,8 +23,8 @@ echo "Using CUDA_HOME=$CUDA_HOME"
 rm -rf ~/.cache/flashinfer
 
 # Download task directories
-TASKS_DIR="/home/ec2-user/xin/harbor_tasks_4.5opus"
-HERODOC_TASKS_DIR="/home/ec2-user/xin/harbor_tasks_herodoc_3k"
+TASKS_DIR="/home/ec2-user/xin/harbor_tasks"
+HERODOC_TASKS_DIR="/home/ec2-user/xin/harbor_tasks/tasks_herodoc_3k"
 
 if [ ! -d "$TASKS_DIR" ] || [ -z "$(ls -A $TASKS_DIR 2>/dev/null)" ]; then
   echo "Downloading 4.5opus tasks from S3..."
@@ -126,10 +126,9 @@ python -m examples.train_integrations.harbor.entrypoints.main_harbor \
   "data.train_data=$TRAIN_TASK_DIRS" \
   "data.val_data=$VAL_TASK_DIRS" \
   trainer.policy.model.path=Qwen/Qwen3.5-9B \
-  trainer.critic.model.path=Qwen/Qwen3.5-9B \
   trainer.strategy=fsdp \
   trainer.algorithm.advantage_estimator=grpo \
-  trainer.placement.colocate_all=false \
+  trainer.placement.colocate_all=true \
   trainer.placement.policy_num_gpus_per_node=4 \
   trainer.placement.ref_num_gpus_per_node=4 \
   trainer.flash_attn=false \
@@ -138,14 +137,13 @@ python -m examples.train_integrations.harbor.entrypoints.main_harbor \
   trainer.gradient_checkpointing=true \
   trainer.train_batch_size=4 \
   trainer.policy_mini_batch_size=4 \
-  trainer.critic_mini_batch_size=4 \
   trainer.micro_forward_batch_size_per_gpu=1 \
   trainer.micro_train_batch_size_per_gpu=1 \
   trainer.max_prompt_length=4096 \
   trainer.algorithm.max_seq_len=8192 \
-  trainer.max_training_steps=50 \
+  trainer.max_training_steps=228 \
   trainer.update_epochs_per_batch=2 \
-  trainer.ckpt_interval=100 \
+  trainer.ckpt_interval=50 \
   trainer.eval_interval=20 \
   trainer.eval_batch_size=10 \
   trainer.max_ckpts_to_keep=1 \

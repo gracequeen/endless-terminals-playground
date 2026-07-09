@@ -75,30 +75,34 @@ elif old in txt:
 else:
     print('ppo_utils.py: decorator pattern not found, skipping')
 
-# --- new_inference_worker_wrap.py: remove LayerwiseReloadWorkerMixin inheritance
-#     (vLLM 0.21.0 provides start/finish_weight_update natively) ---
+# --- new_inference_worker_wrap.py: restore LayerwiseReloadWorkerMixin + fix attribute names
+#     (needed for skyrl_start_weight_update used by CUDA IPC weight sync)
 f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/new_inference_worker_wrap.py')
 txt = f.read_text()
-already_patched = (
-    'LayerwiseReloadWorkerMixin' not in txt
-    and '_weight_update_active' in txt
-)
-if already_patched:
-    print('new_inference_worker_wrap.py already patched, skipping')
-else:
-    txt = re.sub(
-        r'from skyrl\.backends\.skyrl_train\.inference_servers\.layerwise_reload import \(\s*LayerwiseReloadWorkerMixin,?\s*\)\n+',
-        '',
-        txt
-    )
-    txt = txt.replace(
-        'class NewInferenceWorkerWrap(LayerwiseReloadWorkerMixin):',
-        'class NewInferenceWorkerWrap:'
-    )
+changed = False
+
+# Restore mixin if missing
+if 'LayerwiseReloadWorkerMixin' not in txt:
+    mixin_import = 'from skyrl.backends.skyrl_train.inference_servers.layerwise_reload import (\n    LayerwiseReloadWorkerMixin,\n)\n\n'
+    txt = txt.replace('import torch\n\nVLLM_NEW_INFERENCE_WORKER_EXTENSION_CLS',
+                      'import torch\n\n' + mixin_import + 'VLLM_NEW_INFERENCE_WORKER_EXTENSION_CLS', 1)
+    txt = txt.replace('class NewInferenceWorkerWrap:',
+                      'class NewInferenceWorkerWrap(LayerwiseReloadWorkerMixin):', 1)
+    changed = True
+
+# Fix attribute names
+if '_skyrl_weight_update_active' in txt:
     txt = txt.replace('_skyrl_weight_update_active', '_weight_update_active')
+    changed = True
+if '_skyrl_is_checkpoint_format' in txt:
     txt = txt.replace('_skyrl_is_checkpoint_format', '_is_checkpoint_format')
+    changed = True
+
+if changed:
     f.write_text(txt)
     print('Patched new_inference_worker_wrap.py')
+else:
+    print('new_inference_worker_wrap.py already patched, skipping')
 
 # --- generators/base.py: add std_reward field to MetricsOutput ---
 f = pathlib.Path('SkyRL/skyrl/train/generators/base.py')
