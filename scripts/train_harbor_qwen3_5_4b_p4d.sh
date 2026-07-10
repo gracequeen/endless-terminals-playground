@@ -144,7 +144,7 @@ python -m examples.train_integrations.harbor.entrypoints.main_harbor \
   trainer.micro_train_batch_size_per_gpu=1 \
   trainer.max_prompt_length=4096 \
   trainer.algorithm.max_seq_len=8192 \
-  trainer.max_training_steps=228 \
+  trainer.max_training_steps=100 \
   trainer.update_epochs_per_batch=2 \
   trainer.ckpt_interval=50 \
   trainer.eval_interval=20 \
