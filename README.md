@@ -94,7 +94,12 @@ The AICore integration is split across three modules:
 - **`aicore_llm.py`** — Harbor-compatible LLM backend. Implements Harbor's `BaseLLM` interface (`AICoreAnthropicLLM`) so that Harbor agents can call Claude through AICore's Bedrock-compatible API instead of LiteLLM.
 - **`aicore_agent.py`** — Custom Harbor agent. Subclasses Harbor's `Terminus2` agent and swaps in `AICoreAnthropicLLM` as the LLM backend, for use with `harbor run --agent-import-path aicore_agent:AICoreTerminus2`.
 
-### Generating Tasks
+### I. Generating Tasks
+
+Modify choices of arguments:
+- num-tasks: total number of tasks to be generated
+- out-dir: for tasks storage
+- model: choice of generation model
 
 ```bash
 python generate_harbor_tasks.py --num-tasks 10 --out-dir harbor_tasks --model claude_opus
@@ -127,14 +132,18 @@ task_{id}_{hash}/
 
 `--skip-build` to skip Docker image building during generation, `--batch-size` to control how many are processed per LLM call.
 
-### Generating Solutions
+### II. Generating Solutions
+
+Modify choices of arguments:
+- model: choice of generation model
+- path: tasks folder path
+- n-attempts: number of rollouts per task
+- jobs-dir: folder path to store all solutions 
+- n-concurrent: parallel processing in the number of CPU cores
+- job-name: output subfolder for current job; MUST DELETE folder if already existing
 
 ```bash
-python generate_harbor_solutions.py \
-    --tasks-dir harbor_tasks \
-    --num-solutions 2 \
-    --model claude_opus \
-    --max-actions 16
+harbor run --agent-import-path aicore_agent:AICoreTerminus2 --model claude_4_5 --path harbor_tasks_part2_2-1 --n-attempts 8 --jobs-dir solution_grace --n-concurrent 2 --job-name harbor_tasks_part2_2-1
 ```
 
 For each task, this:

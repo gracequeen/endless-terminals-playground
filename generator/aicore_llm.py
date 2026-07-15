@@ -14,7 +14,7 @@ from gen_ai_hub.proxy.native.amazon.clients import Session
 from harbor.llms.base import BaseLLM, LLMResponse, OutputLengthExceededError
 from harbor.models.metric import UsageInfo
 
-from aicore_llm_access import ClaudeModels
+from generator.aicore_llm_access import ClaudeModels
 
 logger = logging.getLogger(__name__)
 
