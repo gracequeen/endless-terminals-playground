@@ -67,46 +67,37 @@
 
 ---
 
-## 20260702 — Qwen3.5-9B GRPO (Harbor + mini-swe-agent)
+## 20260716 — Qwen3.5-4B GRPO (Harbor + terminus-2)
 
 | Field | Value |
 |-------|-------|
-| **Experiment name** | 20260702_4.5opus-4.6opus-task_harbor-miniswe_grpo_qwen3.5-9b_228steps |
-| **Task generation model** | Claude 4.5 Opus + Claude 4.6 Opus (herodoc-fixed) |
-| **Solution generation model** | Claude 4.6 Sonnet (used to filter solvable tasks via `prepare_data_s3.sh`) |
-| **Training tasks** | 1,020 (harbor_tasks_claude4.5_opus batches 1-3 + harbor_4.6opus_tasks_herodoc_fixed_3k) |
-| **Val tasks** | 114 (harbor_tasks_claude4.5_opus batch 4) |
-| **Algorithm** | GRPO (required for Harbor step-wise training) |
-| **Agent** | mini-swe-agent |
+| **Experiment name** | TBD |
+| **Task generation model** | Claude 4.6 Opus (8192 token context) |
+| **Solution generation model** | Claude 4.6 Sonnet |
+| **Training tasks** | TBD (from harbor_tasks_8192 part 1, ~3.3k total, filtered by solvability) |
+| **Val tasks** | TBD |
+| **Algorithm** | GRPO |
+| **Agent** | terminus-2 |
 | **Environment** | Harbor + Docker |
-| **Base model** | Qwen/Qwen3.5-9B |
-| **Total steps** | 228 (1 epoch) |
+| **Base model** | Qwen/Qwen3.5-4B |
+| **Total steps** | 150 |
 | **Checkpoint interval** | Every 50 steps |
-| **Batch size** | 4 tasks × 4 samples = 16 rollouts/step |
-| **Max turns per rollout** | 8 |
+| **Eval interval** | Every 20 steps |
+| **Batch size** | 8 tasks × 4 samples = 32 rollouts/step |
+| **GPUs** | 8× A100 40GB (p4d.24xlarge) |
+| **Max turns per rollout** | 32 (Harbor terminus-2) |
 | **Max seq len** | 8192 tokens |
-
-### Key Differences from 3B Experiment
-
-- Uses **Harbor framework** instead of direct Docker
-- Uses **mini-swe-agent** — better for small models
-- Uses **GRPO** instead of PPO — no critic, required for step-wise training
-- Larger model (9B vs 3B)
-- Combined data from two task sources
+| **gpu_memory_utilization** | 0.45 |
 
 ### S3 Artifacts
 
 | Artifact | Location |
 |----------|----------|
-| Training log | `s3://endless-terminals-training/20260702_4.5opus-4.6opus-task_harbor-miniswe_grpo_qwen3.5-9b_228steps/train_debug.log` |
-| Eval results | `s3://endless-terminals-training/20260702_4.5opus-4.6opus-task_harbor-miniswe_grpo_qwen3.5-9b_228steps/evals/` |
-| Model checkpoints | `s3://endless-terminals-training/20260702_4.5opus-4.6opus-task_harbor-miniswe_grpo_qwen3.5-9b_228steps/global_step_*/` |
-| Tasks on disk (4.5opus) | `/home/ec2-user/xin/harbor_tasks_4.5opus/` |
-| Tasks on disk (herodoc 3k) | `/home/ec2-user/xin/harbor_tasks_herodoc_3k/` |
+| Training script | `scripts/train_harbor_qwen3_5_4b_p4d.sh` |
+| Training data | `s3://endless-terminals-training/prepared_data/train_4.5opus-8192-task_4.6sonnet-sol_combined.parquet` |
 
 ### Notes
 
-- `mini-swe-agent` installed via `pip install harbor --upgrade` (added to `install_sky.sh`)
-- Agent automatically patched via `scripts/_apply_patches.py`
-- Training script: `scripts/train_harbor_qwen3_5_9b.sh`
+- First 4B model experiment
+- New dataset: harbor_4.6opus_tasks_8192 (8192 token context tasks, part 1)
 - Branch: `tc/harbor-grpo-miniswe-9b`
