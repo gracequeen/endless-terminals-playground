@@ -3,7 +3,7 @@ set -e
 
 # Prepares training parquet from two data sources:
 #   1. harbor_tasks_claude4.5_opus + harbor_4.5opus_tasks_4.6sonnet_solutions (4 batches)
-#   2. harbor_4.6opus_tasks_herodoc_fixed_3k + harbor_4.6opus_tasks_herodoc_fixed_3k_solutions (flat)
+#   2. harbor_4.6opus_tasks_8192_part1-2/harbor_tasks_8192 + harbor_4.6opus_tasks_8192_4.6sonnet_solutions (flat)
 # Run from project root: bash scripts/prepare_data_s3.sh
 
 cd "$(dirname "$0")/.."
@@ -13,7 +13,7 @@ S3_BUCKET="s3://endless-terminals-training"
 S3_DATA="$S3_BUCKET/data"
 S3_PREPARED="$S3_BUCKET/prepared_data"
 WORK_DIR="/tmp/data_work"
-TASKS_BASE="/home/ec2-user/xin/harbor_tasks"  # permanent — needed at training time
+TASKS_BASE="/home/ec2-user/xin/harbor_tasks"
 OUTPUT_DIR="$WORK_DIR/parquet"
 
 mkdir -p "$OUTPUT_DIR" "$TASKS_BASE"
@@ -45,9 +45,7 @@ for BATCH in $BATCHES; do
   python3.13 collect_harbor_results.py --jobs-dir "$JOBS_DIR" --tasks-dir "$TASKS_DIR"
 
   echo "[4/4] Preparing parquet..."
-  python3.13 train/prepare_endless.py \
-    --task-dir "$TASKS_DIR" \
-    --output-dir "$OUTPUT_DIR/4.5opus_$BATCH"
+  python3.13 train/prepare_endless.py     --task-dir "$TASKS_DIR"     --output-dir "$OUTPUT_DIR/4.5opus_$BATCH"
 
   echo "Batch $BATCH done. Train: $(python3.13 -c "import pandas as pd; df=pd.read_parquet('$OUTPUT_DIR/4.5opus_$BATCH/train.parquet'); print(len(df))") rows"
 
@@ -56,37 +54,35 @@ for BATCH in $BATCHES; do
 done
 
 # ============================================================
-# SOURCE 2: Claude 4.6 Opus herodoc-fixed 3k tasks + solutions (flat structure)
+# SOURCE 2: Claude 4.6 Opus 8192 tasks + solutions (flat structure, part 1)
 # ============================================================
 echo ""
 echo "=========================================="
-echo "Processing herodoc-fixed 3k tasks"
+echo "Processing 8192 tasks (part 1)"
 echo "=========================================="
 
-HERODOC_TASKS_DIR="$TASKS_BASE/tasks_herodoc_3k"
-HERODOC_JOBS_DIR="$WORK_DIR/jobs_herodoc_3k"
+TASKS_8192_DIR="$TASKS_BASE/tasks_8192"
+JOBS_8192_DIR="$WORK_DIR/jobs_8192"
 
-mkdir -p "$HERODOC_TASKS_DIR" "$HERODOC_JOBS_DIR"
+mkdir -p "$TASKS_8192_DIR" "$JOBS_8192_DIR"
 
-echo "[1/4] Downloading herodoc tasks..."
-aws s3 sync "$S3_DATA/harbor_4.6opus_tasks_herodoc_fixed_3k/" "$HERODOC_TASKS_DIR/" --no-progress
+echo "[1/4] Downloading 8192 tasks..."
+aws s3 sync "$S3_DATA/harbor_4.6opus_tasks_8192_part1-2/harbor_tasks_8192/" "$TASKS_8192_DIR/" --no-progress
 
-echo "[2/4] Downloading herodoc solutions..."
-aws s3 sync "$S3_DATA/harbor_4.6opus_tasks_herodoc_fixed_3k_solutions/" "$HERODOC_JOBS_DIR/" --no-progress
-echo '{}' > "$HERODOC_JOBS_DIR/config.json"
+echo "[2/4] Downloading 8192 solutions..."
+aws s3 sync "$S3_DATA/harbor_4.6opus_tasks_8192_part1-2/harbor_4.6opus_tasks_8192_4.6sonnet_solutions/" "$JOBS_8192_DIR/" --no-progress
+echo '{}' > "$JOBS_8192_DIR/config.json"
 
 echo "[3/4] Merging solutions into tasks..."
-python3.13 collect_harbor_results.py --jobs-dir "$HERODOC_JOBS_DIR" --tasks-dir "$HERODOC_TASKS_DIR"
+python3.13 collect_harbor_results.py --jobs-dir "$JOBS_8192_DIR" --tasks-dir "$TASKS_8192_DIR"
 
 echo "[4/4] Preparing parquet..."
-python3.13 train/prepare_endless.py \
-  --task-dir "$HERODOC_TASKS_DIR" \
-  --output-dir "$OUTPUT_DIR/herodoc_3k"
+python3.13 train/prepare_endless.py   --task-dir "$TASKS_8192_DIR"   --output-dir "$OUTPUT_DIR/8192"
 
-echo "Herodoc done. Train: $(python3.13 -c "import pandas as pd; df=pd.read_parquet('$OUTPUT_DIR/herodoc_3k/train.parquet'); print(len(df))") rows"
+echo "8192 done. Train: $(python3.13 -c "import pandas as pd; df=pd.read_parquet('$OUTPUT_DIR/8192/train.parquet'); print(len(df))") rows"
 
-rm -rf "$HERODOC_JOBS_DIR"
-echo "Cleaned up herodoc jobs (tasks kept at $HERODOC_TASKS_DIR)"
+rm -rf "$JOBS_8192_DIR"
+echo "Cleaned up 8192 jobs (tasks kept at $TASKS_8192_DIR)"
 
 # ============================================================
 # Merge all parquets — 90/10 train/val split
@@ -118,8 +114,8 @@ split = int(len(all_data) * 0.9)
 train = all_data[:split]
 val = all_data[split:]
 
-train.to_parquet(f"{final_dir}/train_4.5opus-4.6opus-task_4.6sonnet-sol_combined.parquet", index=False)
-val.to_parquet(f"{final_dir}/validation_4.5opus-4.6opus-task_4.6sonnet-sol_combined.parquet", index=False)
+train.to_parquet(f"{final_dir}/train_4.5opus-8192-task_4.6sonnet-sol_combined.parquet", index=False)
+val.to_parquet(f"{final_dir}/validation_4.5opus-8192-task_4.6sonnet-sol_combined.parquet", index=False)
 print(f"Final train: {len(train)} rows, val: {len(val)} rows")
 PYEOF
 
