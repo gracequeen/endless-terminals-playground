@@ -46,8 +46,8 @@ fi
 DATA_DIR="/home/ec2-user/xin/data_harbor_qwen3_5_4b"
 mkdir -p "$DATA_DIR"
 echo "Downloading combined parquet from S3..."
-aws s3 cp s3://endless-terminals-training/prepared_data/train_4.5opus-4.6opus-task_4.6sonnet-sol_combined.parquet "$DATA_DIR/train.parquet"
-aws s3 cp s3://endless-terminals-training/prepared_data/validation_4.5opus-4.6opus-task_4.6sonnet-sol_combined.parquet "$DATA_DIR/validation.parquet"
+aws s3 cp s3://endless-terminals-training/prepared_data/train_4.5opus-8192-task_4.6sonnet-sol_combined.parquet "$DATA_DIR/train.parquet"
+aws s3 cp s3://endless-terminals-training/prepared_data/validation_4.5opus-8192-task_4.6sonnet-sol_combined.parquet "$DATA_DIR/validation.parquet"
 echo "Parquet ready."
 
 # Generate task dir lists from parquet
