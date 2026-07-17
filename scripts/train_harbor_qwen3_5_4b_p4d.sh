@@ -146,7 +146,7 @@ python -m examples.train_integrations.harbor.entrypoints.main_harbor \
   trainer.algorithm.max_seq_len=8192 \
   trainer.max_training_steps=100 \
   trainer.update_epochs_per_batch=2 \
-  trainer.ckpt_interval=50 \
+  trainer.ckpt_interval=20 \
   trainer.eval_interval=20 \
   trainer.eval_batch_size=10 \
   trainer.max_ckpts_to_keep=1 \
