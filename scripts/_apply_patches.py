@@ -227,3 +227,15 @@ if f.exists():
             print('Patched default.yaml: added cost_limit and OPENAI_API_KEY')
         else:
             print('default.yaml: max_turns pattern not found, skipping')
+
+# --- vllm_router.py: fix AttributeError for pd_disaggregation ---
+f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/vllm_router.py')
+if f.exists():
+    txt = f.read_text()
+    old = 'self._router_args.vllm_pd_disaggregation or self._router_args.pd_disaggregation'
+    new = 'self._router_args.vllm_pd_disaggregation'
+    if old in txt:
+        f.write_text(txt.replace(old, new))
+        print('Patched vllm_router.py: removed non-existent pd_disaggregation attribute')
+    else:
+        print('vllm_router.py: pd_disaggregation already fixed, skipping')
