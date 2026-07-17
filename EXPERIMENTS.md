@@ -74,8 +74,8 @@
 | **Experiment name** | TBD |
 | **Task generation model** | Claude 4.6 Opus (8192 token context) |
 | **Solution generation model** | Claude 4.6 Sonnet |
-| **Training tasks** | TBD (from harbor_tasks_8192 part 1, ~3.3k total, filtered by solvability) |
-| **Val tasks** | TBD |
+| **Training tasks** | 1882 (from harbor_tasks_8192 part 1, filtered by solvability) |
+| **Val tasks** | 210 |
 | **Algorithm** | GRPO |
 | **Agent** | terminus-2 |
 | **Environment** | Harbor + Docker |
@@ -100,4 +100,5 @@
 
 - First 4B model experiment
 - New dataset: harbor_4.6opus_tasks_8192 (8192 token context tasks, part 1)
+- Dataset pass@1: 56.5% (2092/3310 tasks solvable) — much stronger signal than previous ~10%
 - Branch: `tc/harbor-grpo-miniswe-9b`
