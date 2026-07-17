@@ -80,7 +80,7 @@
 | **Agent** | terminus-2 |
 | **Environment** | Harbor + Docker |
 | **Base model** | Qwen/Qwen3.5-4B |
-| **Total steps** | 150 |
+| **Total steps** | 100 |
 | **Checkpoint interval** | Every 50 steps |
 | **Eval interval** | Every 20 steps |
 | **Batch size** | 8 tasks × 4 samples = 32 rollouts/step |
