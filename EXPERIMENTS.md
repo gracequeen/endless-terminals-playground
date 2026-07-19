@@ -102,3 +102,40 @@
 - New dataset: harbor_4.6opus_tasks_8192 (8192 token context tasks, part 1)
 - Dataset pass@1: 56.5% (2092/3310 tasks solvable) — much stronger signal than previous ~10%
 - Branch: `tc/harbor-grpo-miniswe-9b`
+
+---
+
+## 20260718 — Qwen3.5-4B GRPO on p4d: OOM Investigation
+
+### Dataset Selection
+
+- Source: s3://endless-terminals-training/data/harbor_4.6opus_tasks_8192_part1-2/
+- Two parts available (~3310 tasks each), generated in parallel, identical quality
+- Used part 1 only (harbor_tasks_8192/ + harbor_4.6opus_tasks_8192_4.6sonnet_solutions/)
+- After solvability filtering via prepare_data_s3.sh: 1882 train / 210 val rows
+- Dataset pass@1 (measured by Claude 4.6 Sonnet): 56.5% (2092/3310 tasks solvable)
+- Key difference from previous datasets: tasks generated with 8192 token context, producing much longer trajectories (avg 3500+ tokens, max 10000+ tokens)
+
+### OOM Attempts on p4d.24xlarge (8x A100 40GB)
+
+All attempts failed with CUDA OOM during backward pass (policy training step).
+
+| Attempt | train_batch_size | micro_train_batch_size_per_gpu | max_generate_length | max_seq_len | Result |
+|---------|-----------------|-------------------------------|--------------------|-----------|----|
+| 1 | 8 | 2 | 2048 | 8192 | OOM (batch_padded_seq_len: 10389) |
+| 2 | 4 | 1 | 2048 | 8192 | OOM (batch_padded_seq_len: 8531) |
+| 3 | 4 | 1 | 1024 | 10000 | OOM (tried to allocate 6.67 GiB, only 6.21 GiB free) |
+
+Also attempted remove_microbatch_padding=true but requires flash_attn=true which is incompatible with our setup.
+
+### Root Cause
+
+The 8192-token context tasks produce trajectories of 8000-10000+ tokens (prompt + response). A100 40GB cannot hold the backward pass gradients for sequences this long, even at micro_batch_size=1.
+
+### Resolution
+
+Move 4B training to p5.48xlarge (8x H100 80GB) — double the GPU memory, no OOM with these sequence lengths.
+
+### Observation: Zero Advantage
+
+At step 1, reward/avg_pass_at_4=1.0 and avg_raw_advantages=0.0 — Qwen3.5-4B solved all tasks across all 4 samples, leaving no gradient signal for GRPO. Likely due to small batch (4 tasks) landing on easy tasks — needs more steps to confirm if systematic.
