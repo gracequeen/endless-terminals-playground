@@ -139,3 +139,61 @@ Move 4B training to p5.48xlarge (8x H100 80GB) — double the GPU memory, no OOM
 ### Observation: Zero Advantage
 
 At step 1, reward/avg_pass_at_4=1.0 and avg_raw_advantages=0.0 — Qwen3.5-4B solved all tasks across all 4 samples, leaving no gradient signal for GRPO. Likely due to small batch (4 tasks) landing on easy tasks — needs more steps to confirm if systematic.
+
+---
+
+## 20260720 — Qwen3.5-4B GRPO on 2x g5.48xlarge (Distributed Training)
+
+| Field | Value |
+|-------|-------|
+| **Experiment name** | `20260720_4.5opus-task_harbor-grpo_qwen3.5-4b_g5-2node_Xsteps` |
+| **Task generation model** | Claude 4.6 Opus (8192 token context) |
+| **Solution generation model** | Claude 4.6 Sonnet |
+| **Training tasks** | 1882 (harbor_tasks_8192 part 1, filtered by solvability) |
+| **Val tasks** | 210 |
+| **Algorithm** | GRPO |
+| **Agent** | terminus-2 |
+| **Environment** | Harbor + Docker |
+| **Base model** | Qwen/Qwen3.5-4B |
+| **Total steps** | 100 (1 epoch) |
+| **Checkpoint interval** | Every 20 steps |
+| **Eval interval** | Every 20 steps |
+| **Batch size** | 16 tasks × 4 samples = 64 rollouts/step |
+| **Instances** | 2× g5.48xlarge |
+| **GPUs** | 16× A10G 24GB total (8 per node) |
+| **Max turns per rollout** | 8 |
+| **Max seq len** | 8192 tokens |
+| **Max prompt length** | 4096 tokens |
+| **gpu_memory_utilization** | 0.55 |
+| **tensor_parallel_size** | 8 (per engine) |
+| **num_engines** | 2 (one per node) |
+
+### Key Differences from Previous Runs
+
+| | 20260716 (p4d) | 20260720 (g5 2-node) |
+|---|---|---|
+| Hardware | 1× p4d (8× A100 40GB) | 2× g5.48xlarge (16× A10G 24GB) |
+| Nodes | 1 | 2 |
+| Total GPU memory | 320GB | 384GB |
+| Batch size | 8 | 16 (doubled) |
+| vLLM engines | 1 | 2 |
+| Distribution | Single node FSDP | Multi-node FSDP via Ray |
+
+### S3 Artifacts
+
+| Artifact | Location |
+|----------|----------|
+| Training script | `scripts/train_harbor_qwen3_5_4b_g5_2node.sh` |
+| Checkpoints | `s3://endless-terminals-training/20260720_4.5opus-task_harbor-grpo_qwen3.5-4b_g5-2node_Xsteps/` |
+| Training log | `s3://endless-terminals-training/20260720_4.5opus-task_harbor-grpo_qwen3.5-4b_g5-2node_Xsteps/train_debug.log` |
+| Eval results | `s3://endless-terminals-training/20260720_4.5opus-task_harbor-grpo_qwen3.5-4b_g5-2node_Xsteps/evals/` |
+| Training data | `s3://endless-terminals-training/prepared_data/train_4.5opus-8192-task_4.6sonnet-sol_combined.parquet` |
+
+### Notes
+
+- First distributed multi-node training run (2 instances)
+- Ray cluster coordinates both nodes, FSDP shards model across all 16 GPUs
+- A10G has less memory than A100 (24GB vs 40GB) but 2 nodes gives 16 GPUs total
+- Increased gpu_memory_utilization to 0.55 to fit model on smaller A10G GPUs
+- Cluster setup: Ray head on instance 1 (172.31.12.35), worker on instance 2 (172.31.9.61)
+- Status: in progress

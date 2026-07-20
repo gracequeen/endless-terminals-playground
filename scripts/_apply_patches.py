@@ -81,13 +81,11 @@ f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/new_inferen
 txt = f.read_text()
 changed = False
 
-# Restore mixin if missing
-if 'LayerwiseReloadWorkerMixin' not in txt:
-    mixin_import = 'from skyrl.backends.skyrl_train.inference_servers.layerwise_reload import (\n    LayerwiseReloadWorkerMixin,\n)\n\n'
-    txt = txt.replace('import torch\n\nVLLM_NEW_INFERENCE_WORKER_EXTENSION_CLS',
-                      'import torch\n\n' + mixin_import + 'VLLM_NEW_INFERENCE_WORKER_EXTENSION_CLS', 1)
-    txt = txt.replace('class NewInferenceWorkerWrap:',
-                      'class NewInferenceWorkerWrap(LayerwiseReloadWorkerMixin):', 1)
+# Revert any LayerwiseReloadWorkerMixin changes — layerwise_reload.py does not exist
+# in this version of SkyRL, so the class must not inherit from it
+if 'LayerwiseReloadWorkerMixin' in txt:
+    txt = re.sub(r'from skyrl\.backends\.skyrl_train\.inference_servers\.layerwise_reload import \(\s*LayerwiseReloadWorkerMixin,\s*\)\s*\n', '', txt)
+    txt = txt.replace('class NewInferenceWorkerWrap(LayerwiseReloadWorkerMixin):', 'class NewInferenceWorkerWrap:')
     changed = True
 
 # Fix attribute names
@@ -104,7 +102,18 @@ if changed:
 else:
     print('new_inference_worker_wrap.py already patched, skipping')
 
-# --- generators/base.py: add std_reward field to MetricsOutput ---
+# --- utils.py: remove worker_extension_cls — vLLM 0.21.0 has weight sync built in
+#     NewInferenceWorkerWrap conflicts with vLLM's native finish_weight_update
+f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/utils.py')
+txt = f.read_text()
+old = '        worker_extension_cls=VLLM_NEW_INFERENCE_WORKER_EXTENSION_CLS,\n'
+if old not in txt:
+    print('utils.py worker_extension_cls already removed, skipping')
+else:
+    f.write_text(txt.replace(old, ''))
+    print('Patched utils.py: removed worker_extension_cls')
+
+
 f = pathlib.Path('SkyRL/skyrl/train/generators/base.py')
 txt = f.read_text()
 old = 'class MetricsOutput(TypedDict):\n    avg_score: Optional[float]\n    pass_at_n: Optional[float]\n    mean_positive_reward: Optional[float]'
