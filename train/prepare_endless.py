@@ -109,8 +109,7 @@ if __name__ == "__main__":
         row["task_dir"] = task_dir_name
         initial_test_path = Path(args.task_dir) / task_dir_name / "environment" / "test_initial_state.py"
         
-        with open(initial_test_path, "r") as f:
-            test_py = f.read()
+        
         
         if t < len(task_dir_names) - args.eval_count:
             train_dataset.append(row)

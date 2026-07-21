@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-REPO="$HOME/grace/endless-terminals-playground"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
 SESSION="endless"
 LOG_DIR="$REPO/harbor_logs"
 mkdir -p "$LOG_DIR"

@@ -48,13 +48,19 @@ class DockerContainerEnvironment:
         self.image_tag = tag
 
         cname = f"skyrl-run-{uuid.uuid4().hex[:8]}"
-        proc = subprocess.run(
-            ["docker", "run", "-d", "--name", cname, tag, "sleep", "3600"],
-            capture_output=True, text=True, timeout=120,
-        )
-        if proc.returncode != 0:
-            if self.verbose:
-                print(f"Docker run failed: {proc.stderr}")
+        try:
+            proc = subprocess.run(
+                ["docker", "run", "-d", "--name", cname, tag, "sleep", "3600"],
+                capture_output=True, text=True, timeout=120,
+            )
+            if proc.returncode != 0:
+                if self.verbose:
+                    print(f"Docker run failed: {proc.stderr}")
+                subprocess.run(["docker", "rmi", "-f", tag], capture_output=True, timeout=30)
+                return False
+        except subprocess.TimeoutExpired:
+            # must remove timeouted container before image removal to avoid another silent fail
+            subprocess.run(["docker", "rm", "-f", cname], capture_output=True, timeout=30)
             subprocess.run(["docker", "rmi", "-f", tag], capture_output=True, timeout=30)
             return False
         self.container_name = cname
@@ -84,10 +90,14 @@ class DockerContainerEnvironment:
             f.write(test_py)
             tmp_path = f.name
         try:
-            subprocess.run(
+            result = subprocess.run(
                 ["docker", "cp", tmp_path, f"{self.container_name}:/tests/test_final_state.py"],
                 capture_output=True, timeout=10,
             )
+            if result.returncode != 0:
+                return False, f"docker cp failed: {result.stderr}"
+        except subprocess.TimeoutExpired:
+            return False, "docker cp timed out"
         finally:
             Path(tmp_path).unlink(missing_ok=True)
         self.exec("pip3 install -q pytest 2>/dev/null || pip install -q pytest 2>/dev/null", timeout=60)
