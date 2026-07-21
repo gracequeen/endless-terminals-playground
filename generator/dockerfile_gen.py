@@ -45,8 +45,10 @@ Heredoc and multiline command rules (IMPORTANT):
   - The terminating `EOF` must be alone on its own line with nothing after it.
   - If needed, you may place any follow-up commands (e.g. `chmod ...`) in a separate `RUN` instruction after the heredoc.
 - Do NOT wrap a heredoc block inside a single-quoted string like `sh -c 'cat <<EOF ... EOF'`.
+- For multi-line Python: use `RUN python3 << 'PYEOF' ... PYEOF` (heredoc) or write the script to a file first with `cat <<'EOF' > script.py ... EOF` then `RUN python3 script.py`. Do NOT use `RUN python3 -c "..."` for multi-line code — it causes `>>>` REPL prompts to leak into the Dockerfile as bare lines, which Docker parses as unknown instructions.
 
-CRITICAL: Your response must start with `FROM ubuntu:22.04` on the very first line. Do NOT include any explanation, commentary, thinking, or markdown fences. Output ONLY valid Dockerfile instructions — nothing else."""
+CRITICAL: Your response must start with `FROM ubuntu:22.04` on the very first line. Do NOT include any explanation, commentary, thinking, or markdown fences. Output ONLY valid Dockerfile instructions — nothing else.
+CRITICAL: Do NOT include any shell scripts, Python code, config file contents, git submodule lines, import statements, or any non-Dockerfile text as bare lines in the output. Every line must be a valid Dockerfile instruction (FROM, RUN, COPY, ENV, etc.) or a comment starting with #."""
 
 
 BASE_USER_TEMPLATE = """
@@ -118,6 +120,10 @@ def parse_dockerfile(raw: str) -> str:
     if from_match and from_match.start() > 0:
         content = content[from_match.start():]
 
+    # Prepend BuildKit syntax directive so heredoc `cat << 'EOF'` works.
+    if not content.startswith("# syntax="):
+        content = "# syntax=docker/dockerfile:1\n" + content
+
     return content
 
 
@@ -174,7 +180,11 @@ def build_and_test_docker(
                 timeout=build_timeout,
             )
             if build_proc.returncode != 0:
-                return False, f"Docker build failed:\n{build_proc.stdout}\n{build_proc.stderr}"
+                err_output = build_proc.stdout + "\n" + build_proc.stderr
+                # Dockerfile parse errors are structural LLM failures — not worth retrying.
+                if "dockerfile parse error" in err_output.lower() or "unknown instruction:" in err_output.lower():
+                    return False, f"DOCKERFILE_PARSE_ERROR:\n{err_output}"
+                return False, f"Docker build failed:\n{err_output}"
         except subprocess.TimeoutExpired:
             return False, "Docker build timed out"
         except FileNotFoundError:
@@ -320,9 +330,15 @@ def generate_dockerfiles_batch(
             )
             ok, err_msg = build_and_test_docker(dockerfile_text, test_py, final_test_py=final_test_py)
             if not ok:
-                _log.warning(
-                    "Docker build/test FAILED for task %d:\n%s", index, err_msg[:2000]
-                )
+                if err_msg.startswith("DOCKERFILE_PARSE_ERROR:"):
+                    _log.warning(
+                        "Dockerfile parse error for task %d (structural LLM failure, skipping):\n%s",
+                        index, err_msg[:2000],
+                    )
+                else:
+                    _log.warning(
+                        "Docker build/test FAILED for task %d:\n%s", index, err_msg[:2000]
+                    )
             return index, (dockerfile_text if ok else None)
         except Exception as exc:
             import logging
