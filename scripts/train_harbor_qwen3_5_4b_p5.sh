@@ -31,7 +31,30 @@ TASKS_COUNT=$(find "$TASKS_DEDUPED_DIR" -name 'instruction.md' 2>/dev/null | wc 
 if [ "$TASKS_COUNT" -lt 10 ]; then
   echo "Downloading deduped 8192 tasks from S3 (found $TASKS_COUNT tasks)..."
   mkdir -p "$TASKS_DEDUPED_DIR"
-  aws s3 sync s3://endless-terminals-training/data/harbor_tasks_8192_deduped/ "$TASKS_DEDUPED_DIR/" --no-progress
+  # Use boto3 directly — avoids AWS CLI CRT library which causes AWS_ERROR_S3_CANCELED
+  # on cross-region downloads of many small files
+  python3.13 -c "
+import boto3, os, pathlib, sys
+bucket = 'endless-terminals-training'
+prefix = 'data/harbor_tasks_8192_deduped/'
+dest = '$TASKS_DEDUPED_DIR'
+s3 = boto3.client('s3', region_name='us-west-1')
+paginator = s3.get_paginator('list_objects_v2')
+pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
+files = [obj['Key'] for page in pages for obj in page.get('Contents', []) if not obj['Key'].endswith('/')]
+print(f'Found {len(files)} files to download')
+for i, key in enumerate(files):
+    rel = key[len(prefix):]
+    local = pathlib.Path(dest) / rel
+    local.parent.mkdir(parents=True, exist_ok=True)
+    if not local.exists():
+        s3.download_file(bucket, key, str(local))
+    if (i+1) % 500 == 0:
+        print(f'  {i+1}/{len(files)} files done')
+print('Download complete.')
+"
+  TASKS_COUNT=$(find "$TASKS_DEDUPED_DIR" -name 'instruction.md' 2>/dev/null | wc -l)
+  echo "Downloaded $TASKS_COUNT tasks."
 else
   echo "Using existing deduped tasks ($TASKS_COUNT tasks)"
 fi
