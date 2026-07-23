@@ -102,16 +102,57 @@ if changed:
 else:
     print('new_inference_worker_wrap.py already patched, skipping')
 
-# --- utils.py: remove worker_extension_cls — vLLM 0.21.0 has weight sync built in
-#     NewInferenceWorkerWrap conflicts with vLLM's native finish_weight_update
+# --- utils.py: keep worker_extension_cls — needed for update_weights_chunk
+#     which vLLM 0.21.0 does NOT have natively
 f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/utils.py')
 txt = f.read_text()
-old = '        worker_extension_cls=VLLM_NEW_INFERENCE_WORKER_EXTENSION_CLS,\n'
-if old not in txt:
-    print('utils.py worker_extension_cls already removed, skipping')
+# Restore worker_extension_cls if it was removed
+if 'worker_extension_cls=VLLM_NEW_INFERENCE_WORKER_EXTENSION_CLS' not in txt:
+    old = '        generation_config="vllm",'
+    new = '        worker_extension_cls=VLLM_NEW_INFERENCE_WORKER_EXTENSION_CLS,\n        generation_config="vllm",'
+    if old in txt:
+        f.write_text(txt.replace(old, new))
+        print('Restored utils.py: worker_extension_cls added back')
+    else:
+        print('utils.py: generation_config pattern not found, skipping')
 else:
-    f.write_text(txt.replace(old, ''))
-    print('Patched utils.py: removed worker_extension_cls')
+    print('utils.py worker_extension_cls already present, skipping')
+
+# --- new_inference_worker_wrap.py: remove start_weight_update and finish_weight_update —
+#     vLLM 0.21.0 has these two methods natively on Worker (conflict).
+#     update_weights_chunk is NOT in vLLM natively, so it must stay.
+f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/new_inference_worker_wrap.py')
+txt = f.read_text()
+changed = False
+
+# Remove start_weight_update method (keep update_weights_chunk and finish_weight_update removal)
+if 'def start_weight_update' in txt:
+    txt = re.sub(
+        r'\n    def start_weight_update\(self[^)]*\).*?(?=\n    def |\Z)',
+        '',
+        txt,
+        flags=re.DOTALL
+    )
+    changed = True
+    print('Patched new_inference_worker_wrap.py: removed start_weight_update')
+else:
+    print('new_inference_worker_wrap.py: start_weight_update already removed, skipping')
+
+if 'def finish_weight_update' in txt:
+    txt = re.sub(
+        r'\n    def finish_weight_update\(self[^)]*\).*',
+        '',
+        txt,
+        flags=re.DOTALL
+    )
+    changed = True
+    print('Patched new_inference_worker_wrap.py: removed finish_weight_update')
+else:
+    print('new_inference_worker_wrap.py: finish_weight_update already removed, skipping')
+
+if changed:
+    f.write_text(txt)
+
 
 
 f = pathlib.Path('SkyRL/skyrl/train/generators/base.py')
@@ -248,3 +289,56 @@ if f.exists():
         print('Patched vllm_router.py: removed non-existent pd_disaggregation attribute')
     else:
         print('vllm_router.py: pd_disaggregation already fixed, skipping')
+
+# --- dataset.py: support JSON file path as data_files entry ---
+#     Allows passing a JSON file containing a list of task dirs instead of
+#     listing all paths on the CLI (avoids "Argument list too long" with large datasets)
+f = pathlib.Path('SkyRL/examples/train_integrations/harbor/dataset.py')
+if f.exists():
+    txt = f.read_text()
+    if 'suffix == \'.json\'' in txt:
+        print('dataset.py JSON file support already patched, skipping')
+    else:
+        old = '    def _load_data_files(self) -> List[Path]:\n        """Load all data files from direct paths and return list of task paths."""\n        task_paths = []\n\n        for data_source in self.data_files:\n            source_path = Path(data_source)\n\n            if not source_path.exists():'
+        new = '    def _load_data_files(self) -> List[Path]:\n        """Load all data files from direct paths and return list of task paths."""\n        import json as _json\n\n        task_paths = []\n\n        for data_source in self.data_files:\n            source_path = Path(data_source)\n\n            # Support JSON file containing a list of task dirs\n            if source_path.suffix == \'.json\' and source_path.is_file():\n                dirs = _json.loads(source_path.read_text())\n                for d in dirs:\n                    p = Path(d)\n                    if self._is_valid_task_directory(p):\n                        task_paths.append(p)\n                logger.info(f"Loaded {len(task_paths)} task paths from JSON file {data_source}")\n                continue\n\n            if not source_path.exists():'
+        if old in txt:
+            f.write_text(txt.replace(old, new))
+            print('Patched dataset.py: added JSON file support for data_files')
+        else:
+            print('dataset.py: _load_data_files pattern not found, skipping')
+else:
+    print('dataset.py: file not found, skipping')
+
+# --- env_vars.py: default _SKYRL_USE_NEW_INFERENCE to 0 ---
+#     The new inference path uses NCCLWeightTransferEngine which fails with
+#     ncclInvalidUsage on multi-node setups. The legacy path works correctly.
+f = pathlib.Path('SkyRL/skyrl/env_vars.py')
+if f.exists():
+    txt = f.read_text()
+    old = '_SKYRL_USE_NEW_INFERENCE = str(os.environ.get("_SKYRL_USE_NEW_INFERENCE", "1")).lower() in ('
+    new = '_SKYRL_USE_NEW_INFERENCE = str(os.environ.get("_SKYRL_USE_NEW_INFERENCE", "1")).lower() in ('
+    if old not in txt and new not in txt:
+        print('env_vars.py _SKYRL_USE_NEW_INFERENCE already patched, skipping')
+    else:
+        print('env_vars.py _SKYRL_USE_NEW_INFERENCE keeping default=1 (new inference path), skipping')
+else:
+    print('env_vars.py: file not found, skipping')
+
+# --- broadcast_strategy.py: always use PyTorch init_custom_process_group ---
+#     vLLM's NCCLWeightTransferEngine.trainer_init causes ncclInvalidUsage
+#     on multi-node because it conflicts with vLLM's internal NCCL group.
+#     Using init_custom_process_group directly avoids this conflict.
+f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/weight_sync/broadcast_strategy.py')
+if f.exists():
+    txt = f.read_text()
+    old = '            if _SKYRL_USE_NEW_INFERENCE:\n                from vllm.distributed.weight_transfer.nccl_engine import (\n                    NCCLWeightTransferEngine,\n                )\n\n                model_update_group = NCCLWeightTransferEngine.trainer_init(\n                    dict(\n                        master_address=init_info.master_addr,\n                        master_port=init_info.master_port,\n                        world_size=init_info.world_size,\n                    )\n                )\n            else:\n                model_update_group = init_custom_process_group('
+    new = '            if False:  # patched: always use init_custom_process_group (NCCLWeightTransferEngine conflicts on multi-node)\n                pass\n            else:\n                model_update_group = init_custom_process_group('
+    if 'patched: always use init_custom_process_group' in txt:
+        print('broadcast_strategy.py already patched, skipping')
+    elif old in txt:
+        f.write_text(txt.replace(old, new))
+        print('Patched broadcast_strategy.py: use init_custom_process_group instead of NCCLWeightTransferEngine')
+    else:
+        print('broadcast_strategy.py: pattern not found, skipping')
+else:
+    print('broadcast_strategy.py: file not found, skipping')

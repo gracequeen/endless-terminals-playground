@@ -1,5 +1,49 @@
 # Training Experiments
 
+## Scripts Reference
+
+### Single-node training
+```bash
+# 3B PPO direct Docker (single node)
+bash scripts/train_qwen3b.sh
+
+# 9B GRPO Harbor + terminus-2 (single node, p4d/p5)
+bash scripts/train_harbor_qwen3_5_9b.sh
+
+# 4B GRPO Harbor + terminus-2 (single node, p4d)
+bash scripts/train_harbor_qwen3_5_4b_p4d.sh
+```
+
+### Multi-node distributed training (2x g5.48xlarge)
+```bash
+# 0. Install dependencies on a fresh instance (run once per instance)
+bash scripts/install_sky.sh
+
+# 1. Set up cluster (run once per session — installs deps, starts Ray, syncs PyTorch versions)
+bash scripts/setup_cluster.sh
+
+# 2. Launch training (run from Mac — SSHes into head node and starts training in tmux)
+bash scripts/launch_training.sh
+
+# 3. Watch logs (optional)
+ssh -i ~/Desktop/distribution-training.pem ec2-user@<head_ip>
+tmux attach -t training
+```
+
+### Data preparation
+```bash
+# Download tasks + solutions from S3, filter solvable tasks, produce combined parquet
+bash scripts/prepare_data_s3.sh
+```
+
+### Key multi-node config (train_harbor_qwen3_5_4b_g5_2node.sh)
+- `trainer.placement.colocate_all=false` — required for multi-node (colocate uses CUDA IPC which doesn't work across nodes)
+- `generator.inference_engine.weight_sync_backend=broadcast` — uses NCCL broadcast instead of CUDA IPC
+- `NCCL_SOCKET_IFNAME=ens5` — forces NCCL to use IPv4 interface on g5 instances
+- PyTorch versions must match across nodes — `setup_cluster.sh` handles this automatically
+
+---
+
 ## 20260629 — Qwen2.5-3B PPO
 
 | Field | Value |
@@ -146,11 +190,12 @@ At step 1, reward/avg_pass_at_4=1.0 and avg_raw_advantages=0.0 — Qwen3.5-4B so
 
 | Field | Value |
 |-------|-------|
-| **Experiment name** | `20260720_4.5opus-task_harbor-grpo_qwen3.5-4b_g5-2node_Xsteps` |
+| **Experiment name** | `20260722_8192deduped-task_harbor-grpo_qwen3.5-4b_g5-2node_Xsteps` |
 | **Task generation model** | Claude 4.6 Opus (8192 token context) |
 | **Solution generation model** | Claude 4.6 Sonnet |
-| **Training tasks** | 1882 (harbor_tasks_8192 part 1, filtered by solvability) |
-| **Val tasks** | 210 |
+| **Training tasks** | 2781 (from 4929 deduplicated tasks, filtered by solvability) |
+| **Val tasks** | 100 |
+| **Dataset** | `harbor_tasks_8192_deduped` — 6682 → 4929 after dedup (threshold=0.85) |
 | **Algorithm** | GRPO |
 | **Agent** | terminus-2 |
 | **Environment** | Harbor + Docker |
@@ -163,31 +208,24 @@ At step 1, reward/avg_pass_at_4=1.0 and avg_raw_advantages=0.0 — Qwen3.5-4B so
 | **GPUs** | 16× A10G 24GB total (8 per node) |
 | **Max turns per rollout** | 8 |
 | **Max seq len** | 8192 tokens |
-| **Max prompt length** | 4096 tokens |
 | **gpu_memory_utilization** | 0.55 |
-| **tensor_parallel_size** | 8 (per engine) |
-| **num_engines** | 2 (one per node) |
+| **weight_sync_backend** | broadcast (NCCL, colocate_all=false) |
 
-### Key Differences from Previous Runs
+### Key fixes for multi-node
 
-| | 20260716 (p4d) | 20260720 (g5 2-node) |
-|---|---|---|
-| Hardware | 1× p4d (8× A100 40GB) | 2× g5.48xlarge (16× A10G 24GB) |
-| Nodes | 1 | 2 |
-| Total GPU memory | 320GB | 384GB |
-| Batch size | 8 | 16 (doubled) |
-| vLLM engines | 1 | 2 |
-| Distribution | Single node FSDP | Multi-node FSDP via Ray |
+- Upgraded `nvidia-nccl-cu13` to 2.29.7 on both nodes (2.28.9 had `double free` crash)
+- Set `CUDA_HOME` system-wide so FlashInfer JIT can find nvcc in Ray workers
+- `VLLM_USE_FLASHINFER_SAMPLER=0` to avoid FlashInfer sampler JIT issues
+- `colocate_all=false` + `weight_sync_backend=broadcast` — CUDA IPC doesn't work across nodes
 
 ### S3 Artifacts
 
 | Artifact | Location |
 |----------|----------|
 | Training script | `scripts/train_harbor_qwen3_5_4b_g5_2node.sh` |
-| Checkpoints | `s3://endless-terminals-training/20260720_4.5opus-task_harbor-grpo_qwen3.5-4b_g5-2node_Xsteps/` |
-| Training log | `s3://endless-terminals-training/20260720_4.5opus-task_harbor-grpo_qwen3.5-4b_g5-2node_Xsteps/train_debug.log` |
-| Eval results | `s3://endless-terminals-training/20260720_4.5opus-task_harbor-grpo_qwen3.5-4b_g5-2node_Xsteps/evals/` |
-| Training data | `s3://endless-terminals-training/prepared_data/train_4.5opus-8192-task_4.6sonnet-sol_combined.parquet` |
+| Data prep script | `scripts/prepare_data_deduped.sh` |
+| Checkpoints | `s3://endless-terminals-training/20260722_8192deduped-task_harbor-grpo_qwen3.5-4b_g5-2node_Xsteps/` |
+| Training data | `s3://endless-terminals-training/prepared_data/train_8192_deduped_4929tasks.parquet` |
 
 ### Notes
 

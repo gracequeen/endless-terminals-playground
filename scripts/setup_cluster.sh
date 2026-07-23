@@ -67,6 +67,16 @@ done
 wait $PID1 $PID2
 echo "Installation complete on both instances."
 
+# Step 2.5: Sync PyTorch version across nodes to match head node
+# This prevents NCCL version mismatches which cause double-free crashes in multi-node training
+echo ""
+echo "Step 2.5: Syncing PyTorch version across nodes..."
+TORCH_VERSION=$(remote "$HEAD_IP" "source /tmp/sky/bin/activate && python3 -c 'import torch; print(torch.__version__)'")
+CUDA_TAG=$(echo "$TORCH_VERSION" | sed 's/.*+//')
+echo "Head node PyTorch: $TORCH_VERSION (CUDA tag: $CUDA_TAG)"
+remote "$WORKER_IP" "source /tmp/sky/bin/activate && pip install torch==${TORCH_VERSION%%+*} torchvision --index-url https://download.pytorch.org/whl/${CUDA_TAG} -q && pip install nvidia-nccl-cu13==2.29.7 -q"
+echo "Worker node PyTorch synced to $TORCH_VERSION"
+
 # Step 3: Start Ray head on instance 1
 echo ""
 echo "Step 3: Starting Ray head node on instance 1..."
