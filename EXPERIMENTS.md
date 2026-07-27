@@ -111,41 +111,54 @@ bash scripts/prepare_data_s3.sh
 
 ---
 
-## 20260716 — Qwen3.5-4B GRPO (Harbor + terminus-2)
+## 20260716 — Qwen3.5-4B GRPO on p5.48xlarge (Harbor + terminus-2)
+
+**Goal:** Train Qwen3.5-4B with GRPO on the deduped 8192-token task dataset. Model runs Linux terminal tasks inside Docker containers via Harbor + terminus-2 agent. Reward = 1 if pytest passes, 0 if not.
+
+**Status:** Running on p5.48xlarge (i-04dbdd1c27e31c3f3, 35.91.160.177) — branch `tc/harbor-grpo-miniswe-9b`
 
 | Field | Value |
 |-------|-------|
-| **Experiment name** | TBD |
+| **Experiment name** | `20260723_8192deduped-task_harbor-grpo_qwen3.5-4b_p5_Xsteps` |
 | **Task generation model** | Claude 4.6 Opus (8192 token context) |
 | **Solution generation model** | Claude 4.6 Sonnet |
-| **Training tasks** | 1882 (from harbor_tasks_8192 part 1, filtered by solvability) |
-| **Val tasks** | 210 |
+| **Training tasks** | 2781 (from 4929 deduplicated tasks, filtered by solvability) |
+| **Val tasks** | 100 |
+| **Dataset** | `harbor_tasks_8192_deduped` |
 | **Algorithm** | GRPO |
-| **Agent** | terminus-2 |
-| **Environment** | Harbor + Docker |
+| **Agent** | terminus-2 (inside Docker via Harbor) |
 | **Base model** | Qwen/Qwen3.5-4B |
-| **Total steps** | 100 |
-| **Checkpoint interval** | Every 50 steps |
+| **Expected steps** | ~348 (1 epoch over 2781 tasks at batch_size=8) |
+| **Checkpoint interval** | Every 20 steps |
 | **Eval interval** | Every 20 steps |
 | **Batch size** | 8 tasks × 4 samples = 32 rollouts/step |
-| **GPUs** | 8× A100 40GB (p4d.24xlarge) |
-| **Max turns per rollout** | 32 (Harbor terminus-2) |
+| **Instance** | p5.48xlarge |
+| **GPUs** | 8× H100 80GB |
+| **Max turns per rollout** | 8 |
+| **Max prompt length** | 4096 tokens |
 | **Max seq len** | 8192 tokens |
-| **gpu_memory_utilization** | 0.45 |
+| **Max generate length** | 2048 tokens |
+| **gpu_memory_utilization** | 0.35 |
+| **weight_sync_backend** | nccl (single node, localhost) |
+
+### Why p5 instead of p4d
+
+Attempted on p4d.24xlarge (8× A100 40GB) first — hit CUDA OOM during backward pass due to 8192-token trajectories. H100 80GB doubles GPU memory and eliminates the OOM. See 20260718 for full OOM investigation.
 
 ### S3 Artifacts
 
 | Artifact | Location |
 |----------|----------|
-| Training script | `scripts/train_harbor_qwen3_5_4b_p4d.sh` |
-| Training data | `s3://endless-terminals-training/prepared_data/train_4.5opus-8192-task_4.6sonnet-sol_combined.parquet` |
+| Training script | `scripts/train_harbor_qwen3_5_4b_p5.sh` |
+| Checkpoints | `s3://endless-terminals-training/20260723_8192deduped-task_harbor-grpo_qwen3.5-4b_p5_Xsteps/` |
+| Training data | `s3://endless-terminals-training/prepared_data/train_8192_deduped_4929tasks.parquet` |
+| Training log | `s3://endless-terminals-training/20260723_8192deduped-task_harbor-grpo_qwen3.5-4b_p5_Xsteps/train_debug.log` |
 
-### Notes
+### Expected Results
 
-- First 4B model experiment
-- New dataset: harbor_4.6opus_tasks_8192 (8192 token context tasks, part 1)
-- Dataset pass@1: 56.5% (2092/3310 tasks solvable) — much stronger signal than previous ~10%
-- Branch: `tc/harbor-grpo-miniswe-9b`
+- Step 1 reward ~0.18 (18% pass rate baseline before training)
+- Each step ~10–15 min on p5
+- Should improve over ~348 steps (1 epoch)
 
 ---
 
@@ -232,6 +245,190 @@ At step 1, reward/avg_pass_at_4=1.0 and avg_raw_advantages=0.0 — Qwen3.5-4B so
 - First distributed multi-node training run (2 instances)
 - Ray cluster coordinates both nodes, FSDP shards model across all 16 GPUs
 - A10G has less memory than A100 (24GB vs 40GB) but 2 nodes gives 16 GPUs total
-- Increased gpu_memory_utilization to 0.55 to fit model on smaller A10G GPUs
 - Cluster setup: Ray head on instance 1 (172.31.12.35), worker on instance 2 (172.31.9.61)
-- Status: in progress
+- Dataset: `harbor_tasks_8192_deduped` — 6682 → 4929 after dedup (threshold=0.85, 73.8% kept), 2781 solvable (56.4% pass rate)
+
+### Result
+
+**Abandoned due to persistent OOM on A10G 24GB GPUs.**
+
+Training did briefly work — step 1 achieved `avg_pass_at_4: 0.1875` (18.75% pass rate), confirming the model can solve tasks and RL has a learning signal. However, steps with longer sequences consistently OOM during the ref model forward pass (`log_softmax` over vocabulary requires 8-14GB, exceeding available GPU memory).
+
+### Issues encountered and resolved
+
+1. **vLLM 0.21.0 worker extension conflict** — `start_weight_update`/`finish_weight_update` methods conflict with native vLLM methods. Fix: remove them from `NewInferenceWorkerWrap`, keep only `update_weights_chunk`.
+2. **NCCL IPv6 routing** — NCCL defaulted to `fe80::` IPv6 which doesn't route between instances. Fix: `NCCL_SOCKET_IFNAME=ens5`, `NCCL_SOCKET_FAMILY=AF_INET`.
+3. **NCCL version mismatch** — Instance 1 had NCCL 2.29.7, instance 2 had 2.28.9 (buggy `double free`). Fix: `pip install nvidia-nccl-cu13==2.29.7` on both.
+4. **PyTorch version mismatch** — AMI versions differed. Fix: sync PyTorch in `setup_cluster.sh`.
+5. **NCCLWeightTransferEngine conflict** — `colocate_all=true` forces CUDA IPC which doesn't work cross-node; new inference path's `NCCLWeightTransferEngine.trainer_init` conflicts. Fix: patch `broadcast_strategy.py` to use `init_custom_process_group` directly.
+6. **FlashInfer JIT** — `CUDA_HOME` not set in Ray workers. Fix: set in `/etc/environment`.
+7. **Docker network exhaustion** — 100+ networks accumulate, IP pool runs out. Fix: periodic `docker network prune -f`.
+8. **Docker build cache filling disk** — 56GB cache from 2000+ builds. Fix: background `docker builder prune` every 30 min.
+9. **Argument list too long** — 2781 task dirs passed as CLI args exceeds OS limit. Fix: pass JSON file path, patched `HarborTaskDataset` to load from JSON.
+
+### Conclusion
+
+A10G 24GB is too small for colocated RL training with a 4B model at 4096+ sequence lengths. Need ≥40GB per GPU. Moved to single-node p5.48xlarge (8× H100 80GB).
+
+---
+
+## 20260723 — Qwen3.5-4B GRPO on p5.48xlarge (Single Node)
+
+| Field | Value |
+|-------|-------|
+| **Experiment name** | `20260723_8192deduped-task_harbor-grpo_qwen3.5-4b_p5_Xsteps` |
+| **Task generation model** | Claude 4.6 Opus (8192 token context) |
+| **Solution generation model** | Claude 4.6 Sonnet |
+| **Training tasks** | 2781 (from 4929 deduplicated tasks, filtered by solvability) |
+| **Val tasks** | 100 |
+| **Dataset** | `harbor_tasks_8192_deduped` — 6682 → 4929 after dedup (threshold=0.85, 73.8% kept), 2781 solvable (56.4% pass rate) |
+| **Algorithm** | GRPO |
+| **Agent** | terminus-2 |
+| **Environment** | Harbor + Docker |
+| **Base model** | Qwen/Qwen3.5-4B |
+| **Instance** | p5.48xlarge (8× H100 80GB) |
+| **Batch size** | 4 tasks × 4 samples = 16 rollouts/step |
+| **Max turns per rollout** | 8 |
+| **Max generate length** | 1024 tokens |
+| **Max seq len** | 4096 tokens (no truncation enforced by SkyRL) |
+| **micro_forward_batch_size_per_gpu** | 1 |
+| **micro_train_batch_size_per_gpu** | 1 |
+| **gpu_memory_utilization** | 0.10 |
+| **weight_sync_backend** | nccl (CUDA IPC on single node) |
+| **colocate_all** | true |
+
+### Early Results (6-turn run, steps 1-9)
+
+| Step | avg_pass_at_4 | avg_raw_reward |
+|------|---------------|----------------|
+| 1 | 62.5% | 43.8% |
+| 2 | 50.0% | 37.5% |
+| 3 | 62.5% | 53.1% |
+| 4 | 62.5% | 46.9% |
+| 5 | 62.5% | 53.1% |
+| 6 | 62.5% | 43.8% |
+| 7 | 62.5% | 40.6% |
+| 8 | 87.5% | 75.0% |
+| 9 | 100% | 59.4% |
+
+### S3 Artifacts
+
+| Artifact | Location |
+|----------|----------|
+| Training script | `scripts/train_harbor_qwen3_5_4b_p5.sh` |
+| Checkpoints | `s3://endless-terminals-training/20260723_8192deduped-task_harbor-grpo_qwen3.5-4b_p5_Xsteps/` |
+| Training data | `s3://endless-terminals-training/prepared_data/train_8192_deduped_4929tasks.parquet` |
+
+### Notes
+
+- Single node — no multi-node weight sync issues
+- CUDA IPC weight sync works cleanly on single node
+- Newer SkyRL version on p5 required fixing attribute name mismatch in `new_inference_worker_wrap.py` (`_skyrl_weight_update_active` → `_weight_update_active`)
+- OOM resolved by reducing batch_size=4, gpu_memory_utilization=0.10, micro_batch=1, max_generate_length=1024
+
+### Important: Two `max_turns` settings
+
+There are **two separate** `max_turns` that must be set together:
+
+1. **`generator.max_turns`** in the training script — controls SkyRL's step-wise trajectory collection (how many Harbor episodes per rollout)
+2. **`default.yaml` → `agent.kwargs.max_turns`** — controls how many turns terminus-2 agent takes *within* a single episode
+
+**The one that actually limits sequence length is `default.yaml`**. If `default.yaml` has `max_turns: 32` but the script has `generator.max_turns=8`, the agent still runs 32 turns internally producing 20k+ token sequences, causing OOM. Both must be set to the same value.
+
+- Status: **abandoned** — model oscillates between recovery and collapse, never stabilizes
+
+### Training Progress (avg pass_at_4 by block)
+
+| Steps | Avg pass_at_4 | Non-zero batches | Notes |
+|-------|---------------|------------------|-------|
+| 61-80 | 3.7% | 3/20 | Post-512 damage, barely recovering |
+| 81-100 | 5.0% | 4/20 | Still struggling |
+| 101-120 | 15.0% | 7/20 | Starting to recover |
+| 121-140 | 32.5% | 15/20 | Best period |
+| 141-160 | 1.3% | 1/20 | Collapsed again |
+| 161-180 | 20.0% | 11/20 | Partial recovery |
+| 181-199 | 22.2% | 9/18 | Unstable, then collapsed to 0% |
+| 201-243 | 0.0% | 0/43 | Fully collapsed, never recovered |
+
+Overall avg training reward: 14.1% across steps 61-199, then 0% for steps 201-243. Total 181 steps ran.
+
+### Eval Metrics (held-out validation tasks — model never trains on these)
+
+Eval runs every 20 steps on 10 unseen tasks. `avg_score` = fraction of tasks solved.
+
+| Step | avg_score |
+|------|-----------|
+| 20 | 0.02 (2%) |
+| 40 | 0.02 (2%) |
+| 60 | 0.54 (54%) |
+| 80 | 0.01 (1%) |
+| 100 | 0.00 (0%) |
+| 120 | 0.30 (30%) |
+| 200 | 0.00 (0%) |
+| 220 | 0.00 (0%) |
+
+### Training Metrics (averaged over blocks of 20 steps)
+
+GRPO has no critic, so no value loss or explained variance. Key metrics:
+- `mean_reward`: average reward across all rollouts in the batch (1.0 = all pass, 0.0 = all fail)
+- `std_reward`: standard deviation of reward (higher = more contrast for GRPO to learn from)
+- `policy_loss`: GRPO policy gradient loss (should be small and stable)
+- `entropy`: policy entropy (higher = more exploration, 0 = collapsed/deterministic)
+
+| Steps | Mean Reward | Std Reward | Policy Loss | Entropy |
+|-------|-------------|------------|-------------|---------|
+| 61-80 | 0.0125 | 0.0407 | -0.0097 | 0.0345 |
+| 81-100 | 0.0125 | 0.0484 | -0.0101 | 0.0798 |
+| 101-120 | 0.1062 | 0.1434 | -0.0171 | 0.0715 |
+| 121-140 | 0.2406 | 0.3367 | 0.0032 | 0.0720 |
+| 141-160 | 0.0031 | 0.0121 | -0.0115 | 0.0625 |
+| 161-180 | 0.1062 | 0.2053 | -0.0742 | 0.1182 |
+| 181-199 | 0.1389 | 0.2128 | 137.27 ⚠️ | 0.0600 |
+| 201-243 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
+
+Note: Policy loss exploded at steps 181-199 (137.27), indicating training instability / gradient explosion. After step 200, model fully collapsed with zero reward and zero gradients across all remaining steps.
+
+### Why training failed to converge
+
+**Root cause:** OOM forced us into settings too constrained for stable GRPO training, which led to an irrecoverable model collapse.
+
+**Why the model couldn't recover once it started failing:**
+
+Recovery requires the model to occasionally produce correct outputs (non-zero reward) so GRPO can reinforce them. But with our constrained settings:
+- Only 4 tasks per batch → most batches are all-fail (0% reward) → zero gradient
+- 6 turns → complex tasks can't be completed → fewer successes
+- No KL penalty → nothing prevents the policy from drifting further into broken output patterns
+
+The model entered a **death spiral**: bad outputs → 0 reward → no gradient → no improvement → bad outputs persist.
+
+**Why we were forced into bad settings (the fundamental issue):**
+
+Colocated mode on H100 80GB cannot handle the paper's settings (batch=16, turns=16, generate=2048) because of the vocabulary size × sequence length memory requirement during backward pass. Every config reduction (batch, turns, generate length) degraded training quality, making the death spiral easier to trigger and harder to escape.
+
+| Setting | Paper | Ours | Impact |
+|---------|-------|------|--------|
+| train_batch_size | 16 | 4 | Less contrast for GRPO, high variance |
+| max_turns | 16 | 6 | Model can't finish complex tasks |
+| max_generate_length | 2048 | 1024 | Outputs may be truncated |
+| micro_batch | 2 | 1 | Slower training |
+| gpu_memory_utilization | 0.35+ | 0.10 | Less KV cache for inference |
+
+### Root cause of OOM
+
+The 4B model has a vocabulary of 151,665 tokens. During backward pass, `log_softmax` allocates `[sequence_length × vocab_size]`:
+
+```
+20,000 tokens × 151,665 vocab × 4 bytes = ~12GB for one operation
+```
+
+Plus gradients + activations + optimizer states already using 50-60GB → exceeds 80GB on long sequences. The issue isn't model size (4B is small) — it's **long sequences × large vocabulary** during backward pass.
+
+### Conclusion
+
+**H100 80GB in colocated mode cannot support the settings needed for effective GRPO training on long-sequence terminal tasks.** The paper's settings (batch=16, turns=16, generate=2048) require ~200GB per GPU during backward pass. We have 80GB.
+
+To replicate the paper's results, might need either:
+- **2× p5 nodes** — multi-node distributed (brings back weight sync issues)
+- **Smaller vocabulary model** (e.g. LLaMA 32k vocab vs Qwen 151k) — 5× less memory for same sequence length
+
+---

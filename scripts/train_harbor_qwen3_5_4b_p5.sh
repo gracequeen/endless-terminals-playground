@@ -31,28 +31,8 @@ TASKS_COUNT=$(find "$TASKS_DEDUPED_DIR" -name 'instruction.md' 2>/dev/null | wc 
 if [ "$TASKS_COUNT" -lt 10 ]; then
   echo "Downloading deduped 8192 tasks from S3 (found $TASKS_COUNT tasks)..."
   mkdir -p "$TASKS_DEDUPED_DIR"
-  # Use boto3 directly — avoids AWS CLI CRT library which causes AWS_ERROR_S3_CANCELED
-  # on cross-region downloads of many small files
-  python3.13 -c "
-import boto3, os, pathlib, sys
-bucket = 'endless-terminals-training'
-prefix = 'data/harbor_tasks_8192_deduped/'
-dest = '$TASKS_DEDUPED_DIR'
-s3 = boto3.client('s3', region_name='us-west-1')
-paginator = s3.get_paginator('list_objects_v2')
-pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
-files = [obj['Key'] for page in pages for obj in page.get('Contents', []) if not obj['Key'].endswith('/')]
-print(f'Found {len(files)} files to download')
-for i, key in enumerate(files):
-    rel = key[len(prefix):]
-    local = pathlib.Path(dest) / rel
-    local.parent.mkdir(parents=True, exist_ok=True)
-    if not local.exists():
-        s3.download_file(bucket, key, str(local))
-    if (i+1) % 500 == 0:
-        print(f'  {i+1}/{len(files)} files done')
-print('Download complete.')
-"
+  aws configure set region us-west-1
+  aws s3 sync s3://endless-terminals-training/data/harbor_tasks_8192_deduped/ "$TASKS_DEDUPED_DIR/" --no-progress
   TASKS_COUNT=$(find "$TASKS_DEDUPED_DIR" -name 'instruction.md' 2>/dev/null | wc -l)
   echo "Downloaded $TASKS_COUNT tasks."
 else
@@ -174,12 +154,12 @@ python -m examples.train_integrations.harbor.entrypoints.main_harbor \
   trainer.remove_microbatch_padding=false \
   trainer.policy.use_torch_compile=false \
   trainer.gradient_checkpointing=true \
-  trainer.train_batch_size=8 \
-  trainer.policy_mini_batch_size=8 \
-  trainer.micro_forward_batch_size_per_gpu=2 \
-  trainer.micro_train_batch_size_per_gpu=2 \
+  trainer.train_batch_size=4 \
+  trainer.policy_mini_batch_size=4 \
+  trainer.micro_forward_batch_size_per_gpu=1 \
+  trainer.micro_train_batch_size_per_gpu=1 \
   trainer.max_prompt_length=4096 \
-  trainer.algorithm.max_seq_len=8192 \
+  trainer.algorithm.max_seq_len=4096 \
   trainer.epochs=1 \
   trainer.update_epochs_per_batch=2 \
   trainer.ckpt_interval=20 \
@@ -194,20 +174,19 @@ python -m examples.train_integrations.harbor.entrypoints.main_harbor \
   "trainer.export_path=$EXPORT_DIR" \
   trainer.resume_mode=$RESUME_MODE \
   generator.inference_engine.num_engines=1 \
-  generator.inference_engine.http_endpoint_host=127.0.0.1 \
   generator.inference_engine.tensor_parallel_size=8 \
   generator.inference_engine.run_engines_locally=true \
   generator.inference_engine.backend=vllm \
   generator.inference_engine.weight_sync_backend=nccl \
   generator.inference_engine.async_engine=true \
   generator.inference_engine.enforce_eager=true \
-  generator.inference_engine.gpu_memory_utilization=0.35 \
+  generator.inference_engine.gpu_memory_utilization=0.10 \
   generator.inference_engine.served_model_name=Qwen3.5-4B \
   generator.n_samples_per_prompt=4 \
-  generator.max_turns=8 \
+  generator.max_turns=6 \
   generator.step_wise_trajectories=true \
   generator.merge_stepwise_output=true \
-  "generator.sampling_params.max_generate_length=2048" \
+  "generator.sampling_params.max_generate_length=1024" \
   "generator.sampling_params.temperature=0.6" \
   2>&1 | tee "$LOG_FILE"
 cd ..

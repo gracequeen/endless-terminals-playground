@@ -136,6 +136,7 @@ LOG_SYNC_PID=$!
     sleep 1800
     docker builder prune -f --filter until=1h > /dev/null 2>&1
     docker image prune -f --filter until=2h > /dev/null 2>&1
+    docker network prune -f > /dev/null 2>&1
   done
 ) &
 DOCKER_CLEAN_PID=$!

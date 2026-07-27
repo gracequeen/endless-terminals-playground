@@ -75,26 +75,34 @@ elif old in txt:
 else:
     print('ppo_utils.py: decorator pattern not found, skipping')
 
-# --- new_inference_worker_wrap.py: restore LayerwiseReloadWorkerMixin + fix attribute names
-#     (needed for skyrl_start_weight_update used by CUDA IPC weight sync)
+# --- new_inference_worker_wrap.py: fix LayerwiseReloadWorkerMixin + attribute names
+#     On newer SkyRL (where layerwise_reload.py exists), keep the mixin inheritance.
+#     On older SkyRL (where it doesn't exist), remove it.
 f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/new_inference_worker_wrap.py')
+layerwise_exists = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/layerwise_reload.py').exists()
 txt = f.read_text()
 changed = False
 
-# Revert any LayerwiseReloadWorkerMixin changes — layerwise_reload.py does not exist
-# in this version of SkyRL, so the class must not inherit from it
-if 'LayerwiseReloadWorkerMixin' in txt:
-    txt = re.sub(r'from skyrl\.backends\.skyrl_train\.inference_servers\.layerwise_reload import \(\s*LayerwiseReloadWorkerMixin,\s*\)\s*\n', '', txt)
-    txt = txt.replace('class NewInferenceWorkerWrap(LayerwiseReloadWorkerMixin):', 'class NewInferenceWorkerWrap:')
-    changed = True
+if layerwise_exists:
+    # Newer SkyRL: ensure class inherits from LayerwiseReloadWorkerMixin
+    if 'class NewInferenceWorkerWrap:' in txt and 'LayerwiseReloadWorkerMixin' not in txt:
+        txt = txt.replace('class NewInferenceWorkerWrap:', 'class NewInferenceWorkerWrap(LayerwiseReloadWorkerMixin):')
+        changed = True
+    print('new_inference_worker_wrap.py: layerwise_reload.py exists, keeping mixin inheritance')
+else:
+    # Older SkyRL: remove mixin since the file doesn't exist
+    if 'LayerwiseReloadWorkerMixin' in txt:
+        txt = re.sub(r'from skyrl\.backends\.skyrl_train\.inference_servers\.layerwise_reload import \(\s*LayerwiseReloadWorkerMixin,\s*\)\s*\n', '', txt)
+        txt = txt.replace('class NewInferenceWorkerWrap(LayerwiseReloadWorkerMixin):', 'class NewInferenceWorkerWrap:')
+        changed = True
 
-# Fix attribute names
+# Fix attribute names (both old and new SkyRL)
 if '_skyrl_weight_update_active' in txt:
     txt = txt.replace('_skyrl_weight_update_active', '_weight_update_active')
     changed = True
 if '_skyrl_is_checkpoint_format' in txt:
-    txt = txt.replace('_skyrl_is_checkpoint_format', '_is_checkpoint_format')
-    changed = True
+        txt = txt.replace('_skyrl_is_checkpoint_format', '_is_checkpoint_format')
+        changed = True
 
 if changed:
     f.write_text(txt)
@@ -119,39 +127,43 @@ else:
     print('utils.py worker_extension_cls already present, skipping')
 
 # --- new_inference_worker_wrap.py: remove start_weight_update and finish_weight_update —
-#     vLLM 0.21.0 has these two methods natively on Worker (conflict).
-#     update_weights_chunk is NOT in vLLM natively, so it must stay.
-f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/new_inference_worker_wrap.py')
-txt = f.read_text()
-changed = False
+#     Only on older SkyRL (vLLM 0.21.0) where these methods conflict with native vLLM.
+#     On newer SkyRL (where layerwise_reload.py exists), these methods are named
+#     skyrl_start_weight_update/skyrl_finish_weight_update and don't conflict.
+if not layerwise_exists:
+    f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/new_inference_worker_wrap.py')
+    txt = f.read_text()
+    changed = False
 
-# Remove start_weight_update method (keep update_weights_chunk and finish_weight_update removal)
-if 'def start_weight_update' in txt:
-    txt = re.sub(
-        r'\n    def start_weight_update\(self[^)]*\).*?(?=\n    def |\Z)',
-        '',
-        txt,
-        flags=re.DOTALL
-    )
-    changed = True
-    print('Patched new_inference_worker_wrap.py: removed start_weight_update')
+    if 'def start_weight_update' in txt:
+        txt = re.sub(
+            r'\n    def start_weight_update\(self[^)]*\).*?(?=\n    def |\Z)',
+            '',
+            txt,
+            flags=re.DOTALL
+        )
+        changed = True
+        print('Patched new_inference_worker_wrap.py: removed start_weight_update')
+    else:
+        print('new_inference_worker_wrap.py: start_weight_update already removed, skipping')
+
+    if 'def finish_weight_update' in txt:
+        txt = re.sub(
+            r'\n    def finish_weight_update\(self[^)]*\).*',
+            '',
+            txt,
+            flags=re.DOTALL
+        )
+        changed = True
+        print('Patched new_inference_worker_wrap.py: removed finish_weight_update')
+    else:
+        print('new_inference_worker_wrap.py: finish_weight_update already removed, skipping')
+
+    if changed:
+        f.write_text(txt)
 else:
-    print('new_inference_worker_wrap.py: start_weight_update already removed, skipping')
+    print('new_inference_worker_wrap.py: newer SkyRL detected, skipping start/finish removal')
 
-if 'def finish_weight_update' in txt:
-    txt = re.sub(
-        r'\n    def finish_weight_update\(self[^)]*\).*',
-        '',
-        txt,
-        flags=re.DOTALL
-    )
-    changed = True
-    print('Patched new_inference_worker_wrap.py: removed finish_weight_update')
-else:
-    print('new_inference_worker_wrap.py: finish_weight_update already removed, skipping')
-
-if changed:
-    f.write_text(txt)
 
 
 
@@ -324,20 +336,47 @@ if f.exists():
 else:
     print('env_vars.py: file not found, skipping')
 
-# --- broadcast_strategy.py: always use PyTorch init_custom_process_group ---
+# --- broadcast_strategy.py: always use init_custom_process_group ---
 #     vLLM's NCCLWeightTransferEngine.trainer_init causes ncclInvalidUsage
-#     on multi-node because it conflicts with vLLM's internal NCCL group.
+#     because it conflicts with vLLM's internal NCCL group.
 #     Using init_custom_process_group directly avoids this conflict.
 f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/weight_sync/broadcast_strategy.py')
 if f.exists():
     txt = f.read_text()
-    old = '            if _SKYRL_USE_NEW_INFERENCE:\n                from vllm.distributed.weight_transfer.nccl_engine import (\n                    NCCLWeightTransferEngine,\n                )\n\n                model_update_group = NCCLWeightTransferEngine.trainer_init(\n                    dict(\n                        master_address=init_info.master_addr,\n                        master_port=init_info.master_port,\n                        world_size=init_info.world_size,\n                    )\n                )\n            else:\n                model_update_group = init_custom_process_group('
-    new = '            if False:  # patched: always use init_custom_process_group (NCCLWeightTransferEngine conflicts on multi-node)\n                pass\n            else:\n                model_update_group = init_custom_process_group('
-    if 'patched: always use init_custom_process_group' in txt:
+    # Pattern 1: older SkyRL with _SKYRL_USE_NEW_INFERENCE conditional
+    old1 = '            if _SKYRL_USE_NEW_INFERENCE:\n                from vllm.distributed.weight_transfer.nccl_engine import (\n                    NCCLWeightTransferEngine,\n                )\n\n                model_update_group = NCCLWeightTransferEngine.trainer_init(\n                    dict(\n                        master_address=init_info.master_addr,\n                        master_port=init_info.master_port,\n                        world_size=init_info.world_size,\n                    )\n                )\n            else:\n                model_update_group = init_custom_process_group('
+    new1 = '            if False:  # patched: always use init_custom_process_group (NCCLWeightTransferEngine conflicts)\n                pass\n            else:\n                model_update_group = init_custom_process_group('
+    # Pattern 2: newer SkyRL with direct NCCLWeightTransferEngine.trainer_init
+    old2 = '''        if rank == 0:
+            from vllm.distributed.weight_transfer.nccl_engine import (
+                NCCLWeightTransferEngine,
+            )
+
+            model_update_group = NCCLWeightTransferEngine.trainer_init(
+                dict(
+                    master_address=init_info.master_addr,
+                    master_port=init_info.master_port,
+                    world_size=init_info.world_size,
+                )
+            )'''
+    new2 = '''        if rank == 0:
+            from vllm.distributed import stateless_init_torch_distributed_process_group
+
+            model_update_group = stateless_init_torch_distributed_process_group(
+                host=init_info.master_addr,
+                port=init_info.master_port,
+                world_size=init_info.world_size,
+                rank=0,
+                backend="nccl",
+            )'''
+    if 'init_custom_process_group' in txt:
         print('broadcast_strategy.py already patched, skipping')
-    elif old in txt:
-        f.write_text(txt.replace(old, new))
-        print('Patched broadcast_strategy.py: use init_custom_process_group instead of NCCLWeightTransferEngine')
+    elif old1 in txt:
+        f.write_text(txt.replace(old1, new1))
+        print('Patched broadcast_strategy.py (pattern 1): use init_custom_process_group')
+    elif old2 in txt:
+        f.write_text(txt.replace(old2, new2))
+        print('Patched broadcast_strategy.py (pattern 2): use init_custom_process_group')
     else:
         print('broadcast_strategy.py: pattern not found, skipping')
 else:
