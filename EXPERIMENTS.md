@@ -432,3 +432,31 @@ To replicate the paper's results, might need either:
 - **Smaller vocabulary model** (e.g. LLaMA 32k vocab vs Qwen 151k) — 5× less memory for same sequence length
 
 ---
+
+## Next-Step Experiments
+
+### Goal: Avoid OOM by controlling trajectory length at the data level
+
+The root cause of OOM is long multi-turn conversations (20k+ tokens) during backward pass. Instead of fighting memory limits with config reductions that degrade training quality, control the data so trajectories stay short.
+
+### Experiment A: Filter out tasks that require long solutions
+
+- Run the existing solution data and check which tasks had solutions > 8k tokens
+- Remove those from training, keep only tasks solvable in ≤ 6 turns with short commands
+- This preserves training quality (full batch size, full generate length) while staying within memory
+
+### Experiment B: Cap observations in the task environment
+
+- Truncate Docker command output to 500-1500 chars instead of letting it grow unbounded
+- This keeps the conversation history short regardless of task complexity
+- Downside: model loses information from long outputs (e.g. log files, error traces)
+- Upside: guaranteed max sequence length regardless of task type
+
+### Experiment C: Generate tasks that are short but hard
+
+- Tasks that require few turns (short trajectory, no OOM) but the model still fails often
+- Examples: tricky edge cases, precise configuration, exact formatting requirements
+- Target: solvable in 4-6 commands but with low base model pass rate (<30%)
+- This gives GRPO the contrast it needs (mix of pass/fail) while staying within memory
+
+---
