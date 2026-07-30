@@ -111,57 +111,6 @@ bash scripts/prepare_data_s3.sh
 
 ---
 
-## 20260716 — Qwen3.5-4B GRPO on p5.48xlarge (Harbor + terminus-2)
-
-**Goal:** Train Qwen3.5-4B with GRPO on the deduped 8192-token task dataset. Model runs Linux terminal tasks inside Docker containers via Harbor + terminus-2 agent. Reward = 1 if pytest passes, 0 if not.
-
-**Status:** Running on p5.48xlarge (i-04dbdd1c27e31c3f3, 35.91.160.177) — branch `tc/harbor-grpo-miniswe-9b`
-
-| Field | Value |
-|-------|-------|
-| **Experiment name** | `20260723_8192deduped-task_harbor-grpo_qwen3.5-4b_p5_Xsteps` |
-| **Task generation model** | Claude 4.6 Opus (8192 token context) |
-| **Solution generation model** | Claude 4.6 Sonnet |
-| **Training tasks** | 2781 (from 4929 deduplicated tasks, filtered by solvability) |
-| **Val tasks** | 100 |
-| **Dataset** | `harbor_tasks_8192_deduped` |
-| **Algorithm** | GRPO |
-| **Agent** | terminus-2 (inside Docker via Harbor) |
-| **Base model** | Qwen/Qwen3.5-4B |
-| **Expected steps** | ~348 (1 epoch over 2781 tasks at batch_size=8) |
-| **Checkpoint interval** | Every 20 steps |
-| **Eval interval** | Every 20 steps |
-| **Batch size** | 8 tasks × 4 samples = 32 rollouts/step |
-| **Instance** | p5.48xlarge |
-| **GPUs** | 8× H100 80GB |
-| **Max turns per rollout** | 8 |
-| **Max prompt length** | 4096 tokens |
-| **Max seq len** | 8192 tokens |
-| **Max generate length** | 2048 tokens |
-| **gpu_memory_utilization** | 0.35 |
-| **weight_sync_backend** | nccl (single node, localhost) |
-
-### Why p5 instead of p4d
-
-Attempted on p4d.24xlarge (8× A100 40GB) first — hit CUDA OOM during backward pass due to 8192-token trajectories. H100 80GB doubles GPU memory and eliminates the OOM. See 20260718 for full OOM investigation.
-
-### S3 Artifacts
-
-| Artifact | Location |
-|----------|----------|
-| Training script | `scripts/train_harbor_qwen3_5_4b_p5.sh` |
-| Checkpoints | `s3://endless-terminals-training/20260723_8192deduped-task_harbor-grpo_qwen3.5-4b_p5_Xsteps/` |
-| Training data | `s3://endless-terminals-training/prepared_data/train_8192_deduped_4929tasks.parquet` |
-| Training log | `s3://endless-terminals-training/20260723_8192deduped-task_harbor-grpo_qwen3.5-4b_p5_Xsteps/train_debug.log` |
-
-### Expected Results
-
-- Step 1 reward ~0.18 (18% pass rate baseline before training)
-- Each step ~10–15 min on p5
-- Should improve over ~348 steps (1 epoch)
-
----
-
 ## 20260718 — Qwen3.5-4B GRPO on p4d: OOM Investigation
 
 ### Dataset Selection
