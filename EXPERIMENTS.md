@@ -246,7 +246,11 @@ A10G 24GB is too small for colocated RL training with a 4B model at 4096+ sequen
 | **weight_sync_backend** | nccl (CUDA IPC on single node) |
 | **colocate_all** | true |
 
-### Early Results (6-turn run, steps 1-9)
+### Training Progress
+
+The run had two distinct phases separated by the `max_generate_length=512` mistake:
+
+**Phase 1 — healthy (steps 1-9, before the 512 mistake):**
 
 | Step | avg_pass_at_4 | avg_raw_reward |
 |------|---------------|----------------|
@@ -259,6 +263,23 @@ A10G 24GB is too small for colocated RL training with a 4B model at 4096+ sequen
 | 7 | 62.5% | 40.6% |
 | 8 | 87.5% | 75.0% |
 | 9 | 100% | 59.4% |
+
+**Steps 10-60**: `max_generate_length` was changed to 512 tokens — model outputs got truncated → 0 reward → model learned broken behavior. Metrics not available.
+
+**Phase 2 — post-damage recovery attempts (steps 61-259):**
+
+| Steps | avg_pass_at_4 | Non-zero batches | Mean Reward | Std Reward | Policy Loss | Entropy |
+|-------|---------------|------------------|-------------|------------|-------------|---------|
+| 61-80 | 3.8% | 3/20 | 0.016 | 0.072 | -0.026 | 0.049 |
+| 81-100 | 5.0% | 4/20 | 0.016 | 0.061 | -0.038 | 0.082 |
+| 101-120 | 12.5% | 6/20 | 0.069 | 0.136 | -0.051 | 0.076 |
+| 121-140 | 37.5% | 15/20 | 0.278 | 0.356 | 0.034 | 0.071 |
+| 141-160 | 1.3% | 1/20 | 0.003 | 0.012 | -0.025 | 0.063 |
+| 161-180 | 17.5% | 10/20 | 0.097 | 0.195 | -0.073 | 0.115 |
+| 181-199 | 23.7% | 12/19 | 0.145 | 0.224 | 137.3 ⚠️ | 0.114 |
+| 200-259 | 0.0% | 0/60 | 0.000 | 0.000 | 0.000 | 0.000 |
+
+Step 186: policy_loss=2471, grad_norm=64,400,388 — gradient explosion. Full collapse from step 188, never recovered. Total 259 steps ran.
 
 ### S3 Artifacts
 
@@ -307,35 +328,14 @@ Eval runs every 20 steps on 10 unseen tasks. `avg_score` = fraction of tasks sol
 
 | Step | avg_score |
 |------|-----------|
-| 20 | 0.02 (2%) |
-| 40 | 0.02 (2%) |
-| 60 | 0.54 (54%) |
-| 80 | 0.01 (1%) |
-| 100 | 0.00 (0%) |
-| 120 | 0.30 (30%) |
-| 200 | 0.00 (0%) |
-| 220 | 0.00 (0%) |
-
-### Training Metrics (averaged over blocks of 20 steps)
-
-GRPO has no critic, so no value loss or explained variance. Key metrics:
-- `mean_reward`: average reward across all rollouts in the batch (1.0 = all pass, 0.0 = all fail)
-- `std_reward`: standard deviation of reward (higher = more contrast for GRPO to learn from)
-- `policy_loss`: GRPO policy gradient loss (should be small and stable)
-- `entropy`: policy entropy (higher = more exploration, 0 = collapsed/deterministic)
-
-| Steps | Mean Reward | Std Reward | Policy Loss | Entropy |
-|-------|-------------|------------|-------------|---------|
-| 61-80 | 0.0125 | 0.0407 | -0.0097 | 0.0345 |
-| 81-100 | 0.0125 | 0.0484 | -0.0101 | 0.0798 |
-| 101-120 | 0.1062 | 0.1434 | -0.0171 | 0.0715 |
-| 121-140 | 0.2406 | 0.3367 | 0.0032 | 0.0720 |
-| 141-160 | 0.0031 | 0.0121 | -0.0115 | 0.0625 |
-| 161-180 | 0.1062 | 0.2053 | -0.0742 | 0.1182 |
-| 181-199 | 0.1389 | 0.2128 | 137.27 ⚠️ | 0.0600 |
-| 201-243 | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
-
-Note: Policy loss exploded at steps 181-199 (137.27), indicating training instability / gradient explosion. After step 200, model fully collapsed with zero reward and zero gradients across all remaining steps.
+| 20 | 2% |
+| 40 | 2% |
+| 60 | 54% |
+| 80 | 1% |
+| 100 | 0% |
+| 120 | 30% |
+| 200 | 0% |
+| 220 | 0% |
 
 ### Why training failed to converge
 
@@ -380,6 +380,61 @@ To replicate the paper's results, might need either:
 - **2× p5 nodes** — multi-node distributed (brings back weight sync issues)
 - **Smaller vocabulary model** (e.g. LLaMA 32k vocab vs Qwen 151k) — 5× less memory for same sequence length
 
+## 20260731 — Qwen3.5-4B GRPO Baseline on Original 457-Task Dataset
+
+| Field | Value |
+|-------|-------|
+| **Experiment name** | `20260731_4.5opus-task_harbor-grpo_qwen3.5-4b_p5_orig457_5steps` |
+| **Task generation model** | Claude 4.5 Opus |
+| **Solution generation model** | Claude 4.6 Sonnet |
+| **Training tasks** | 457 |
+| **Val tasks** | 51 |
+| **Dataset** | Same as 20260629 Qwen2.5-3B PPO run |
+| **Algorithm** | GRPO |
+| **Agent** | terminus-2 |
+| **Environment** | Harbor + Docker |
+| **Base model** | Qwen/Qwen3.5-4B |
+| **Instance** | p5.48xlarge (8× H100 80GB) |
+| **Total steps** | 5 (baseline measurement only) |
+| **Batch size** | 4 tasks × 4 samples = 16 rollouts/step |
+| **Max turns per rollout** | 6 |
+| **Max generate length** | 1024 tokens |
+| **Max seq len** | 4096 tokens |
+| **gpu_memory_utilization** | 0.10 |
+| **colocate_all** | true |
+| **Script** | `scripts/train_harbor_qwen3_5_4b_orig457_p5.sh` |
+
+### Purpose
+
+Measure Qwen3.5-4B baseline pass rate on the original 457-task dataset (same data as 20260629 Qwen2.5-3B PPO). Compare: 4B vs 3B on the same tasks, and original 457-task dataset vs deduped 8192-task dataset.
+
+### Training Metrics
+
+| Step | avg_pass_at_4 | avg_raw_reward | std_reward | Policy Loss | Policy KL | Grad Norm | Entropy | Response Len | Tokens/s/GPU |
+|------|---------------|----------------|------------|-------------|-----------|-----------|---------|--------------|--------------|
+| 1 | 50.0% | 37.5% | 0.4841 | -0.0335 | 0.2371 | 2.1424 | 0.2253 | 1351 | 442 |
+| 2 | 75.0% | 43.8% | 0.4961 | 0.0067 | 0.1976 | 2.7708 | 0.2028 | 1322 | 2455 |
+| 3 | 75.0% | 75.0% | 0.4330 | 0.0000 | 0.3000 | 0.0273 | 0.2856 | 1121 | 1316 |
+| 4 | 75.0% | 43.8% | 0.4961 | 0.0398 | 0.1943 | 2.9431 | 0.1857 | 3230 | 1329 |
+| 5 | 75.0% | 50.0% | 0.5000 | -0.0153 | 0.2453 | 1.9940 | 0.2266 | 5135 | 2230 |
+
+### Eval Metrics (run once after training, on 51 held-out tasks)
+
+| Metric | Value |
+|--------|-------|
+| avg_score (51 tasks) | 39.2% |
+
+### S3 Artifacts
+
+| Artifact | Location |
+|----------|----------|
+| Training log | `s3://endless-terminals-training/20260731_4.5opus-task_harbor-grpo_qwen3.5-4b_p5_orig457_5steps/train_debug.log` |
+| Checkpoint | `~/xin/checkpoints_harbor_qwen3_5_4b_orig457/global_step_5/` (local only, not uploaded) |
+
+### Conclusion
+
+Qwen3.5-4B avg_pass_at_4 = **75%** on the original 457-task dataset vs **12.5%** for Qwen2.5-3B on the same data — 6× improvement from model capability alone. Also higher than the 4B's 62.5% on the deduped 8192-task dataset, confirming the original 457 tasks are easier. Entropy is notably higher (~0.22) than the deduped dataset run (~0.10), suggesting the model has more variance on these tasks.
+
 ---
 
 ## Next-Step Experiments
@@ -407,5 +462,72 @@ The root cause of OOM is long multi-turn conversations (20k+ tokens) during back
 - Examples: tricky edge cases, precise configuration, exact formatting requirements
 - Target: solvable in 4-6 commands but with low base model pass rate (<30%)
 - This gives GRPO the contrast it needs (mix of pass/fail) while staying within memory
+
+---
+
+## 20260730 — Qwen2.5-3B GRPO Baseline on Deduped 8192 Dataset
+
+| Field | Value |
+|-------|-------|
+| **Experiment name** | `20260730_8192deduped-task_harbor-grpo_qwen2.5-3b_p5_baseline` |
+| **Task generation model** | Claude 4.6 Opus (8192 token context) |
+| **Solution generation model** | Claude 4.6 Sonnet |
+| **Training tasks** | 2781 (from 4929 deduplicated tasks, filtered by solvability) |
+| **Val tasks** | 100 |
+| **Dataset** | `harbor_tasks_8192_deduped` — same as 20260723 Qwen3.5-4B run |
+| **Algorithm** | GRPO |
+| **Agent** | terminus-2 |
+| **Environment** | Harbor + Docker |
+| **Base model** | Qwen/Qwen2.5-3B-Instruct |
+| **Instance** | p5.48xlarge (8× H100 80GB) |
+| **Total steps** | 5 (baseline measurement only) |
+| **Batch size** | 8 tasks × 4 samples = 32 rollouts/step |
+| **Max turns per rollout** | 6 |
+| **Max generate length** | 1024 tokens |
+| **Max seq len** | 4096 tokens |
+| **micro_forward_batch_size_per_gpu** | 1 |
+| **micro_train_batch_size_per_gpu** | 1 |
+| **gpu_memory_utilization** | 0.10 |
+| **colocate_all** | true |
+| **Script** | `scripts/eval_qwen2_5_3b_baseline_p5.sh` |
+
+### Purpose
+
+Compare Qwen2.5-3B vs Qwen3.5-4B baseline pass rate on the same deduped 8192 dataset. The 4B model achieved 62.5% avg_pass_at_4 at step 1 — this run determines whether that was due to model capability or dataset difficulty.
+
+### Training Metrics
+
+| Step | avg_pass_at_4 | avg_raw_reward | std_reward | Policy Loss | Policy KL | Grad Norm | Entropy | Response Len | Tokens/s/GPU |
+|------|---------------|----------------|------------|-------------|-----------|-----------|---------|--------------|--------------|
+| 1 | 12.5% | 3.1% | 0.1740 | 0.0356 | 0.1013 | 0.6792 | 0.1089 | 3770 | 1427 |
+| 2 | 12.5% | 3.1% | 0.1740 | 0.0118 | 0.1135 | 0.8531 | 0.1181 | 3030 | 2138 |
+| 3 | 12.5% | 9.4% | 0.2915 | 0.0015 | 0.1871 | 0.3430 | 0.1750 | 4399 | 2296 |
+| 4 | 0.0% | 0.0% | 0.0000 | 0.0000 | 0.1883 | 0.0215 | 0.1838 | 6870 | 2154 |
+| 5 | 0.0% | 0.0% | 0.0000 | 0.0000 | 0.1344 | 0.0146 | 0.1351 | 6342 | 1616 |
+
+### Eval Metrics (run once after training, on 100 held-out tasks)
+
+| Metric | Value |
+|--------|-------|
+| avg_score (100 tasks) | 6.0% |
+| Per-task scores | All 0.0 except ~6 tasks |
+
+### S3 Artifacts
+
+| Artifact | Location |
+|----------|----------|
+| Training log | `s3://endless-terminals-training/20260730_8192deduped-task_harbor-grpo_qwen2.5-3b_p5_baseline/train_debug.log` |
+| Trials (step 5) | `s3://endless-terminals-training/20260730_8192deduped-task_harbor-grpo_qwen2.5-3b_p5_baseline/trials/` |
+
+### Conclusion
+
+Qwen2.5-3B avg_pass_at_4 ≈ **12.5%** (steps 1–3), dropping to **0%** at steps 4–5, vs Qwen3.5-4B's consistent **62.5%**. The ~5× gap confirms the difference is **model capability**, not dataset difficulty.
+
+
+## Key Constraints
+
+**Harbor requires GRPO.** PPO is incompatible with Harbor's step-wise trajectories.
+
+**Harbor + GRPO is the better setup** because terminus-2 runs a real persistent shell (state carries across commands), which is more realistic than Direct Docker's stateless `bash -c`. GRPO also uses less memory since there's no critic. The tradeoff: GRPO needs reward variance within each batch — if all 4 samples pass or all fail, gradient is zero. Batch size must be large enough to consistently get mixed results.
 
 ---
