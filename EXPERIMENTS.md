@@ -1,5 +1,23 @@
 # Training Experiments
 
+## Baseline Comparison
+
+2×2 across model size and dataset. All runs are base model behavior (no meaningful training — 5-step baseline only).
+
+| Model | Dataset | avg_pass_at_4 step 1 | avg_pass_at_4 steps 1-5 | eval avg_score (pass@1) | Experiment |
+|-------|---------|----------------------|--------------------------|--------------------------|------------|
+| Qwen2.5-3B | Original 457 tasks | 0.0% | 15.0% (noisy) | 3.9% (51 tasks) | 20260731b |
+| Qwen2.5-3B | Deduped 8192 tasks | 12.5% | 7.5% (noisy) | 6.0% (100 tasks) | 20260730 |
+| Qwen3.5-4B | Original 457 tasks | 50.0% | 70.0% | 39.2% (51 tasks) | 20260731 |
+| Qwen3.5-4B | Deduped 8192 tasks | 62.5% | 60.0% | 49.0% (100 tasks) | 20260723 |
+
+**Key takeaways:**
+- 4B vs 3B: ~10× higher eval avg_score on the same dataset — gap is model capability
+- Original 457 vs deduped 8192: 4B eval avg_score is 39.2% on original 457 vs 49.0% on deduped 8192 — deduped 8192 tasks are actually easier for the 4B model despite being longer
+- 3B avg_pass_at_4 is too noisy (batch=4, ~5% pass rate) to compare across datasets — use eval avg_score instead (3.9% vs 6.0%)
+
+---
+
 ## Scripts Reference
 
 ### Single-node training
@@ -246,40 +264,6 @@ A10G 24GB is too small for colocated RL training with a 4B model at 4096+ sequen
 | **weight_sync_backend** | nccl (CUDA IPC on single node) |
 | **colocate_all** | true |
 
-### Training Progress
-
-The run had two distinct phases separated by the `max_generate_length=512` mistake:
-
-**Phase 1 — healthy (steps 1-9, before the 512 mistake):**
-
-| Step | avg_pass_at_4 | avg_raw_reward |
-|------|---------------|----------------|
-| 1 | 62.5% | 43.8% |
-| 2 | 50.0% | 37.5% |
-| 3 | 62.5% | 53.1% |
-| 4 | 62.5% | 46.9% |
-| 5 | 62.5% | 53.1% |
-| 6 | 62.5% | 43.8% |
-| 7 | 62.5% | 40.6% |
-| 8 | 87.5% | 75.0% |
-| 9 | 100% | 59.4% |
-
-**Steps 10-60**: `max_generate_length` was changed to 512 tokens — model outputs got truncated → 0 reward → model learned broken behavior. Metrics not available.
-
-**Phase 2 — post-damage recovery attempts (steps 61-259):**
-
-| Steps | avg_pass_at_4 | Non-zero batches | Mean Reward | Std Reward | Policy Loss | Entropy |
-|-------|---------------|------------------|-------------|------------|-------------|---------|
-| 61-80 | 3.8% | 3/20 | 0.016 | 0.072 | -0.026 | 0.049 |
-| 81-100 | 5.0% | 4/20 | 0.016 | 0.061 | -0.038 | 0.082 |
-| 101-120 | 12.5% | 6/20 | 0.069 | 0.136 | -0.051 | 0.076 |
-| 121-140 | 37.5% | 15/20 | 0.278 | 0.356 | 0.034 | 0.071 |
-| 141-160 | 1.3% | 1/20 | 0.003 | 0.012 | -0.025 | 0.063 |
-| 161-180 | 17.5% | 10/20 | 0.097 | 0.195 | -0.073 | 0.115 |
-| 181-199 | 23.7% | 12/19 | 0.145 | 0.224 | 137.3 ⚠️ | 0.114 |
-| 200-259 | 0.0% | 0/60 | 0.000 | 0.000 | 0.000 | 0.000 |
-
-Step 186: policy_loss=2471, grad_norm=64,400,388 — gradient explosion. Full collapse from step 188, never recovered. Total 259 steps ran.
 
 ### S3 Artifacts
 
@@ -308,6 +292,20 @@ There are **two separate** `max_turns` that must be set together:
 - Status: **abandoned** — model oscillates between recovery and collapse, never stabilizes
 
 ### Training Progress (avg pass_at_4 by block)
+
+#### Early Training Stage 
+
+| Step | avg_pass_at_4 | avg_raw_reward |
+|------|---------------|----------------|
+| 1 | 62.5% | 43.8% |
+| 2 | 50.0% | 37.5% |
+| 3 | 62.5% | 53.1% |
+| 4 | 62.5% | 46.9% |
+| 5 | 62.5% | 53.1% |
+| 6 | 62.5% | 43.8% |
+| 7 | 62.5% | 40.6% |
+| 8 | 87.5% | 75.0% |
+| 9 | 100% | 59.4% |
 
 | Steps | Avg pass_at_4 | Non-zero batches | Notes |
 |-------|---------------|------------------|-------|
@@ -380,6 +378,36 @@ To replicate the paper's results, might need either:
 - **2× p5 nodes** — multi-node distributed (brings back weight sync issues)
 - **Smaller vocabulary model** (e.g. LLaMA 32k vocab vs Qwen 151k) — 5× less memory for same sequence length
 
+---
+
+## Next-Step Experiments
+
+### Goal: Avoid OOM by controlling trajectory length at the data level
+
+The root cause of OOM is long multi-turn conversations (20k+ tokens) during backward pass. Instead of fighting memory limits with config reductions that degrade training quality, control the data so trajectories stay short.
+
+### Experiment A: Filter out tasks that require long solutions
+
+- Run the existing solution data and check which tasks had solutions > 8k tokens
+- Remove those from training, keep only tasks solvable in ≤ 6 turns with short commands
+- This preserves training quality (full batch size, full generate length) while staying within memory
+
+### Experiment B: Cap observations in the task environment
+
+- Truncate Docker command output to 500-1500 chars instead of letting it grow unbounded
+- This keeps the conversation history short regardless of task complexity
+- Downside: model loses information from long outputs (e.g. log files, error traces)
+- Upside: guaranteed max sequence length regardless of task type
+
+### Experiment C: Generate tasks that are short but hard
+
+- Tasks that require few turns (short trajectory, no OOM) but the model still fails often
+- Examples: tricky edge cases, precise configuration, exact formatting requirements
+- Target: solvable in 4-6 commands but with low base model pass rate (<30%)
+- This gives GRPO the contrast it needs (mix of pass/fail) while staying within memory
+
+---
+
 ## 20260731 — Qwen3.5-4B GRPO Baseline on Original 457-Task Dataset
 
 | Field | Value |
@@ -418,11 +446,6 @@ Measure Qwen3.5-4B baseline pass rate on the original 457-task dataset (same dat
 | 4 | 75.0% | 43.8% | 0.4961 | 0.0398 | 0.1943 | 2.9431 | 0.1857 | 3230 | 1329 |
 | 5 | 75.0% | 50.0% | 0.5000 | -0.0153 | 0.2453 | 1.9940 | 0.2266 | 5135 | 2230 |
 
-### Eval Metrics (run once after training, on 51 held-out tasks)
-
-| Metric | Value |
-|--------|-------|
-| avg_score (51 tasks) | 39.2% |
 
 ### S3 Artifacts
 
@@ -434,34 +457,6 @@ Measure Qwen3.5-4B baseline pass rate on the original 457-task dataset (same dat
 ### Conclusion
 
 Qwen3.5-4B avg_pass_at_4 = **75%** on the original 457-task dataset vs **12.5%** for Qwen2.5-3B on the same data — 6× improvement from model capability alone. Also higher than the 4B's 62.5% on the deduped 8192-task dataset, confirming the original 457 tasks are easier. Entropy is notably higher (~0.22) than the deduped dataset run (~0.10), suggesting the model has more variance on these tasks.
-
----
-
-## Next-Step Experiments
-
-### Goal: Avoid OOM by controlling trajectory length at the data level
-
-The root cause of OOM is long multi-turn conversations (20k+ tokens) during backward pass. Instead of fighting memory limits with config reductions that degrade training quality, control the data so trajectories stay short.
-
-### Experiment A: Filter out tasks that require long solutions
-
-- Run the existing solution data and check which tasks had solutions > 8k tokens
-- Remove those from training, keep only tasks solvable in ≤ 6 turns with short commands
-- This preserves training quality (full batch size, full generate length) while staying within memory
-
-### Experiment B: Cap observations in the task environment
-
-- Truncate Docker command output to 500-1500 chars instead of letting it grow unbounded
-- This keeps the conversation history short regardless of task complexity
-- Downside: model loses information from long outputs (e.g. log files, error traces)
-- Upside: guaranteed max sequence length regardless of task type
-
-### Experiment C: Generate tasks that are short but hard
-
-- Tasks that require few turns (short trajectory, no OOM) but the model still fails often
-- Examples: tricky edge cases, precise configuration, exact formatting requirements
-- Target: solvable in 4-6 commands but with low base model pass rate (<30%)
-- This gives GRPO the contrast it needs (mix of pass/fail) while staying within memory
 
 ---
 
@@ -522,6 +517,54 @@ Compare Qwen2.5-3B vs Qwen3.5-4B baseline pass rate on the same deduped 8192 dat
 ### Conclusion
 
 Qwen2.5-3B avg_pass_at_4 ≈ **12.5%** (steps 1–3), dropping to **0%** at steps 4–5, vs Qwen3.5-4B's consistent **62.5%**. The ~5× gap confirms the difference is **model capability**, not dataset difficulty.
+
+---
+
+## 20260731b — Qwen2.5-3B GRPO Baseline on Original 457-Task Dataset
+
+| Field | Value |
+|-------|-------|
+| **Experiment name** | `20260731_4.5opus-task_harbor-grpo_qwen2.5-3b_p5_orig457_5steps` |
+| **Task generation model** | Claude 4.5 Opus |
+| **Solution generation model** | Claude 4.6 Sonnet |
+| **Training tasks** | 457 |
+| **Val tasks** | 51 |
+| **Dataset** | Same as 20260629 and 20260731 |
+| **Algorithm** | GRPO |
+| **Agent** | terminus-2 |
+| **Base model** | Qwen/Qwen2.5-3B-Instruct |
+| **Instance** | p5.48xlarge (8× H100 80GB) |
+| **Total steps** | 5 |
+| **Batch size** | 4 tasks × 4 samples = 16 rollouts/step |
+| **Max turns** | 6 |
+| **Max generate length** | 1024 tokens |
+| **Script** | `scripts/train_harbor_qwen2_5_3b_orig457_p5.sh` |
+
+### Training Metrics
+
+| Step | avg_pass_at_4 | avg_raw_reward | std_reward | Policy Loss | Policy KL | Grad Norm | Entropy | Response Len | Tokens/s/GPU |
+|------|---------------|----------------|------------|-------------|-----------|-----------|---------|--------------|--------------|
+| 1 | 0.0% | 0.0% | 0.0000 | 0.0000 | 0.1928 | 0.0193 | 0.1824 | 5642 | 1472 |
+| 2 | 0.0% | 0.0% | 0.0000 | 0.0000 | 0.1579 | 0.0177 | 0.1513 | 4306 | 2549 |
+| 3 | 50.0% | 43.8% | 0.4961 | -0.0322 | 0.2129 | 0.8498 | 0.2085 | 4148 | 2527 |
+| 4 | 0.0% | 0.0% | 0.0000 | 0.0000 | 0.1805 | 0.0203 | 0.1748 | 5711 | 2590 |
+| 5 | 25.0% | 18.8% | 0.3903 | -0.0111 | 0.1621 | 0.6845 | 0.1687 | 5335 | 1969 |
+
+### Eval Metrics (51 held-out tasks)
+
+| Metric | Value |
+|--------|-------|
+| avg_score (51 tasks) | 3.9% |
+
+### S3 Artifacts
+
+| Artifact | Location |
+|----------|----------|
+| Training log | `s3://endless-terminals-training/20260731_4.5opus-task_harbor-grpo_qwen2.5-3b_p5_orig457_5steps/train_debug.log` |
+
+### Conclusion
+
+Qwen2.5-3B avg_pass_at_4 is highly variable (0–50%) due to small batch size (4 tasks) — with only ~10% base pass rate, most batches are all-fail. eval avg_score = **3.9%** vs 4B's **39.2%** on the same tasks, confirming the 10× capability gap. Response length stays high (4000–5700 tokens) with zero reward, meaning the model generates long outputs without solving tasks.
 
 
 ## Key Constraints
