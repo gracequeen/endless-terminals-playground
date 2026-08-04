@@ -406,6 +406,23 @@ The root cause of OOM is long multi-turn conversations (20k+ tokens) during back
 - Target: solvable in 4-6 commands but with low base model pass rate (<30%)
 - This gives GRPO the contrast it needs (mix of pass/fail) while staying within memory
 
+### Goal: Reduce base model pass rate to get better GRPO training signal
+
+The 4B model has a 49-70% base pass rate — too high for effective GRPO training. When most tasks are already solved, std_reward is low and GRPO has little to learn from. We need tasks where the model fails ~50-70% of the time so each batch has a mix of pass and fail.
+
+### Experiment D: Check and fix test leakage
+
+- terminus-2 runs inside the same Docker container where `/tests/test_final_state.py` is mounted
+- A smart model can read the test file and craft a solution to pass assertions without truly solving the task
+- **Step 1**: Verify by inspecting trial solution logs — look for `cat /tests/` commands early in trajectories
+- **Step 2**: If confirmed, fix by separating the agent and verifier environments:
+  - Currently Harbor builds one Docker container and both the agent and verifier run inside it with `/tests` always present
+  - The fix is to have the agent run in a container where `/tests` is not mounted, then run the verifier separately after the agent finishes
+  - This requires modifying Harbor's Docker container lifecycle — either patch Harbor source to conditionally mount `/tests` only at verification time, or run a two-phase setup: agent container (no `/tests`) → commit container state → verifier container (same filesystem snapshot + `/tests` mounted)
+  - An easier workaround: restructure each task's Dockerfile so tests are stored in a non-obvious path inside the image (e.g. baked into a binary or stored outside `/tests`) and only made available to `test.sh` via an environment variable the agent doesn't know about — but a sufficiently smart agent could still find them with `find /`
+  - The only truly reliable fix is the two-phase container approach where `/tests` is never on the filesystem during agent execution
+
+
 ---
 
 ## 20260731 — Qwen3.5-4B GRPO Baseline on Original 457-Task Dataset
