@@ -307,18 +307,22 @@ There are **two separate** `max_turns` that must be set together:
 | 8 | 87.5% | 75.0% |
 | 9 | 100% | 59.4% |
 
-| Steps | Avg pass_at_4 | Non-zero batches | Notes |
-|-------|---------------|------------------|-------|
-| 61-80 | 3.7% | 3/20 | Post-512 damage, barely recovering |
-| 81-100 | 5.0% | 4/20 | Still struggling |
-| 101-120 | 15.0% | 7/20 | Starting to recover |
-| 121-140 | 32.5% | 15/20 | Best period |
-| 141-160 | 1.3% | 1/20 | Collapsed again |
-| 161-180 | 20.0% | 11/20 | Partial recovery |
-| 181-199 | 22.2% | 9/18 | Unstable, then collapsed to 0% |
-| 201-243 | 0.0% | 0/43 | Fully collapsed, never recovered |
+**Steps 10-60**: `max_generate_length` was changed to 512 tokens — model outputs got truncated → 0 reward → model learned broken behavior. Metrics not available.
 
-Overall avg training reward: 14.1% across steps 61-199, then 0% for steps 201-243. Total 181 steps ran.
+**Phase 2 — post-damage recovery attempts (steps 61-259, from S3 log):**
+
+| Steps | avg_pass_at_4 | Non-zero batches | Mean Reward | Std Reward | Policy Loss | Entropy |
+|-------|---------------|------------------|-------------|------------|-------------|---------|
+| 61-80 | 3.8% | 3/20 | 0.016 | 0.072 | -0.026 | 0.049 |
+| 81-100 | 5.0% | 4/20 | 0.016 | 0.061 | -0.038 | 0.082 |
+| 101-120 | 12.5% | 6/20 | 0.069 | 0.136 | -0.051 | 0.076 |
+| 121-140 | 37.5% | 15/20 | 0.278 | 0.356 | 0.034 | 0.071 |
+| 141-160 | 1.3% | 1/20 | 0.003 | 0.012 | -0.025 | 0.063 |
+| 161-180 | 17.5% | 10/20 | 0.097 | 0.195 | -0.073 | 0.115 |
+| 181-199 | 23.7% | 12/19 | 0.145 | 0.224 | 137.3 ⚠️ | 0.114 |
+| 200-259 | 0.0% | 0/60 | 0.000 | 0.000 | 0.000 | 0.000 |
+
+Step 186: policy_loss=2471, grad_norm=64,400,388 — gradient explosion. Full collapse from step 188, never recovered. Total 259 steps ran.
 
 ### Eval Metrics (held-out validation tasks — model never trains on these)
 
@@ -419,8 +423,7 @@ The 4B model has a 49-70% base pass rate — too high for effective GRPO trainin
   - Currently Harbor builds one Docker container and both the agent and verifier run inside it with `/tests` always present
   - The fix is to have the agent run in a container where `/tests` is not mounted, then run the verifier separately after the agent finishes
   - This requires modifying Harbor's Docker container lifecycle — either patch Harbor source to conditionally mount `/tests` only at verification time, or run a two-phase setup: agent container (no `/tests`) → commit container state → verifier container (same filesystem snapshot + `/tests` mounted)
-  - An easier workaround: restructure each task's Dockerfile so tests are stored in a non-obvious path inside the image (e.g. baked into a binary or stored outside `/tests`) and only made available to `test.sh` via an environment variable the agent doesn't know about — but a sufficiently smart agent could still find them with `find /`
-  - The only truly reliable fix is the two-phase container approach where `/tests` is never on the filesystem during agent execution
+
 
 
 ---
