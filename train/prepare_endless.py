@@ -49,6 +49,14 @@ if __name__ == "__main__":
     parser.add_argument("--build-docker", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-workers", type=int, default=20, help="Number of parallel workers for building containers")
+    parser.add_argument(
+        "--source", choices=["stage1", "stage2"], default=None,
+        help=(
+            "Task filtering mode. 'stage1': filter by solutions/o3_summary.json pass@16>0 "
+            "(vLLM/Apptainer tasks). 'stage2': filter by solution/solution.json num_success>0 "
+            "(Harbor/Docker tasks). Auto-detected if not set."
+        ),
+    )
 
     args = parser.parse_args()
     random.seed(args.seed)

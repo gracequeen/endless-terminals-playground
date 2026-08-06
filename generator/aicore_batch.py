@@ -25,7 +25,7 @@ from tqdm import tqdm
 
 # Allow running from the repo root or from inside endless-terminals-main
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from aicore_llm_access import get_anthropic_completion, model_aliases
+from generator.aicore_llm_access import get_anthropic_completion, model_aliases
 
 logger = logging.getLogger(__name__)
 
