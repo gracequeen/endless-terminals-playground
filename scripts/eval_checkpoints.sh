@@ -122,6 +122,12 @@ for STEP in $STEPS; do
         --target_dir "${LOCAL_HF}"
 
     echo "[eval-ckpts] step ${STEP}: HF checkpoint written to ${LOCAL_HF}"
+
+    # Copy processor_config.json (needed by vllm for multimodal model init)
+    aws s3 cp "${S3_POLICY}/huggingface/processor_config.json" \
+        "${LOCAL_HF}/preprocessor_config.json" --no-progress \
+        && echo "[eval-ckpts] step ${STEP}: preprocessor_config.json downloaded" \
+        || echo "[eval-ckpts] step ${STEP}: WARNING: could not download preprocessor_config.json"
     ls "$LOCAL_HF"
 
     # ── 3. clean up FSDP shards to free disk ─────────────────────────────────
