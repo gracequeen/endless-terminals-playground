@@ -46,3 +46,64 @@ bash "$REPO/scripts/eval_checkpoints.sh" \
     2>&1 | tee -a "$LOG"
 
 log "=== All evals complete. Results in $REPO/solution_tb/ ==="
+
+# ── write summary to output/ ──────────────────────────────────────────────────
+VENV="$REPO/.venv"
+if [[ ! -d "$VENV" ]]; then VENV="$(cd "$REPO/../../.." && pwd)/.venv"; fi
+
+mkdir -p "$REPO/output"
+SUMMARY="$REPO/output/terminal_bench_qwen3.5-4b_grpo_p5_$(date +%Y%m%d).md"
+
+{
+    echo "# Terminal-Bench: Qwen3.5-4B GRPO (p5) vs Base"
+    echo ""
+    echo "**Date:** $(date -u '+%Y-%m-%d %H:%M UTC')"
+    echo "**Dataset:** terminal-bench/terminal-bench@latest (74 tasks)"
+    echo "**Model:** Qwen/Qwen3.5-4B"
+    echo "**Training:** GRPO on 8192-task harbor dataset, p5.48xlarge (8x H100)"
+    echo "**S3:** s3://endless-terminals-training/20260726_8192deduped-task_harbor-grpo_qwen3.5-4b_p5_Xsteps"
+    echo ""
+    echo "## Results"
+    echo ""
+    echo "| Run | Step | pass@1 |"
+    echo "|-----|------|--------|"
+
+    # Base model
+    BASE_AGG="$REPO/solution_tb/tb-base-qwen3.5-4b/aggregate_pass_at_k.json"
+    if [[ -f "$BASE_AGG" ]]; then
+        P1=$("$VENV/bin/python" -c "import json; d=json.load(open('$BASE_AGG')); print(f\"{d.get('pass@1',0):.3f}\")" 2>/dev/null || echo "n/a")
+    else
+        P1="n/a"
+    fi
+    echo "| base | — | $P1 |"
+
+    # Checkpoints
+    for STEP in 200 220 240 260; do
+        AGG="$REPO/solution_tb/tb-ckpt-step${STEP}/aggregate_pass_at_k.json"
+        if [[ -f "$AGG" ]]; then
+            P1=$("$VENV/bin/python" -c "import json; d=json.load(open('$AGG')); print(f\"{d.get('pass@1',0):.3f}\")" 2>/dev/null || echo "n/a")
+        else
+            P1="n/a"
+        fi
+        echo "| checkpoint | $STEP | $P1 |"
+    done
+
+    echo ""
+    echo "## Per-run result dirs"
+    echo ""
+    for JOB in tb-base-qwen3.5-4b tb-ckpt-step200 tb-ckpt-step220 tb-ckpt-step240 tb-ckpt-step260; do
+        N=$(find "$REPO/solution_tb/$JOB" -name "result.json" 2>/dev/null | wc -l)
+        PASS=$(find "$REPO/solution_tb/$JOB" -name "result.json" 2>/dev/null \
+            | xargs grep -l '"reward": 1' 2>/dev/null | wc -l)
+        echo "- \`solution_tb/$JOB\`: $N trials, $PASS passed"
+    done
+
+    echo ""
+    echo "## Log"
+    echo "\`\`\`"
+    tail -50 "$LOG" 2>/dev/null || true
+    echo "\`\`\`"
+} > "$SUMMARY"
+
+log "Summary written to: $SUMMARY"
+
