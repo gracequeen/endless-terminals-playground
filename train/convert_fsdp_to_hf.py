@@ -3,7 +3,11 @@ import re
 import os
 import torch
 import argparse
-from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForTokenClassification, AutoModelForVision2Seq, AutoTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForTokenClassification, AutoTokenizer
+try:
+    from transformers import AutoModelForImageTextToText as AutoModelForVision2Seq
+except ImportError:
+    from transformers import AutoModelForVision2Seq
 from concurrent.futures import ThreadPoolExecutor
 from torch.distributed._tensor import DTensor, Shard, Placement
 from safetensors.torch import load_file
