@@ -3,10 +3,22 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")" && pwd)"
+mkdir -p "$REPO/harbor_logs" "$REPO/output/terminal-bench-eval"
 LOG="$REPO/harbor_logs/eval_all_$(date +%Y%m%d_%H%M%S).log"
-mkdir -p "$REPO/harbor_logs"
 
 log() { echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
+
+# On any exit (clean or error) copy the full log to output/
+_on_exit() {
+    EXIT_CODE=$?
+    OUT_LOG="$REPO/output/terminal-bench-eval/run_log_$(date +%Y%m%d_%H%M%S).log"
+    cp "$LOG" "$OUT_LOG" 2>/dev/null || true
+    if [[ $EXIT_CODE -ne 0 ]]; then
+        echo "[$(date +%H:%M:%S)] ERROR: script exited with code $EXIT_CODE" >> "$OUT_LOG"
+        echo "Log saved to: $OUT_LOG"
+    fi
+}
+trap _on_exit EXIT
 
 log "=== Starting all evals ==="
 log "Repo: $REPO"
