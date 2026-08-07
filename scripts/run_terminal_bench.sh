@@ -162,8 +162,8 @@ fi
 
 # ── launch in tmux window ─────────────────────────────────────────────────────
 WINDOW_NAME="tb-${JOB_NAME}"
-tmux new-window -t "$SESSION" -n "$WINDOW_NAME" -c "$REPO"
-tmux send-keys -t "$SESSION:$WINDOW_NAME" "$FULL_CMD" Enter
+WINDOW_IDX=$(tmux new-window -t "$SESSION" -n "$WINDOW_NAME" -c "$REPO" -P -F "#{window_index}")
+tmux send-keys -t "$SESSION:$WINDOW_IDX" "$FULL_CMD" Enter
 
 echo ""
 echo "Started in tmux window '$WINDOW_NAME' of session '$SESSION'."
