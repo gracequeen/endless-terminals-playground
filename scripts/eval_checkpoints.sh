@@ -172,7 +172,7 @@ echo "============================================================"
 echo "[eval-ckpts] All steps done. Collecting results..."
 echo "============================================================"
 cd "$REPO"
-python3 generator/collect_harbor_results.py --jobs-dir "$JOBS_DIR"
+"$REPO/.venv/bin/python" "$REPO/generator/collect_harbor_results.py" --jobs-dir "$JOBS_DIR"
 
 SUMMARY_FILE="${REPO}/${JOBS_DIR}/eval_checkpoints_summary.txt"
 {
@@ -186,7 +186,7 @@ SUMMARY_FILE="${REPO}/${JOBS_DIR}/eval_checkpoints_summary.txt"
         JOB_NAME="${JOB_PREFIX}-step${STEP}"
         AGG="${REPO}/${JOBS_DIR}/${JOB_NAME}/aggregate_pass_at_k.json"
         if [[ -f "$AGG" ]]; then
-            PASS1=$(python3 -c "import json; d=json.load(open('$AGG')); print(d.get('pass@1', 'n/a'))" 2>/dev/null || echo "n/a")
+            PASS1=$("$REPO/.venv/bin/python" -c "import json; d=json.load(open('$AGG')); print(d.get('pass@1', 'n/a'))" 2>/dev/null || echo "n/a")
             echo "  step ${STEP}: pass@1 = ${PASS1}"
         else
             echo "  step ${STEP}: no aggregate results"
