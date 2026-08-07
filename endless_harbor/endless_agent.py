@@ -99,22 +99,26 @@ class EndlessAgent(BaseAgent):
         max_time_sec: float = 600,
         max_completion_tokens: int = 2048,
         agent_version: str = "1.0.0",
+        tokenizer_model: str | None = None,
         **kwargs,
     ):
         """
         Initialize the Echos agent.
-        
+
         Args:
             logs_dir: Directory to store logs.
-            model_name: The model to use for completions.
+            model_name: The model to use for completions (can be a URL endpoint).
             temperature: Sampling temperature.
             max_episodes: Maximum number of action turns.
             max_time_sec: Maximum wall-clock time for task execution.
             max_completion_tokens: Maximum tokens per completion.
             agent_version: Version string for this agent.
+            tokenizer_model: HF model name/path for tokenizer loading. Falls back
+                to model_name if not set (works when model_name is an HF id, not a URL).
         """
         super().__init__(logs_dir, model_name, *args, **kwargs)
         self._model_name = model_name or "obiwan96/ota-350"
+        self._tokenizer_model = tokenizer_model or self._model_name
         self.max_completion_tokens = max_completion_tokens
         self.temperature = temperature
         self._max_episodes = max_episodes
@@ -264,8 +268,8 @@ class EndlessAgent(BaseAgent):
         self._tokenizer_loaded = True
 
         
-        self._tokenizer = AutoTokenizer.from_pretrained(self._model_name)
-        print(f"[Info] Loaded tokenizer for {self._model_name}")
+        self._tokenizer = AutoTokenizer.from_pretrained(self._tokenizer_model)
+        print(f"[Info] Loaded tokenizer for {self._tokenizer_model}")
 
         
         return self._tokenizer

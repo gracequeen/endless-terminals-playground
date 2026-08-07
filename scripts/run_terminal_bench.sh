@@ -96,13 +96,21 @@ else
 fi
 
 # ── build harbor run command ──────────────────────────────────────────────────
+# In checkpoint mode: agent receives the vllm endpoint as model (for completions)
+# and the HF model name via tokenizer_model kwarg (for tokenizer loading).
+TOKENIZER_KWARG=""
+if [[ "$MODE" == "checkpoint" ]]; then
+    TOKENIZER_KWARG="--ak tokenizer_model=$MODEL"
+fi
+
 HARBOR_CMD=".venv/bin/harbor run \
   -d $DATASET \
   --agent-import-path $AGENT \
   --model $MODEL_OR_ENDPOINT \
   --n-concurrent $N_CONCURRENT \
   --jobs-dir $JOBS_DIR \
-  --job-name $JOB_NAME"
+  --job-name $JOB_NAME \
+  $TOKENIZER_KWARG"
 
 # ── print summary ─────────────────────────────────────────────────────────────
 echo "=================================================="
