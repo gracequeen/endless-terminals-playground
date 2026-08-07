@@ -19,7 +19,12 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-PYTHON="${REPO}/.venv/bin/python"
+# .venv lives in the main checkout; walk up from worktrees if needed
+VENV="$REPO/.venv"
+if [[ ! -d "$VENV" ]]; then
+    VENV="$(cd "$REPO/../../.." && pwd)/.venv"
+fi
+PYTHON="$VENV/bin/python"
 WORK_DIR="/home/ec2-user/ckpt_eval"   # scratch space for downloads + HF conversion
 JOBS_DIR="solution_tb"
 N_CONCURRENT=10
@@ -172,7 +177,7 @@ echo "============================================================"
 echo "[eval-ckpts] All steps done. Collecting results..."
 echo "============================================================"
 cd "$REPO"
-"$REPO/.venv/bin/python" "$REPO/generator/collect_harbor_results.py" --jobs-dir "$JOBS_DIR"
+"$VENV/bin/python" "$REPO/generator/collect_harbor_results.py" --jobs-dir "$JOBS_DIR"
 
 SUMMARY_FILE="${REPO}/${JOBS_DIR}/eval_checkpoints_summary.txt"
 {
@@ -186,7 +191,7 @@ SUMMARY_FILE="${REPO}/${JOBS_DIR}/eval_checkpoints_summary.txt"
         JOB_NAME="${JOB_PREFIX}-step${STEP}"
         AGG="${REPO}/${JOBS_DIR}/${JOB_NAME}/aggregate_pass_at_k.json"
         if [[ -f "$AGG" ]]; then
-            PASS1=$("$REPO/.venv/bin/python" -c "import json; d=json.load(open('$AGG')); print(d.get('pass@1', 'n/a'))" 2>/dev/null || echo "n/a")
+            PASS1=$("$VENV/bin/python" -c "import json; d=json.load(open('$AGG')); print(d.get('pass@1', 'n/a'))" 2>/dev/null || echo "n/a")
             echo "  step ${STEP}: pass@1 = ${PASS1}"
         else
             echo "  step ${STEP}: no aggregate results"

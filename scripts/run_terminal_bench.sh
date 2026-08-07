@@ -25,6 +25,11 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+# .venv lives in the main checkout; walk up from worktrees if needed
+VENV="$REPO/.venv"
+if [[ ! -d "$VENV" ]]; then
+    VENV="$(cd "$REPO/../../.." && pwd)/.venv"
+fi
 SESSION="endless"
 LOG_DIR="$REPO/harbor_logs"
 JOBS_DIR="solution_tb"
@@ -103,7 +108,7 @@ if [[ "$MODE" == "checkpoint" ]]; then
     TOKENIZER_KWARG="--ak tokenizer_model=$MODEL"
 fi
 
-HARBOR_CMD="$REPO/.venv/bin/harbor run \
+HARBOR_CMD="$VENV/bin/harbor run \
   -d $DATASET \
   --agent-import-path $AGENT \
   --model $MODEL_OR_ENDPOINT \
@@ -140,7 +145,7 @@ if [[ "$MODE" == "checkpoint" ]]; then
     FULL_CMD=$(cat <<TMUXCMD
 cd $REPO
 echo "[tb-eval] Starting vLLM server from checkpoint: $CHECKPOINT"
-$REPO/.venv/bin/python -m vllm.entrypoints.openai.api_server \
+$VENV/bin/python -m vllm.entrypoints.openai.api_server \
   --model "$CHECKPOINT" \
   --served-model-name "$MODEL_BASENAME" \
   --port $VLLM_PORT \
