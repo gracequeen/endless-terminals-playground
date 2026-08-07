@@ -51,8 +51,8 @@ log "=== All evals complete. Results in $REPO/solution_tb/ ==="
 VENV="$REPO/.venv"
 if [[ ! -d "$VENV" ]]; then VENV="$(cd "$REPO/../../.." && pwd)/.venv"; fi
 
-mkdir -p "$REPO/output"
-SUMMARY="$REPO/output/terminal_bench_qwen3.5-4b_grpo_p5_$(date +%Y%m%d).md"
+mkdir -p "$REPO/output/terminal-bench-eval"
+SUMMARY="$REPO/output/terminal-bench-eval/terminal_bench_qwen3.5-4b_grpo_p5_$(date +%Y%m%d).md"
 
 {
     echo "# Terminal-Bench: Qwen3.5-4B GRPO (p5) vs Base"
