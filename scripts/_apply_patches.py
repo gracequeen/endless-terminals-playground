@@ -75,32 +75,98 @@ elif old in txt:
 else:
     print('ppo_utils.py: decorator pattern not found, skipping')
 
-# --- new_inference_worker_wrap.py: remove LayerwiseReloadWorkerMixin inheritance
-#     (vLLM 0.21.0 provides start/finish_weight_update natively) ---
+# --- new_inference_worker_wrap.py: fix LayerwiseReloadWorkerMixin + attribute names
+#     On newer SkyRL (where layerwise_reload.py exists), keep the mixin inheritance.
+#     On older SkyRL (where it doesn't exist), remove it.
 f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/new_inference_worker_wrap.py')
+layerwise_exists = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/layerwise_reload.py').exists()
 txt = f.read_text()
-already_patched = (
-    'LayerwiseReloadWorkerMixin' not in txt
-    and '_weight_update_active' in txt
-)
-if already_patched:
-    print('new_inference_worker_wrap.py already patched, skipping')
+changed = False
+
+if layerwise_exists:
+    # Newer SkyRL: ensure class inherits from LayerwiseReloadWorkerMixin
+    if 'class NewInferenceWorkerWrap:' in txt and 'LayerwiseReloadWorkerMixin' not in txt:
+        txt = txt.replace('class NewInferenceWorkerWrap:', 'class NewInferenceWorkerWrap(LayerwiseReloadWorkerMixin):')
+        changed = True
+    print('new_inference_worker_wrap.py: layerwise_reload.py exists, keeping mixin inheritance')
 else:
-    txt = re.sub(
-        r'from skyrl\.backends\.skyrl_train\.inference_servers\.layerwise_reload import \(\s*LayerwiseReloadWorkerMixin,?\s*\)\n+',
-        '',
-        txt
-    )
-    txt = txt.replace(
-        'class NewInferenceWorkerWrap(LayerwiseReloadWorkerMixin):',
-        'class NewInferenceWorkerWrap:'
-    )
+    # Older SkyRL: remove mixin since the file doesn't exist
+    if 'LayerwiseReloadWorkerMixin' in txt:
+        txt = re.sub(r'from skyrl\.backends\.skyrl_train\.inference_servers\.layerwise_reload import \(\s*LayerwiseReloadWorkerMixin,\s*\)\s*\n', '', txt)
+        txt = txt.replace('class NewInferenceWorkerWrap(LayerwiseReloadWorkerMixin):', 'class NewInferenceWorkerWrap:')
+        changed = True
+
+# Fix attribute names (both old and new SkyRL)
+if '_skyrl_weight_update_active' in txt:
     txt = txt.replace('_skyrl_weight_update_active', '_weight_update_active')
-    txt = txt.replace('_skyrl_is_checkpoint_format', '_is_checkpoint_format')
+    changed = True
+if '_skyrl_is_checkpoint_format' in txt:
+        txt = txt.replace('_skyrl_is_checkpoint_format', '_is_checkpoint_format')
+        changed = True
+
+if changed:
     f.write_text(txt)
     print('Patched new_inference_worker_wrap.py')
+else:
+    print('new_inference_worker_wrap.py already patched, skipping')
 
-# --- generators/base.py: add std_reward field to MetricsOutput ---
+# --- utils.py: keep worker_extension_cls — needed for update_weights_chunk
+#     which vLLM 0.21.0 does NOT have natively
+f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/utils.py')
+txt = f.read_text()
+# Restore worker_extension_cls if it was removed
+if 'worker_extension_cls=VLLM_NEW_INFERENCE_WORKER_EXTENSION_CLS' not in txt:
+    old = '        generation_config="vllm",'
+    new = '        worker_extension_cls=VLLM_NEW_INFERENCE_WORKER_EXTENSION_CLS,\n        generation_config="vllm",'
+    if old in txt:
+        f.write_text(txt.replace(old, new))
+        print('Restored utils.py: worker_extension_cls added back')
+    else:
+        print('utils.py: generation_config pattern not found, skipping')
+else:
+    print('utils.py worker_extension_cls already present, skipping')
+
+# --- new_inference_worker_wrap.py: remove start_weight_update and finish_weight_update —
+#     Only on older SkyRL (vLLM 0.21.0) where these methods conflict with native vLLM.
+#     On newer SkyRL (where layerwise_reload.py exists), these methods are named
+#     skyrl_start_weight_update/skyrl_finish_weight_update and don't conflict.
+if not layerwise_exists:
+    f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/new_inference_worker_wrap.py')
+    txt = f.read_text()
+    changed = False
+
+    if 'def start_weight_update' in txt:
+        txt = re.sub(
+            r'\n    def start_weight_update\(self[^)]*\).*?(?=\n    def |\Z)',
+            '',
+            txt,
+            flags=re.DOTALL
+        )
+        changed = True
+        print('Patched new_inference_worker_wrap.py: removed start_weight_update')
+    else:
+        print('new_inference_worker_wrap.py: start_weight_update already removed, skipping')
+
+    if 'def finish_weight_update' in txt:
+        txt = re.sub(
+            r'\n    def finish_weight_update\(self[^)]*\).*',
+            '',
+            txt,
+            flags=re.DOTALL
+        )
+        changed = True
+        print('Patched new_inference_worker_wrap.py: removed finish_weight_update')
+    else:
+        print('new_inference_worker_wrap.py: finish_weight_update already removed, skipping')
+
+    if changed:
+        f.write_text(txt)
+else:
+    print('new_inference_worker_wrap.py: newer SkyRL detected, skipping start/finish removal')
+
+
+
+
 f = pathlib.Path('SkyRL/skyrl/train/generators/base.py')
 txt = f.read_text()
 old = 'class MetricsOutput(TypedDict):\n    avg_score: Optional[float]\n    pass_at_n: Optional[float]\n    mean_positive_reward: Optional[float]'
@@ -167,3 +233,151 @@ elif old_status in txt:
     print('Patched worker.py explained_variance')
 else:
     print('worker.py: critic status pattern not found, skipping')
+
+
+# --- layerwise_reload.py: fix attribute names to match new_inference_worker_wrap.py ---
+f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/layerwise_reload.py')
+if f.exists():
+    txt = f.read_text()
+    if '_skyrl_weight_update_active' in txt or '_skyrl_is_checkpoint_format' in txt:
+        txt = txt.replace('_skyrl_weight_update_active', '_weight_update_active')
+        txt = txt.replace('_skyrl_is_checkpoint_format', '_is_checkpoint_format')
+        f.write_text(txt)
+        print('Patched layerwise_reload.py attribute names')
+    else:
+        print('layerwise_reload.py already patched, skipping')
+else:
+    print('layerwise_reload.py: file not found, skipping')
+
+# --- default.yaml: set agent to terminus-2 ---
+f = pathlib.Path('SkyRL/examples/train_integrations/harbor/harbor_trial_config/default.yaml')
+if f.exists():
+    txt = f.read_text()
+    if 'name: terminus-2' in txt:
+        print('default.yaml agent already terminus-2, skipping')
+    elif 'name: mini-swe-agent' in txt:
+        f.write_text(txt.replace('name: mini-swe-agent', 'name: terminus-2'))
+        print('Patched default.yaml: agent set to terminus-2')
+    else:
+        print('default.yaml: agent name not found, skipping')
+else:
+    print('default.yaml: file not found, skipping')
+
+# --- default.yaml: set environment type to docker ---
+f = pathlib.Path('SkyRL/examples/train_integrations/harbor/harbor_trial_config/default.yaml')
+if f.exists():
+    txt = f.read_text()
+    if 'type: docker' in txt:
+        print('default.yaml environment type already docker, skipping')
+    elif 'type: daytona' in txt:
+        f.write_text(txt.replace('  type: daytona', '  type: docker'))
+        print('Patched default.yaml: environment type set to docker')
+    else:
+        print('default.yaml: daytona not found, skipping')
+
+# --- default.yaml: set cost_limit and OPENAI_API_KEY for mini-swe-agent ---
+f = pathlib.Path('SkyRL/examples/train_integrations/harbor/harbor_trial_config/default.yaml')
+if f.exists():
+    txt = f.read_text()
+    if 'cost_limit' in txt:
+        print('default.yaml cost_limit already set, skipping')
+    else:
+        old = '    # Maximum number of agent episodes/iterations\n    max_turns: 32'
+        new = '    # Maximum number of agent episodes/iterations\n    max_turns: 32\n\n    # Cost limit for mini-swe-agent (set high since we use local vLLM with zero cost)\n    cost_limit: "999"\n\n    # API key for local vLLM endpoint\n    env:\n      OPENAI_API_KEY: "nokey"'
+        if old in txt:
+            f.write_text(txt.replace(old, new))
+            print('Patched default.yaml: added cost_limit and OPENAI_API_KEY')
+        else:
+            print('default.yaml: max_turns pattern not found, skipping')
+
+# --- vllm_router.py: fix AttributeError for pd_disaggregation ---
+f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/vllm_router.py')
+if f.exists():
+    txt = f.read_text()
+    old = 'self._router_args.vllm_pd_disaggregation or self._router_args.pd_disaggregation'
+    new = 'self._router_args.vllm_pd_disaggregation'
+    if old in txt:
+        f.write_text(txt.replace(old, new))
+        print('Patched vllm_router.py: removed non-existent pd_disaggregation attribute')
+    else:
+        print('vllm_router.py: pd_disaggregation already fixed, skipping')
+
+# --- dataset.py: support JSON file path as data_files entry ---
+#     Allows passing a JSON file containing a list of task dirs instead of
+#     listing all paths on the CLI (avoids "Argument list too long" with large datasets)
+f = pathlib.Path('SkyRL/examples/train_integrations/harbor/dataset.py')
+if f.exists():
+    txt = f.read_text()
+    if 'suffix == \'.json\'' in txt:
+        print('dataset.py JSON file support already patched, skipping')
+    else:
+        old = '    def _load_data_files(self) -> List[Path]:\n        """Load all data files from direct paths and return list of task paths."""\n        task_paths = []\n\n        for data_source in self.data_files:\n            source_path = Path(data_source)\n\n            if not source_path.exists():'
+        new = '    def _load_data_files(self) -> List[Path]:\n        """Load all data files from direct paths and return list of task paths."""\n        import json as _json\n\n        task_paths = []\n\n        for data_source in self.data_files:\n            source_path = Path(data_source)\n\n            # Support JSON file containing a list of task dirs\n            if source_path.suffix == \'.json\' and source_path.is_file():\n                dirs = _json.loads(source_path.read_text())\n                for d in dirs:\n                    p = Path(d)\n                    if self._is_valid_task_directory(p):\n                        task_paths.append(p)\n                logger.info(f"Loaded {len(task_paths)} task paths from JSON file {data_source}")\n                continue\n\n            if not source_path.exists():'
+        if old in txt:
+            f.write_text(txt.replace(old, new))
+            print('Patched dataset.py: added JSON file support for data_files')
+        else:
+            print('dataset.py: _load_data_files pattern not found, skipping')
+else:
+    print('dataset.py: file not found, skipping')
+
+# --- env_vars.py: default _SKYRL_USE_NEW_INFERENCE to 0 ---
+#     The new inference path uses NCCLWeightTransferEngine which fails with
+#     ncclInvalidUsage on multi-node setups. The legacy path works correctly.
+f = pathlib.Path('SkyRL/skyrl/env_vars.py')
+if f.exists():
+    txt = f.read_text()
+    old = '_SKYRL_USE_NEW_INFERENCE = str(os.environ.get("_SKYRL_USE_NEW_INFERENCE", "1")).lower() in ('
+    new = '_SKYRL_USE_NEW_INFERENCE = str(os.environ.get("_SKYRL_USE_NEW_INFERENCE", "1")).lower() in ('
+    if old not in txt and new not in txt:
+        print('env_vars.py _SKYRL_USE_NEW_INFERENCE already patched, skipping')
+    else:
+        print('env_vars.py _SKYRL_USE_NEW_INFERENCE keeping default=1 (new inference path), skipping')
+else:
+    print('env_vars.py: file not found, skipping')
+
+# --- broadcast_strategy.py: always use init_custom_process_group ---
+#     vLLM's NCCLWeightTransferEngine.trainer_init causes ncclInvalidUsage
+#     because it conflicts with vLLM's internal NCCL group.
+#     Using init_custom_process_group directly avoids this conflict.
+f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/weight_sync/broadcast_strategy.py')
+if f.exists():
+    txt = f.read_text()
+    # Pattern 1: older SkyRL with _SKYRL_USE_NEW_INFERENCE conditional
+    old1 = '            if _SKYRL_USE_NEW_INFERENCE:\n                from vllm.distributed.weight_transfer.nccl_engine import (\n                    NCCLWeightTransferEngine,\n                )\n\n                model_update_group = NCCLWeightTransferEngine.trainer_init(\n                    dict(\n                        master_address=init_info.master_addr,\n                        master_port=init_info.master_port,\n                        world_size=init_info.world_size,\n                    )\n                )\n            else:\n                model_update_group = init_custom_process_group('
+    new1 = '            if False:  # patched: always use init_custom_process_group (NCCLWeightTransferEngine conflicts)\n                pass\n            else:\n                model_update_group = init_custom_process_group('
+    # Pattern 2: newer SkyRL with direct NCCLWeightTransferEngine.trainer_init
+    old2 = '''        if rank == 0:
+            from vllm.distributed.weight_transfer.nccl_engine import (
+                NCCLWeightTransferEngine,
+            )
+
+            model_update_group = NCCLWeightTransferEngine.trainer_init(
+                dict(
+                    master_address=init_info.master_addr,
+                    master_port=init_info.master_port,
+                    world_size=init_info.world_size,
+                )
+            )'''
+    new2 = '''        if rank == 0:
+            from vllm.distributed import stateless_init_torch_distributed_process_group
+
+            model_update_group = stateless_init_torch_distributed_process_group(
+                host=init_info.master_addr,
+                port=init_info.master_port,
+                world_size=init_info.world_size,
+                rank=0,
+                backend="nccl",
+            )'''
+    if 'init_custom_process_group' in txt:
+        print('broadcast_strategy.py already patched, skipping')
+    elif old1 in txt:
+        f.write_text(txt.replace(old1, new1))
+        print('Patched broadcast_strategy.py (pattern 1): use init_custom_process_group')
+    elif old2 in txt:
+        f.write_text(txt.replace(old2, new2))
+        print('Patched broadcast_strategy.py (pattern 2): use init_custom_process_group')
+    else:
+        print('broadcast_strategy.py: pattern not found, skipping')
+else:
+    print('broadcast_strategy.py: file not found, skipping')
