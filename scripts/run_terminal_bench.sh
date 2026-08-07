@@ -145,7 +145,7 @@ if [[ "$MODE" == "checkpoint" ]]; then
     FULL_CMD=$(cat <<TMUXCMD
 cd $REPO
 echo "[tb-eval] Starting vLLM server from checkpoint: $CHECKPOINT"
-$VENV/bin/python -m vllm.entrypoints.openai.api_server \
+CUDA_VISIBLE_DEVICES=1,2,3 $VENV/bin/python -m vllm.entrypoints.openai.api_server \
   --model "$CHECKPOINT" \
   --served-model-name "$MODEL_BASENAME" \
   --port $VLLM_PORT \
