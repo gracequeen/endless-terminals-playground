@@ -166,7 +166,7 @@ else
 fi
 
 # ── launch in tmux window ─────────────────────────────────────────────────────
-WINDOW_NAME="tb-${JOB_NAME}"
+WINDOW_NAME="tb-${JOB_NAME//\./-}"
 WINDOW_IDX=$(tmux new-window -t "$SESSION" -n "$WINDOW_NAME" -c "$REPO" -P -F "#{window_index}")
 tmux send-keys -t "$SESSION:$WINDOW_IDX" "$FULL_CMD" Enter
 
