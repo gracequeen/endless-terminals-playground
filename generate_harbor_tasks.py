@@ -187,9 +187,9 @@ def _generate_harbor_batch(
 ) -> List[Optional[Path]]:
     """Run the full 5-stage pipeline for one batch."""
 
-    # Pre-compute balanced categories and difficulties for this batch
-    categories = pick_balanced_categories(batch_count)
+    # Pick difficulties first so bucket coupling can restrict hard→hard-eligible buckets
     difficulties = pick_difficulties(batch_count, cfg.difficulty, cfg.difficulty_distribution)
+    categories = pick_balanced_categories(batch_count, difficulties=difficulties)
 
     # Stage 1: Task templates
     print(f"[1/5] Generating {batch_count} task templates ...")
@@ -209,7 +209,7 @@ def _generate_harbor_batch(
     descriptions = [t.get("description", "").strip() for t in task_templates]
     truths = [t.get("truth", "").strip() for t in task_templates]
     diffs = [t.get("difficulty", "medium") for t in task_templates]
-    cats = list(categories[:len(task_templates)])
+    cats = [t.get("category", "general") for t in task_templates]
 
     valid = [i for i, (d, tr) in enumerate(zip(descriptions, truths)) if d and tr]
     if not valid:

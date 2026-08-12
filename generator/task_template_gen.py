@@ -410,12 +410,14 @@ CATEGORY_BUCKETS = {
         "SSH keypair generation and management",
         "certificate management",
         "complex permissions management",
+        "stripped ELF binary reverse engineering",
     ],
     "debugging": [
         "distributed system debugging",
         "performance optimization",
         "running old code",
         "data pipeline with error recovery",
+        "binary data format parsing",
     ],
     "data_processing": [
         "data transformation",
@@ -439,6 +441,7 @@ CATEGORY_BUCKETS = {
         "environment configuration",
         "time zone and locale configuration",
         "environment variable and dotenv management",
+        "corrupt archive recovery",
     ],
     "build_tools": [
         "Makefile authoring and task automation",
@@ -461,6 +464,97 @@ CATEGORY_BUCKETS = {
         "markdown documentation generation and linting",
         "headless browser data scraping",
         "shell scripting automation",
+    ],
+}
+
+# Buckets that can sustain hard tasks (complex enough domain to require expertise)
+HARD_ELIGIBLE_BUCKETS = {"debugging", "security", "services", "data_processing", "networking", "git_ops"}
+# Buckets best suited for easy tasks
+EASY_PREFERRED_BUCKETS = {"file_ops", "text_processing", "system_admin", "build_tools"}
+
+# Per-bucket domain-coupled personas (P4)
+DOMAIN_PERSONAS: dict[str, list[str]] = {
+    "file_ops": [
+        "backup administrator archiving data",
+        "storage administrator managing disk space",
+        "release manager preparing deployment artifacts",
+        "build engineer managing binary artifacts",
+        "researcher organizing large datasets",
+        "operations engineer triaging filesystem issues",
+    ],
+    "networking": [
+        "network engineer troubleshooting connectivity",
+        "site reliability engineer debugging latency",
+        "integration developer testing remote APIs",
+        "infrastructure engineer provisioning network services",
+        "DevOps engineer diagnosing firewall rules",
+        "support engineer collecting network diagnostics",
+    ],
+    "services": [
+        "site reliability engineer monitoring uptime",
+        "platform engineer maintaining CI/CD pipelines",
+        "DevOps engineer deploying containerised services",
+        "cloud architect migrating stateful services",
+        "deployment engineer rolling out updates",
+        "web developer standing up a local stack",
+    ],
+    "security": [
+        "penetration tester scanning vulnerabilities",
+        "security engineer rotating credentials",
+        "DevSecOps engineer enforcing policy as code",
+        "compliance officer auditing access controls",
+        "linux systems engineer hardening configurations",
+        "incident responder investigating a breach",
+        "reverse engineer analysing an unknown binary",
+    ],
+    "debugging": [
+        "site reliability engineer diagnosing production issues",
+        "performance engineer profiling applications",
+        "data engineer debugging a broken ETL pipeline",
+        "backend developer chasing a regression",
+        "MLOps engineer investigating a failed training run",
+        "operations engineer triaging incidents",
+    ],
+    "data_processing": [
+        "data engineer building ETL pipelines",
+        "data analyst processing CSV files",
+        "database administrator optimizing queries",
+        "database reliability engineer managing migrations",
+        "data scientist cleaning datasets",
+        "FinOps analyst reconciling billing exports",
+    ],
+    "git_ops": [
+        "release manager preparing deployments",
+        "developer resolving a tricky merge conflict",
+        "platform engineer maintaining CI/CD pipelines",
+        "build engineer managing artifacts and tags",
+        "DevOps engineer managing a monorepo",
+        "technical writer syncing docs with code",
+    ],
+    "system_admin": [
+        "system administrator maintaining servers",
+        "linux systems engineer hardening configurations",
+        "capacity planner analyzing resource usage",
+        "compliance analyst generating audit trails",
+        "IT support technician resolving tickets",
+        "monitoring specialist setting up alerts",
+        "backup operator testing restores",
+    ],
+    "build_tools": [
+        "build engineer managing artifacts",
+        "developer setting up a new project environment",
+        "QA engineer setting up test environments",
+        "MLOps engineer tracking experiment artifacts",
+        "platform engineer maintaining CI/CD pipelines",
+        "mobile build engineer maintaining pipelines",
+    ],
+    "text_processing": [
+        "log analyst investigating patterns",
+        "data engineer processing log streams",
+        "script developer creating text utilities",
+        "DevOps engineer debugging log output",
+        "data analyst parsing semi-structured exports",
+        "compliance analyst generating audit trails from logs",
     ],
 }
 
@@ -497,6 +591,43 @@ DIFFICULTY_GUIDANCE = {
         "O(n^2) approach times out and the agent must find the algorithmic insight."
     ),
 }
+
+# P3: Two complexity axes sampled independently of difficulty
+CMD_COMPLEXITY = {
+    "bash-only": (
+        "The solution uses only standard bash utilities (grep, awk, sed, find, sort, curl, etc.). "
+        "No Python scripts, no compiled code, no running services required."
+    ),
+    "bash+python": (
+        "The solution requires writing or editing a Python script in addition to shell commands. "
+        "The agent must understand both shell and Python to complete the task."
+    ),
+    "bash+python+services": (
+        "The solution requires shell commands, Python or another language, AND interaction with a "
+        "running service (database, HTTP server, message queue, etc.). The agent must coordinate "
+        "across multiple layers: config, code, and live process state."
+    ),
+}
+
+WORKFLOW_LENGTH = {
+    "short": (
+        "The task can be completed in 1–3 shell commands or code edits. "
+        "Total interaction should be brief — under 5 turns."
+    ),
+    "medium-length": (
+        "The task requires 5–10 distinct steps or commands. "
+        "The agent must sequence multiple operations correctly."
+    ),
+    "long": (
+        "The task involves 15–30 steps or a sustained workflow with branching. "
+        "The agent must maintain state across many turns, handle intermediate "
+        "failures, and complete a multi-phase process."
+    ),
+}
+
+# Weighted sampling for complexity axes — skew toward harder combos
+_CMD_COMPLEXITY_WEIGHTS = {"bash-only": 0.30, "bash+python": 0.40, "bash+python+services": 0.30}
+_WORKFLOW_LENGTH_WEIGHTS = {"short": 0.20, "medium-length": 0.45, "long": 0.35}
 
 
 
@@ -557,38 +688,83 @@ SCENARIO_CONTEXTS = [
     "artifact manager curating binary repositories",
 ]
 
-def pick_balanced_categories(n: int) -> list[str]:
-    """Pick n categories with balanced bucket coverage via round-robin, then random fill."""
+def _bucket_for_category(category: str) -> Optional[str]:
+    for bucket, cats in CATEGORY_BUCKETS.items():
+        if category in cats:
+            return bucket
+    return None
+
+
+def pick_balanced_categories(n: int, difficulties: Optional[list[str]] = None) -> list[str]:
+    """Pick n categories with balanced bucket coverage.
+
+    When difficulties are provided, hard tasks are restricted to
+    HARD_ELIGIBLE_BUCKETS and easy tasks prefer EASY_PREFERRED_BUCKETS.
+    """
     bucket_names = list(CATEGORY_BUCKETS.keys())
     random.shuffle(bucket_names)
     categories: list[str] = []
     for i in range(n):
-        bucket = bucket_names[i % len(bucket_names)]
+        diff = difficulties[i] if difficulties else "medium"
+        if diff == "hard":
+            eligible = [b for b in bucket_names if b in HARD_ELIGIBLE_BUCKETS]
+        elif diff == "easy":
+            eligible = [b for b in bucket_names if b in EASY_PREFERRED_BUCKETS] or bucket_names
+        else:
+            eligible = bucket_names
+        bucket = eligible[i % len(eligible)]
         categories.append(random.choice(CATEGORY_BUCKETS[bucket]))
     return categories
 
 
 def pick_difficulties(n: int, difficulty: str, distribution: Optional[dict[str, float]] = None) -> list[str]:
-    """Pick n difficulty levels based on mode. 'mixed' uses the distribution dict."""
+    """Pick n difficulty levels. 'mixed' uses the distribution dict (default hard-skewed)."""
     if difficulty != "mixed":
         return [difficulty] * n
-    dist = distribution or {"easy": 0.2, "medium": 0.5, "hard": 0.3}
+    dist = distribution or {"easy": 0.15, "medium": 0.40, "hard": 0.45}
     levels = list(dist.keys())
     weights = [dist[k] for k in levels]
     return random.choices(levels, weights=weights, k=n)
+
+
+def _pick_complexity_axes() -> tuple[str, str]:
+    """Sample cmd_complexity and workflow_length independently."""
+    cmd = random.choices(
+        list(_CMD_COMPLEXITY_WEIGHTS.keys()),
+        weights=list(_CMD_COMPLEXITY_WEIGHTS.values()),
+    )[0]
+    wf = random.choices(
+        list(_WORKFLOW_LENGTH_WEIGHTS.keys()),
+        weights=list(_WORKFLOW_LENGTH_WEIGHTS.values()),
+    )[0]
+    return cmd, wf
 
 
 def random_user_msg(category: Optional[str] = None, difficulty: str = "medium") -> str:
     """Generate a user instruction by randomly selecting inspiration elements."""
     if category is None:
         category = random.choice(TASK_CATEGORIES)
-    context = random.choice(SCENARIO_CONTEXTS)
+
+    # P4: use domain-coupled persona when possible
+    bucket = _bucket_for_category(category)
+    if bucket and bucket in DOMAIN_PERSONAS:
+        context = random.choice(DOMAIN_PERSONAS[bucket])
+    else:
+        context = random.choice(SCENARIO_CONTEXTS)
+
     difficulty_hint = DIFFICULTY_GUIDANCE.get(difficulty, DIFFICULTY_GUIDANCE["medium"])
+
+    # P3: sample complexity axes and append to prompt
+    cmd_key, wf_key = _pick_complexity_axes()
+    cmd_hint = CMD_COMPLEXITY[cmd_key]
+    wf_hint = WORKFLOW_LENGTH[wf_key]
 
     return (
         f"Domain: {category}. "
         f"The person writing this is a {context}. "
-        f"Difficulty: {difficulty}. {difficulty_hint}"
+        f"Difficulty: {difficulty}. {difficulty_hint} "
+        f"Command complexity: {cmd_key}. {cmd_hint} "
+        f"Workflow length: {wf_key}. {wf_hint}"
     )
 
 
@@ -605,13 +781,14 @@ def generate_templates_batch(
 ) -> list[dict]:
     """Generate multiple task templates in one batched LLM call set.
 
-    Returns a list of dicts with keys ``description``, ``truth``, and ``difficulty``.
-    Any failed requests are skipped.
+    Returns a list of dicts with keys ``description``, ``truth``, ``difficulty``,
+    and ``category``. Any failed requests are skipped.
     """
-    if categories is None:
-        categories = [None] * batch_size
     if difficulties is None:
         difficulties = ["medium"] * batch_size
+    # Pass difficulties so bucket coupling can restrict hard tasks to hard-eligible buckets
+    if categories is None:
+        categories = pick_balanced_categories(batch_size, difficulties=difficulties)
 
     messages: list[list[dict[str, str]]] = []
     for cat, diff in zip(categories, difficulties):
@@ -638,6 +815,7 @@ def generate_templates_batch(
             content = resp.choices[0].message.content.strip()
             parsed = parse_template(content)
             parsed["difficulty"] = difficulties[idx]
+            parsed["category"] = categories[idx]
             results.append(parsed)
         except Exception:
             # Skip malformed entries

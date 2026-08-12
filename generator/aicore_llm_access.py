@@ -15,6 +15,7 @@ DEPLOYMENT_ID_OPUS_4_5 = os.getenv("DEPLOYMENT_ID_OPUS")
 DEPLOYMENT_ID_SONNET_4_5 = os.getenv("DEPLOYMENT_ID_SONNET")
 DEPLOYMENT_ID_OPUS = os.getenv("AICORE_CLAUDE4.6_OPUS_DEPLOYMENT_ID")
 DEPLOYMENT_ID_SONNET = os.getenv("AICORE_CLAUDE4.6_SONNET_DEPLOYMENT_ID")
+DEPLOYMENT_ID_OPUS_4_8 = os.getenv("AICORE_CLAUDE4.8_OPUS_DEPLOYMENT_ID")
 
 DEFAULT_MESSAGES = [
     {
@@ -39,6 +40,8 @@ class ClaudeModels(enum.Enum):
     # Claude 4.6
     CLAUDE_4_6 = ("claude_4_6", "anthropic--claude-4.6-sonnet", DEPLOYMENT_ID_SONNET)
     CLAUDE_OPUS = ("claude_opus", "anthropic--claude-4.6-opus", DEPLOYMENT_ID_OPUS)
+    # Claude 4.8
+    CLAUDE_OPUS_4_8 = ("claude_opus_4_8", "anthropic--claude-4.8-opus", DEPLOYMENT_ID_OPUS_4_8)
 
     def __init__(self, alias: str, model_name: str, deployment_id: str):
         """Initialize Claude model with deployment ID.
@@ -86,14 +89,18 @@ def get_anthropic_completion(
     model_id = next(m.model_name for m in ClaudeModels if m.alias == model)
     deployment_id = next(m.deployment_id for m in ClaudeModels if m.alias == model)
 
+    # claude-4.8+ does not accept temperature in inferenceConfig
+    supports_temperature = "4.8" not in model_id
+
     try:
         bedrock = Session().client(model_name=model_id, deployment_id=deployment_id)
+        # Note: deployment_id=None is fine — Session() resolves the deployment automatically by model_name.
+        inference_config = {"maxTokens": max_tokens}
+        if supports_temperature:
+            inference_config["temperature"] = temperature
         converse_kwargs = dict(
             messages=formatted_messages,
-            inferenceConfig={
-                "maxTokens": max_tokens,
-                "temperature": temperature,
-            },
+            inferenceConfig=inference_config,
         )
         if system_messages:
             converse_kwargs["system"] = system_messages

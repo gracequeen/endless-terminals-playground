@@ -304,32 +304,57 @@ def generate_dockerfiles_batch(
                 pass
         return results
 
-    # Build and test in parallel
-    def worker(index: int, item: Tuple[str, ...], resp_obj) -> Tuple[int, Optional[str]]:
-        try:
-            if resp_obj is None:
-                return index, None
-            content = resp_obj.choices[0].message.content
-            dockerfile_text = parse_dockerfile(content)
-            _task_description, _truth, test_py = item[0], item[1], item[2]
-            final_test_py = item[4] if len(item) > 4 else None
-            import logging
-            _log = logging.getLogger(__name__)
-            _log.warning(
-                "Parsed Dockerfile for task %d (first 500 chars):\n%s", index, dockerfile_text[:500]
-            )
-            ok, err_msg = build_and_test_docker(dockerfile_text, test_py, final_test_py=final_test_py)
-            if not ok:
+    MAX_DOCKER_RETRIES = 3
+
+    # Build and test in parallel, with up to MAX_DOCKER_RETRIES per item
+    def worker(index: int, item: Tuple[str, ...], first_resp) -> Tuple[int, Optional[str]]:
+        import logging
+        _log = logging.getLogger(__name__)
+        _task_description, _truth, test_py = item[0], item[1], item[2]
+        difficulty = item[3] if len(item) > 3 else "medium"
+        final_test_py = item[4] if len(item) > 4 else None
+
+        resp_obj = first_resp
+        for attempt in range(MAX_DOCKER_RETRIES):
+            try:
+                if resp_obj is None:
+                    return index, None
+                content = resp_obj.choices[0].message.content
+                dockerfile_text = parse_dockerfile(content)
                 _log.warning(
-                    "Docker build/test FAILED for task %d:\n%s", index, err_msg[:2000]
+                    "Attempt %d — Dockerfile task %d (first 300 chars):\n%s",
+                    attempt + 1, index, dockerfile_text[:300],
                 )
-            return index, (dockerfile_text if ok else None)
-        except Exception as exc:
-            import logging
-            logging.getLogger(__name__).warning(
-                "Docker worker exception for task %d: %s", index, exc
-            )
-            return index, None
+                ok, err_msg = build_and_test_docker(dockerfile_text, test_py, final_test_py=final_test_py)
+                if ok:
+                    return index, dockerfile_text
+                _log.warning(
+                    "Docker FAILED attempt %d task %d:\n%s", attempt + 1, index, err_msg[:1500]
+                )
+                if attempt + 1 == MAX_DOCKER_RETRIES:
+                    return index, None
+                # Retry with failure fed back into the prompt
+                prompt = BASE_USER_TEMPLATE.format(
+                    task_description=_task_description,
+                    truth=_truth,
+                    test_py=test_py,
+                    failures=err_msg[:2000],
+                    difficulty=difficulty,
+                )
+                retry_resp = chat_completion_batch(
+                    [[{"role": "system", "content": SYSTEM_MSG}, {"role": "user", "content": prompt}]],
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    num_completions=1,
+                    max_concurrency=1,
+                    show_progress=False,
+                )
+                resp_obj = retry_resp[0] if retry_resp else None
+            except Exception as exc:
+                _log.warning("Docker worker exception attempt %d task %d: %s", attempt + 1, index, exc)
+                return index, None
+        return index, None
 
     futures = []
     with ThreadPoolExecutor(max_workers=max(1, max_concurrency)) as executor:
