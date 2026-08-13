@@ -1,0 +1,6 @@
+- increase harbor tolerance from 1hr to 2hrs
+- isolation mechanism:
+  - check count of current system's available threads/cores:
+    - if has headroom, pull out this task from current batch/queue, put into a new thread/core; and continue to next task
+    - else, wait patiently and no change.Log clearly for this case.
+  - isolation trigger: once a task's sart time > 1hr
