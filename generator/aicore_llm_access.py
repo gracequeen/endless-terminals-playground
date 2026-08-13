@@ -40,7 +40,7 @@ class ClaudeModels(enum.Enum):
     # Claude 4.6
     CLAUDE_4_6 = ("claude_4_6", "anthropic--claude-4.6-sonnet", DEPLOYMENT_ID_SONNET)
     CLAUDE_OPUS = ("claude_opus", "anthropic--claude-4.6-opus", DEPLOYMENT_ID_OPUS)
-    # Claude 4.8
+
     CLAUDE_OPUS_4_8 = ("claude_opus_4_8", "anthropic--claude-4.8-opus", DEPLOYMENT_ID_OPUS_4_8)
 
     def __init__(self, alias: str, model_name: str, deployment_id: str):

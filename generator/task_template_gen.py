@@ -639,7 +639,17 @@ def pick_difficulties(n: int, difficulty: str, distribution: Optional[dict[str, 
     dist = distribution or {"easy": 0.15, "medium": 0.40, "hard": 0.45}
     levels = list(dist.keys())
     weights = [dist[k] for k in levels]
-    return random.choices(levels, weights=weights, k=n)
+    # Deterministic allocation: assign floor counts, distribute remainder by largest fractional part
+    total_weight = sum(weights)
+    exact = [w / total_weight * n for w in weights]
+    counts = [int(x) for x in exact]
+    remainder = n - sum(counts)
+    fractions = sorted(range(len(exact)), key=lambda i: -(exact[i] % 1))
+    for i in fractions[:remainder]:
+        counts[i] += 1
+    result = [level for level, count in zip(levels, counts) for _ in range(count)]
+    random.shuffle(result)
+    return result
 
 
 def _pick_complexity_axes() -> tuple[str, str]:

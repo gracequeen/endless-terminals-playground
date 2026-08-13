@@ -21,8 +21,10 @@ from __future__ import annotations
 import argparse
 import json
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
@@ -69,11 +71,12 @@ class HarborPipelineConfig:
     test_temperature: float = 0.6
     max_concurrency: int = 4
     batch_size: int = 10
+    pipeline_depth: int = 1
     build_containers: bool = True
     author_name: str = "Endless Terminals"
     author_email: str = ""
     verbose: bool = False
-    difficulty: str = "medium"
+    difficulty: str = "mixed"
     difficulty_distribution: Optional[Dict[str, float]] = None
 
 
@@ -135,6 +138,19 @@ def _safe_write(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def _next_task_index(base: Path) -> int:
+    """Return the next available task index by scanning existing task dirs."""
+    if not base.exists():
+        return 0
+    import re
+    max_idx = -1
+    for d in base.iterdir():
+        m = re.match(r"task_(\d+)_", d.name)
+        if m:
+            max_idx = max(max_idx, int(m.group(1)))
+    return max_idx + 1
+
+
 def _format_task_dir(base: Path, idx: int, width: int = 6) -> Path:
     suffix = uuid.uuid4().hex[:8]
     return base / f"task_{idx:0{width}d}_{suffix}"
@@ -183,7 +199,7 @@ def _save_harbor_task(
 
 
 def _generate_harbor_batch(
-    cfg: HarborPipelineConfig, batch_count: int
+    cfg: HarborPipelineConfig, batch_count: int, start_idx: int = 0
 ) -> List[Optional[Path]]:
     """Run the full 5-stage pipeline for one batch."""
 
@@ -284,7 +300,7 @@ def _generate_harbor_batch(
             saved.append(None)
             continue
 
-        task_dir = _format_task_dir(cfg.out_dir, idx=0)
+        task_dir = _format_task_dir(cfg.out_dir, idx=start_idx + i)
         task_dir = _save_harbor_task(
             task_dir,
             descriptions[i],
@@ -302,19 +318,30 @@ def _generate_harbor_batch(
 
 
 def run_harbor_pipeline(cfg: HarborPipelineConfig) -> Dict[str, Any]:
-    """Orchestrate batched task generation."""
+    """Orchestrate batched task generation with pipelined batch concurrency."""
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
 
     requested = cfg.num_tasks
     batch_size = max(1, cfg.batch_size)
-    all_saved: List[Optional[Path]] = []
-    remaining = requested
+    total_batches = (requested + batch_size - 1) // batch_size
+    counts = [batch_size] * total_batches
+    counts[-1] = requested - batch_size * (total_batches - 1)
 
-    for _ in tqdm(range((requested + batch_size - 1) // batch_size), desc="Batches"):
-        count = min(batch_size, remaining)
-        results = _generate_harbor_batch(cfg, count)
-        all_saved.extend(results)
-        remaining -= count
+    all_saved: List[Optional[Path]] = []
+    idx_lock = Lock()
+    next_idx = [_next_task_index(cfg.out_dir)]
+
+    def run_batch(count: int) -> List[Optional[Path]]:
+        with idx_lock:
+            start = next_idx[0]
+            next_idx[0] += count
+        return _generate_harbor_batch(cfg, count, start_idx=start)
+
+    depth = max(1, cfg.pipeline_depth)
+    with ThreadPoolExecutor(max_workers=depth) as executor:
+        futures = [executor.submit(run_batch, c) for c in counts]
+        for fut in tqdm(as_completed(futures), total=total_batches, desc="Batches"):
+            all_saved.extend(fut.result())
 
     saved = [p for p in all_saved if p is not None]
     summary = {
@@ -328,7 +355,7 @@ def run_harbor_pipeline(cfg: HarborPipelineConfig) -> Dict[str, Any]:
 
 def parse_args() -> HarborPipelineConfig:
     ap = argparse.ArgumentParser(
-        description="Generate Harbor-format terminal-agent tasks using AICore Claude Opus 4.5.",
+        description="Generate Harbor-format terminal-agent tasks using AICore Claude Opus.",
     )
     ap.add_argument("--num-tasks", type=int, default=10)
     ap.add_argument("--out-dir", type=Path, default=Path("harbor_tasks"))
@@ -338,8 +365,10 @@ def parse_args() -> HarborPipelineConfig:
     ap.add_argument("--test-temperature", type=float, default=0.6)
     ap.add_argument("--max-concurrency", type=int, default=4)
     ap.add_argument("--batch-size", type=int, default=10)
+    ap.add_argument("--pipeline-depth", type=int, default=1,
+                    help="Number of batches to run concurrently (default: 1)")
     ap.add_argument("--skip-build", action="store_true", help="Skip Docker build/test")
-    ap.add_argument("--difficulty", type=str, default="medium",
+    ap.add_argument("--difficulty", type=str, default="mixed",
                     choices=["easy", "medium", "hard", "mixed"],
                     help="Task difficulty level. 'mixed' uses --difficulty-distribution.")
     ap.add_argument("--difficulty-distribution", type=str, default=None,
@@ -366,6 +395,7 @@ def parse_args() -> HarborPipelineConfig:
         test_temperature=args.test_temperature,
         max_concurrency=max(1, args.max_concurrency),
         batch_size=max(1, args.batch_size),
+        pipeline_depth=max(1, args.pipeline_depth),
         build_containers=not args.skip_build,
         author_name=args.author_name,
         author_email=args.author_email,
