@@ -7,7 +7,7 @@
 #   window 2 "monitor" — left: check_resources loop | right: docker stats
 
 SESSION="endless"
-REPO="$HOME/grace/endless-terminals-playground"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Attach if session already exists
 if tmux has-session -t "$SESSION" 2>/dev/null; then

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Prune all Docker artifacts when total disk usage exceeds 5GB.
+# Prune all Docker artifacts when total disk usage exceeds 3GB.
 set -euo pipefail
 
-THRESHOLD_BYTES=$((3 * 1024 * 1024 * 1024))  # 5GB
+THRESHOLD_BYTES=$((3 * 1024 * 1024 * 1024))
 LOG_PREFIX="[$(date -u +%Y-%m-%dT%H:%M:%SZ)]"
 
 total_bytes=$(docker system df --format '{{.Size}}' \
