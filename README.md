@@ -105,6 +105,25 @@ Modify choices of arguments:
 python generate_harbor_tasks.py --num-tasks 10 --out-dir harbor_tasks --model claude_opus
 ```
 
+For larger production runs (v3 spec):
+```bash
+# extra small test (64 tasks)
+python generate_harbor_tasks.py \
+  --num-tasks 64 --out-dir harbor_tasks_v3_small-test \
+  --model claude_opus_4_8 --max-tokens 8192 \
+  --difficulty mixed --difficulty-distribution easy:0.1,medium:0.4,hard:0.5 \
+  --batch-size 64 --max-concurrency 32 --pipeline-depth 32 \
+  --skip-build
+
+# normal batch (5120 tasks)
+python generate_harbor_tasks.py \
+  --num-tasks 5120 --out-dir harbor_tasks_v3_normal \
+  --model claude_opus_4_8 --max-tokens 8192 \
+  --difficulty mixed --difficulty-distribution easy:0.1,medium:0.4,hard:0.5 \
+  --batch-size 64 --max-concurrency 32 --pipeline-depth 32 \
+  --skip-build
+```
+
 This runs a 5-stage pipeline:
 1. **Task templates** — generates task descriptions and ground-truth solutions
 2. **Initial-state tests** — generates pytest tests that verify the container starts in the correct state
