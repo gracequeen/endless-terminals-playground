@@ -244,7 +244,7 @@ def _generate_harbor_batch(
         list(zip(descriptions, truths, init_tests, diffs)),
         model=cfg.model,
         temperature=cfg.test_temperature,
-        max_tokens=cfg.max_tokens,
+        max_tokens=max(cfg.max_tokens, 8192),
         max_concurrency=cfg.max_concurrency,
     )
     valid = [i for i, t in enumerate(final_tests) if t]
