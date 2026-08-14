@@ -25,6 +25,10 @@ export PATH="$CUDA_HOME/bin:$PATH"
 echo "Using CUDA_HOME=$CUDA_HOME"
 rm -rf ~/.cache/flashinfer
 
+# Kill any leftover GPU processes from previous runs
+nvidia-smi --query-compute-apps=pid --format=csv,noheader | xargs -r kill -9 2>/dev/null || true
+sleep 2
+
 # Download task directories
 TASKS_DEDUPED_DIR="/home/ec2-user/xin/harbor_tasks/tasks_8192_deduped"
 TASKS_COUNT=$(find "$TASKS_DEDUPED_DIR" -name 'instruction.md' 2>/dev/null | wc -l)
@@ -145,7 +149,7 @@ python -m examples.train_integrations.harbor.entrypoints.main_harbor \
   generator.inference_engine.weight_sync_backend=nccl \
   generator.inference_engine.async_engine=true \
   generator.inference_engine.enforce_eager=true \
-  generator.inference_engine.gpu_memory_utilization=0.10 \
+  generator.inference_engine.gpu_memory_utilization=0.35 \
   generator.inference_engine.served_model_name=Qwen3.5-9B \
   generator.n_samples_per_prompt=4 \
   generator.max_turns=6 \

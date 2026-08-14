@@ -2,7 +2,9 @@
 
 ## Baseline Comparison
 
-2×2 across model size and dataset. All runs are base model behavior (no meaningful training — 5-step baseline only).
+### Model vs Dataset (2×2)
+
+All runs are base model behavior (5-step baseline only).
 
 | Model | Dataset | avg_pass_at_4 step 1 | avg_pass_at_4 steps 1-5 | eval avg_score (pass@1) | Experiment |
 |-------|---------|----------------------|--------------------------|--------------------------|------------|
@@ -15,6 +17,19 @@
 - 4B vs 3B: ~10× higher eval avg_score on the same dataset — gap is model capability
 - Original 457 vs deduped 8192: 4B eval avg_score is 39.2% on original 457 vs 49.0% on deduped 8192 — deduped 8192 tasks are actually easier for the 4B model despite being longer
 - 3B avg_pass_at_4 is too noisy (batch=4, ~5% pass rate) to compare across datasets — use eval avg_score instead (3.9% vs 6.0%)
+
+### Model Scaling (3B vs 4B vs 9B) on Deduped 8192 Dataset
+
+| Model | avg_pass_at_4 step 1 | avg_pass_at_4 steps 1-5 | eval avg_score (pass@1) | Experiment |
+|-------|----------------------|--------------------------|--------------------------|------------|
+| Qwen2.5-3B | 12.5% | 7.5% (noisy) | 6.0% (100 tasks) | 20260730 |
+| Qwen3.5-4B | 62.5% | 60.0% | 49.0% (100 tasks) | 20260723 |
+| Qwen3.5-9B | 100% | 95.0% | 58.0% (100 tasks) | 20260808 |
+
+**Key takeaways:**
+- Clear scaling trend: 3B → 4B → 9B all improve significantly
+- 9B avg_pass_at_4 is near-ceiling (95%) — too easy for GRPO training signal. Need harder tasks for 9B training.
+- 9B eval avg_score (58%) is only slightly higher than 4B (49%) despite much higher pass@4 — suggests the eval tasks are also near ceiling for 9B
 
 ---
 
@@ -585,6 +600,55 @@ Qwen2.5-3B avg_pass_at_4 ≈ **12.5%** (steps 1–3), dropping to **0%** at step
 ### Conclusion
 
 Qwen2.5-3B avg_pass_at_4 is highly variable (0–50%) due to small batch size (4 tasks) — with only ~10% base pass rate, most batches are all-fail. eval avg_score = **3.9%** vs 4B's **39.2%** on the same tasks, confirming the 10× capability gap. Response length stays high (4000–5700 tokens) with zero reward, meaning the model generates long outputs without solving tasks.
+
+---
+
+## 20260808 — Qwen3.5-9B GRPO Baseline on Deduped 8192 Dataset
+
+| Field | Value |
+|-------|-------|
+| **Experiment name** | `20260808_8192deduped-task_harbor-grpo_qwen3.5-9b_p5e_baseline` |
+| **Task generation model** | Claude 4.6 Opus (8192 token context) |
+| **Solution generation model** | Claude 4.6 Sonnet |
+| **Training tasks** | 2781 |
+| **Val tasks** | 100 |
+| **Dataset** | `harbor_tasks_8192_deduped` — same as 20260723 and 20260730 |
+| **Algorithm** | GRPO |
+| **Agent** | terminus-2 |
+| **Base model** | Qwen/Qwen3.5-9B |
+| **Instance** | p5e.48xlarge (8× H200 141GB) |
+| **Total steps** | 5 (baseline measurement only) |
+| **Batch size** | 4 tasks × 4 samples = 16 rollouts/step |
+| **Max turns** | 6 |
+| **Max generate length** | 1024 tokens |
+| **gpu_memory_utilization** | 0.35 |
+| **Script** | `scripts/eval_qwen3_5_9b_baseline_p5e.sh` |
+
+### Training Metrics
+
+| Step | avg_pass_at_4 | avg_raw_reward | std_reward | Policy Loss | Policy KL | Grad Norm | Entropy | Response Len | Tokens/s/GPU |
+|------|---------------|----------------|------------|-------------|-----------|-----------|---------|--------------|--------------|
+| 1 | 100% | 81.3% | 0.3903 | -0.0036 | 0.1676 | 0.7627 | 0.1711 | 1604 | 1660 |
+| 2 | 100% | 100.0% | 0.0000 | 0.0000 | 0.1528 | 0.0166 | 0.1677 | 1691 | 1227 |
+| 3 | 100% | 93.8% | 0.2421 | 0.1047 | 0.1810 | 1.9460 | 0.1780 | 2525 | 820 |
+| 4 | 75% | 68.8% | 0.4635 | 0.2026 | 0.1695 | 1.8301 | 0.1666 | 2416 | 937 |
+| 5 | 100% | 75.0% | 0.4330 | 0.0486 | 0.1905 | 2.3491 | 0.1979 | 2583 | 1244 |
+
+### Eval Metrics (100 held-out tasks)
+
+| Metric | Value |
+|--------|-------|
+| avg_score (100 tasks) | 58.0% |
+
+### S3 Artifacts
+
+| Artifact | Location |
+|----------|----------|
+| Training log | `s3://endless-terminals-training/20260808_8192deduped-task_harbor-grpo_qwen3.5-9b_p5e_baseline/train_debug.log` |
+
+### Conclusion
+
+Qwen3.5-9B avg_pass_at_4 = **95%** (steps 1-5 average) and eval avg_score = **58%** — near-ceiling on the deduped 8192 dataset. The 9B model is too capable for this dataset to provide useful GRPO training signal. Need harder tasks where the model fails 30-70% of the time before running full training with 9B.
 
 
 ## Key Constraints
