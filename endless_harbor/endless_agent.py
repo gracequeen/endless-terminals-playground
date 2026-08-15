@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import sys
 import time
@@ -114,6 +115,12 @@ class EndlessAgent(BaseAgent):
             agent_version: Version string for this agent.
         """
         super().__init__(logs_dir, model_name, *args, **kwargs)
+        # Harbor passes agent env vars (--ae KEY=VAL) via `extra_env`; it does not
+        # propagate them to os.environ. chat_completion_batch reads VLLM_BASE_URL
+        # from os.environ, so bridge it here to route requests to the right vLLM server.
+        extra_env = kwargs.get("extra_env") or {}
+        if "VLLM_BASE_URL" in extra_env:
+            os.environ["VLLM_BASE_URL"] = extra_env["VLLM_BASE_URL"]
         self._model_name = model_name or "obiwan96/ota-350"
         self.max_completion_tokens = max_completion_tokens
         self.temperature = temperature

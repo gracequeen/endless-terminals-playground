@@ -71,6 +71,59 @@ Configs: `base.yaml` (Llama-3.2-3B), `base_qwen.yaml` (Qwen2.5-7B), `base_qwen3_
 ./scripts/parallel_harbor.sh --model path/to/model --parallel 8
 ```
 
+### Baseline Evaluation (local vLLM models)
+
+`evaluate_baseline.py` measures how well a locally vLLM-served model (e.g. a Qwen
+checkpoint) solves a set of Harbor tasks *before* any RL training — the baseline.
+It runs the `EndlessAgent` against each task `--n-attempts` times via `harbor run`,
+reads each trial's reward, and reports **pass@k** per task and in aggregate.
+
+**Prerequisites:** a running vLLM server for the model, and Docker.
+
+```bash
+# 1. Serve the model with vLLM (one GPU shown; note the port):
+CUDA_VISIBLE_DEVICES=0 vllm serve Qwen/Qwen3.5-9B --port 8006 &
+
+# 2. Run the baseline eval (n=8 attempts → pass@1,2,3,4,8):
+.venv/bin/python evaluate_baseline.py \
+    --dataset-path harbor_tasks_top200 \
+    --model Qwen/Qwen3.5-9B \
+    --n-attempts 8 \
+    --n-concurrent 3 \
+    --jobs-dir baseline_results \
+    --job-name passk_eval_top200_9b \
+    --vllm-base-url http://localhost:8006/v1
+```
+
+Results are written to `output/<job-name>.{json,md}` (aggregate + per-task pass@k)
+and raw trials to `baseline_results/<job-name>/`. Use `--dry-run` to print the
+`harbor run` command without executing.
+
+**pass@k.** With `--n-attempts N`, pass@k is defined only for `k ≤ N` (unbiased
+estimator, Chen et al. 2021). The default reported set is `k = 1, 2, 3, 4, 8`, so
+use `--n-attempts 8` to make all five valid — pass@8 needs `N ≥ 8`. Override with
+`--pass-at-k K` (repeatable).
+
+**Why `--n-concurrent 3`.** Each Harbor trial creates its own Docker bridge
+network and holds it for the trial's entire lifetime (image build → agent episodes
+→ verification). A stock Docker daemon (no `default-address-pools` in
+`/etc/docker/daemon.json`) can allocate only **~31 networks at once**. Networks are
+freed when a trial finishes, so the constraint is on *simultaneously live* trials,
+not the total. At `--n-concurrent 3` the live-network count peaks around 3–9 — a
+wide margin under the ceiling. Pushing concurrency higher (peak ~18 was where
+address-pool exhaustion first appeared in practice) starves new trials of networks
+and they fail environment setup. Note that `docker network prune` does **not** help
+here: during a run the networks are all in-use, so there is nothing idle to reclaim
+— keeping concurrency low is the fix. For a large run (e.g. 200 tasks × 8 = 1600
+trials) prefer 3; raise it only after adding a wider `default-address-pools` and
+restarting the daemon.
+
+> **Running several evals at once?** The ~31-network ceiling is a single
+> *host-wide* Docker daemon limit — it is **not** per-GPU or per-process. Two
+> baseline evals on different GPUs still draw bridge networks from the same pool,
+> so their `--n-concurrent` values **add up** against the same ceiling. Budget
+> accordingly (e.g. 3 + 3).
+
 ## Citation
 
 ```bibtex

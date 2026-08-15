@@ -33,7 +33,7 @@ def get_client() -> AzureOpenAI:
     """Get or create a cached vllm OpenAI client."""
 
     client = OpenAI(
-        base_url="http://localhost:8000/v1",
+        base_url=os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1"),
         api_key="nokey"
     )
     return client
@@ -51,7 +51,7 @@ def chat_completion_batch(
     
 
     # vllm client
-    client = OpenAI(base_url="http://localhost:8000/v1", api_key="nokey")
+    client = OpenAI(base_url=os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1"), api_key="nokey")
     clients = {
         model : client
     }
