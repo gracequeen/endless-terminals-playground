@@ -21,6 +21,19 @@ uv sync
 
 # Download base container
 ./scripts/get_ubuntu_sif.sh
+
+# Set up Docker Compose v2
+
+if ! docker compose version &>/dev/null 2>&1; then
+  echo Installing Docker Compose v2...
+  sudo mkdir -p /usr/local/lib/docker/cli-plugins
+  sudo curl -SL https://github.com/docker/compose/releases/download/v2.27.1/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+  sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+  echo Docker Compose installed
+else
+  echo Docker Compose already installed: 
+fi
+
 ```
 
 ## Task Generation
@@ -53,6 +66,7 @@ python train/prepare_endless.py --task-dir ./tasks --output-dir ./data --build-s
 
 # Install SkyRL
 ./scripts/install_sky.sh
+
 
 # Run training
 ray start --head
