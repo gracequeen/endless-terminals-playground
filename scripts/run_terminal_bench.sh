@@ -154,7 +154,20 @@ CUDA_VISIBLE_DEVICES=1,2,3 $VENV/bin/python -m vllm.entrypoints.openai.api_serve
   --gpu-memory-utilization 0.85 &
 VLLM_PID=\$!
 echo "[tb-eval] vLLM PID: \$VLLM_PID — waiting for server to be ready..."
-until curl -sf http://localhost:$VLLM_PORT/health >/dev/null 2>&1; do sleep 5; done
+
+WAIT_SECS=0
+until curl -sf http://localhost:$VLLM_PORT/health >/dev/null 2>&1; do
+    sleep 5; WAIT_SECS=\$((WAIT_SECS + 5))
+    if ! kill -0 \$VLLM_PID 2>/dev/null; then
+        echo "[tb-eval] ERROR: vLLM process died after \${WAIT_SECS}s — aborting eval."
+        exit 1
+    fi
+    if [[ \$WAIT_SECS -ge 600 ]]; then
+        echo "[tb-eval] ERROR: vLLM did not become ready after 600s — killing and aborting."
+        kill \$VLLM_PID 2>/dev/null || true
+        exit 1
+    fi
+done
 echo "[tb-eval] vLLM server ready. Running Harbor eval..."
 $HARBOR_CMD 2>&1 | tee $LOG_FILE
 echo "[tb-eval] Harbor eval done. Stopping vLLM server (PID \$VLLM_PID)..."
