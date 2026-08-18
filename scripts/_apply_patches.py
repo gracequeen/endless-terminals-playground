@@ -381,3 +381,19 @@ if f.exists():
         print('broadcast_strategy.py: pattern not found, skipping')
 else:
     print('broadcast_strategy.py: file not found, skipping')
+
+# --- default.yaml: set environment delete: false to preserve trial outputs ---
+#     By default Harbor deletes the trial working directory after each trial.
+#     Setting delete: false keeps the files in ~/trials/ so they can be synced to S3.
+f = pathlib.Path('SkyRL/examples/train_integrations/harbor/harbor_trial_config/default.yaml')
+if f.exists():
+    txt = f.read_text()
+    if '  delete: false' in txt:
+        print('default.yaml environment delete already false, skipping')
+    elif '  type: docker' in txt:
+        f.write_text(txt.replace('  type: docker', '  type: docker\n  delete: false'))
+        print('Patched default.yaml: environment delete set to false')
+    else:
+        print('default.yaml: docker type not found, skipping')
+else:
+    print('default.yaml: file not found, skipping')
