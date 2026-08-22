@@ -1,4 +1,4 @@
-# Design: Large Instance Experiments (p5e / p5en / b6i)
+# Design: Large Instance Experiments — 4B and 9B
 
 ## Motivation
 
@@ -15,44 +15,55 @@ On H100 80GB in colocated mode, we were forced into settings too constrained for
 
 These constraints caused model collapse in the 20260723 run. Larger instances remove these constraints.
 
-## Target Instances
+---
 
-| Instance | GPU | GPU Memory |
-|----------|-----|-----------|
-| p5e.48xlarge | 8× H100e 80GB | 640 GB total |
-| p5en.48xlarge | 8× H200 141GB | 1128 GB total |
-| b6i.48xlarge | 8× B200 192GB | 1536 GB total |
+## Instance Comparison
 
-**Recommended: p5en.48xlarge** — 141 GB per GPU vs 80 GB on current p5. This allows paper-equivalent settings without OOM.
+| Instance | GPU | Memory/GPU | Total Memory | Use case |
+|----------|-----|-----------|--------------|----------|
+| p5.48xlarge | 8× H100 80GB | 80 GB | 640 GB | Current — too constrained for stable GRPO |
+| p5en.48xlarge | 8× H200 141GB | 141 GB | 1128 GB | **4B training — recommended** |
+| b300*.48xlarge | 8× B300 288GB | 288 GB | 2304 GB | **9B training — recommended** |
+
+> **Note on p5e**: specs are inconsistent between this doc and experiment logs — 20260808 ran on `p5e.48xlarge` and observed H200 141GB behavior. Treat p5e and p5en as equivalent until confirmed with AWS.
+
+### Why p5en for 4B
+
+The 4B model has ~8GB of weights. The memory bottleneck is the backward pass log_softmax allocation:
+
+```
+max_seq_len × vocab_size × 4 bytes = 8192 × 151k × 4 ≈ 5 GB per sequence
+```
+
+p5en (141 GB/GPU) handles this comfortably and allows paper-equivalent settings (batch=16, turns=16, generate=2048) without OOM. p5 (80 GB) forces the too-small settings that caused the 20260723 collapse.
+
+### Why b300 for 9B
+
+The 9B model has ~18 GB of weights. At paper-scale settings (batch=32, n_samples=16, turns=16), memory pressure is significant. b300 (288 GB/GPU) removes all memory constraints — every config in the ablation table below is safe, including paper-equivalent Test 4 (512 rollouts/step).
 
 ---
 
-## Model: Qwen3.5-9B
+## Models
 
-Switch from 4B to 9B for two reasons:
-1. **Higher base capability** — 9B model solves more tasks, giving GRPO better reward signal
-2. **Better generalization** — larger models tend to learn more robust terminal skills
+### 4B — Qwen3.5-4B on p5en
 
-The 4B model already achieved 49% eval avg_score as a base model. A 9B model should be significantly higher, but still not so high that all tasks are trivially solved (we need ~30-70% pass rate for GRPO contrast).
+**Base eval avg_score**: 49% on deduped 8192 dataset
+
+The 4B model solves roughly half the deduped tasks at baseline. This gives GRPO healthy reward variance — not too easy, not too hard. No dataset modification needed before running the ablation.
+
+**Model path**: `Qwen/Qwen3.5-4B` (or instruct variant)
+
+### 9B — Qwen3.5-9B on b300
+
+**Base eval avg_score**: 58% on deduped 8192 dataset (20260808 run)
+
+However, avg_pass_at_4 = 95% during training rollouts on the same dataset — the model already solves nearly every task, leaving almost no GRPO gradient (std_reward ≈ 0). On the harder task set, measured pass@8 solvability was 6.2%, which is too sparse — with batch=16, expect only ~1 solvable task per step.
+
+Before running the ablation for 9B, verify reward density on the target dataset:
+- If avg_pass_at_4 > 80%: switch to harder tasks or implement partial rewards (Phase 7)
+- If pass@8 < 20%: filter to only tasks with ≥1 pass in 8 attempts before training
 
 **Model path**: `Qwen/Qwen3.5-9B` (or instruct variant)
-
----
-
-## Proposed Settings on p5en (H200 141GB)
-
-With 141 GB per GPU, we can run close to paper settings:
-
-| Setting | Previous p5 (H100 80GB) | Proposed p5en (H200 141GB) |
-|---------|------------------------|---------------------------|
-| train_batch_size | 4 | 16 |
-| max_turns | 6 | 16 |
-| max_generate_length | 1024 | 2048 |
-| max_seq_len | 4096 | 8192 |
-| gpu_memory_utilization | 0.10 | 0.40 |
-| micro_train_batch_size_per_gpu | 1 | 2 |
-
-batch_size=16 means 64 rollouts per step (16 tasks × 4 samples), giving GRPO enough reward variance to learn stably.
 
 ---
 
@@ -62,50 +73,162 @@ batch_size=16 means 64 rollouts per step (16 tasks × 4 samples), giving GRPO en
 
 **Goal**: Verify the setup is stable before committing to a full run.
 
-- Use a small subset of ~100 tasks from the deduped 8192 dataset
+- Use a small subset of ~100 tasks from the target dataset
 - Run 50 steps with proposed settings
 - Check: no OOM, no collapse, reward stays non-zero, entropy stays healthy
-- Metrics to watch: avg_pass_at_4, std_reward, policy_entropy, grad_norm
+- Metrics to watch: avg_pass@2, std_reward, policy_entropy, grad_norm
 
-If std_reward is consistently near 0 (all tasks pass or all fail), adjust task selection or reduce batch size before proceeding.
+If std_reward is consistently near 0 (all tasks pass or all fail), fix reward density first before proceeding — see the 9B model note above.
 
 ### Phase 2: Full Training (200-300 steps)
 
 **Goal**: Train a model that actually improves beyond baseline.
 
-- Use full deduped 8192 dataset (2781 training tasks, 100 val tasks)
+- Use full dataset (2781 training tasks, 100 val tasks for 4B; TBD for 9B based on task difficulty)
 - Run 200-300 steps with checkpointing every 20 steps
 - Save eval avg_score every 20 steps on 100 held-out tasks
 - Upload checkpoints to S3 after each step, delete old ones to save disk
 
-Success criterion: eval avg_score at step 200 > base model eval avg_score (49% for 4B; target >40% for 9B if base is lower, or clear upward trend if base is already high).
+**Settings** (use the winning config from Phase 3 ablation as the starting point; these are the targets):
 
-### Phase 3: Hyperparameter Tuning
+4B on p5en:
 
-**Goal**: Systematically find the settings that maximize training signal and stability without OOM. Run each config for 20-30 steps and compare reward stability before committing to a full run.
+| Setting | Previous p5 (H100 80GB) | Target p5en |
+|---------|------------------------|-------------|
+| train_batch_size | 4 | 16 |
+| n_samples_per_prompt | 4 | 8 |
+| max_turns | 6 | 16 |
+| max_generate_length | 1024 | 2048 |
+| max_seq_len | 4096 | 8192 |
+| gpu_memory_utilization | 0.10 | 0.40 |
+| micro_train_batch_size_per_gpu | 1 | 2 |
 
-| Parameter | Current p5 | Conservative | Recommended | Aggressive | Notes |
-|-----------|-----------|--------------|-------------|------------|-------|
-| `max_turns` | 6 | 8 | 16 | 24 | Set in both `default.yaml` AND `generator.max_turns` |
-| `train_batch_size` | 4 | 8 | 16 | 32 | Bigger = less chance of all-fail batch |
-| `n_samples_per_prompt` | 4 | 4 | 8 | 16 | More = better within-task GRPO contrast |
-| `max_generate_length` | 1024 | 1024 | 2048 | 4096 | Never use 512 — caused collapse in 20260723 |
-| `max_seq_len` | 4096 | 4096 | 8192 | 16384 | Watch `policy/response_length` in log |
-| `update_epochs_per_batch` | 1 | 1 | 2 | 4 | More = faster learning, higher overfit risk |
-| `kl_coef` | 0.0 | 0.001 | 0.01 | 0.1 | Set to 0 if using DAPO (Phase 5) |
-| `gpu_memory_utilization` | 0.10 | 0.30 | 0.40 | 0.55 | Higher = more KV cache for inference |
-| `micro_train_batch_size_per_gpu` | 1 | 1 | 2 | 4 | Increase only if no OOM |
-| `micro_forward_batch_size_per_gpu` | 1 | 1 | 2 | 4 | Increase only if no OOM |
+9B on b300:
 
-**Recommended starting config for p5en dry run**: use the Recommended column values above. Start conservatively on max_turns and increase after confirming no OOM.
+| Setting | 20260808 p5e baseline | Target b300 |
+|---------|-----------------------|-------------|
+| train_batch_size | 4 | 16 |
+| n_samples_per_prompt | 4 | 8 |
+| max_turns | 6 | 16 |
+| max_generate_length | 1024 | 2048 |
+| max_seq_len | 4096 | 8192 |
+| gpu_memory_utilization | 0.35 | 0.60 |
+| micro_train_batch_size_per_gpu | 1 | 2 |
+
+**Success criteria**:
+- 4B: eval avg_score at step 200 > 49% (base model) with clear upward trend
+- 9B: eval avg_score at step 200 > 58% (base model) with clear upward trend; std_reward > 0.1 throughout
+
+### Phase 3: Hyperparameter Tuning (Ablation)
+
+**Goal**: Identify which settings have the most impact on training stability and reward signal. Run a controlled ablation — one baseline plus three tests, each changing exactly one group of parameters. This isolates cause from effect.
+
+**Duration**: 30 steps per test. Long enough to catch collapse (policy_entropy drop and grad_norm spike are usually visible by step 20-30) and see an early reward trend.
+
+#### Baseline (same for both 4B and 9B)
+
+| Setting | Value |
+|---------|-------|
+| train_batch_size | 8 |
+| n_samples_per_prompt | 4 |
+| max_turns | 8 |
+| max_generate_length | 1024 |
+| max_seq_len | 4096 |
+
+---
+
+#### Test 1 — More tasks per step
+
+Only `train_batch_size` changes. Tests whether more tasks per step gives GRPO enough reward variance.
+
+| Setting | Baseline | Test 1 |
+|---------|----------|--------|
+| train_batch_size | 8 | **16** |
+| n_samples_per_prompt | 4 | 4 |
+| max_turns | 8 | 8 |
+| max_generate_length | 1024 | 1024 |
+| max_seq_len | 4096 | 4096 |
+
+---
+
+#### Test 2 — Longer episodes
+
+Only `max_turns`, `max_generate_length`, and `max_seq_len` change. These three are changed together because increasing turns without increasing per-turn length is not useful.
+
+Tests whether giving the model more turns and more tokens per command helps it finish complex tasks.
+
+| Setting | Baseline | Test 2 |
+|---------|----------|--------|
+| train_batch_size | 8 | 8 |
+| n_samples_per_prompt | 4 | 4 |
+| max_turns | 8 | **16** |
+| max_generate_length | 1024 | **2048** |
+| max_seq_len | 4096 | **8192** |
+
+> Remember: `max_turns` must be set in both `default.yaml` AND `generator.max_turns`. Mismatch causes 20k+ token sequences and OOM.
+
+---
+
+#### Test 3 — More samples per task
+
+Only `n_samples_per_prompt` changes. Tests whether more within-task contrast improves GRPO gradient quality.
+
+| Setting | Baseline | Test 3 |
+|---------|----------|--------|
+| train_batch_size | 8 | 8 |
+| n_samples_per_prompt | 4 | **8** |
+| max_turns | 8 | 8 |
+| max_generate_length | 1024 | 1024 |
+| max_seq_len | 4096 | 4096 |
+
+---
+
+#### Metrics
+
+**Reward signal** — is GRPO getting anything to learn from?
+
+| Metric | Good | Bad |
+|--------|------|-----|
+| std_reward | > 0.1 consistently | Near 0 every step — all-pass or all-fail batches |
+| avg_pass@2 | Trending up from step 1 baseline | Flat or dropping after step 20 |
+| avg_reward | Slowly trending up | Flat throughout |
+
+`std_reward` is the single most important number. If it is near zero every step, the config is useless regardless of everything else. For 9B, also check avg_pass@2 at step 1 — if it is already 0.9+, the dataset is too easy before any training begins.
+
+**Stability** — is training about to collapse?
+
+| Metric | Good | Bad |
+|--------|------|-----|
+| policy_entropy | Stable or slowly declining | Sharp drop — entropy collapse |
+| grad_norm | < 10, stable | Spiking above 50 (20260723 hit 64M at collapse) |
+| policy_loss | Small, stable | Exploding (20260723 hit 2471 at step 186) |
+
+**Generation quality** — is the model getting to use its turns?
+
+| Metric | Good | Bad |
+|--------|------|-----|
+| response_length | Well below max_generate_length | Hitting the ceiling every step — model being cut off |
+| sequence_length | Well below max_seq_len | Consistently at max — sequences being truncated |
+
+> **Note**: Value Loss and Explained Variance are PPO/critic metrics. They do not appear in GRPO runs — ignore them.
+
+#### Decision Rule
+
+At step 30 for each test:
+1. If `std_reward` is near 0 throughout → stop early, this config provides no GRPO signal
+2. If `policy_entropy` is dropping sharply or `grad_norm` spikes → stop early, collapse in progress
+3. If both look healthy → compare `avg_pass@2` trend; take the config with the clearest upward trend into Phase 2
+
+If one test looks promising but inconclusive at step 30, extend that test to 50 steps. Do not extend all tests.
 
 ---
 
 ## Key Risks
 
-1. **Base model pass rate too high** — if 9B solves >80% of tasks, GRPO has no contrast. Mitigate by filtering to harder tasks (Experiment E from EXPERIMENTS.md).
-2. **Test leakage** — model reads `/tests/test_final_state.py` to game verifier. Check trial logs before full run (Experiment D from EXPERIMENTS.md).
-3. **Disk space** — each 9B checkpoint is ~40GB. Use `max_ckpts_to_keep=1` and S3 uploader.
+1. **9B near-ceiling on deduped dataset** — avg_pass_at_4 = 95% means std_reward ≈ 0, no GRPO signal. Mitigate: filter to harder tasks or implement partial rewards (Phase 7) before training.
+2. **9B sparse reward on harder tasks** — measured pass@8 = 6.2% on the harder task set. With batch=16, expect only ~1 solvable task/step. Mitigate: filter training set to tasks with ≥1 pass in 8 attempts.
+3. **Test leakage** — model reads `/tests/test_final_state.py` to game verifier. Check trial logs before full run (Experiment D from EXPERIMENTS.md).
+4. **Disk space** — each 9B checkpoint is ~40 GB, 4B is ~8 GB. Use `max_ckpts_to_keep=1` and S3 uploader.
 
 ---
 
@@ -208,7 +331,9 @@ For example, a task with 5 assertions: passing 3/5 → reward=0.6. This is almos
 ## Prerequisites
 
 Before starting Phase 1:
-- [ ] Confirm 9B model base eval avg_score on deduped 8192 tasks (5-step baseline)
+- [x] Confirm 9B model base eval avg_score on deduped 8192 tasks — done (58%, 20260808)
+- [ ] Verify reward density on target dataset for 9B (check avg_pass_at_4 at step 1)
 - [ ] Check trial logs for test leakage (cat /tests/ commands)
-- [ ] Book p5en capacity block
-- [ ] Verify install_sky.sh works on p5en AMI
+- [ ] Book p5en capacity block (4B)
+- [ ] Book b300 capacity block (9B)
+- [ ] Verify install_sky.sh works on p5en and b300 AMIs
