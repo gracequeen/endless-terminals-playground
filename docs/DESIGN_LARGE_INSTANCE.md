@@ -69,16 +69,134 @@ Before running the ablation for 9B, verify reward density on the target dataset:
 
 ## Experiment Plan
 
-### Phase 1: Dry Run (~50 steps, ~100 tasks)
+### Phase 1: Dry Run (20 steps)
 
-**Goal**: Verify the setup is stable before committing to a full run.
+**Goal**: Verify the setup is stable and reward signal is non-zero before committing to a full run.
 
-- Use a small subset of ~100 tasks from the target dataset
-- Run 50 steps with proposed settings
-- Check: no OOM, no collapse, reward stays non-zero, entropy stays healthy
-- Metrics to watch: avg_pass@2, std_reward, policy_entropy, grad_norm
+**Model**: Qwen3.5-9B on p5en (H200 141GB)
 
-If std_reward is consistently near 0 (all tasks pass or all fail), fix reward density first before proceeding — see the 9B model note above.
+**Dataset**: Combined Original 457 + Deduped 8192 tasks
+- Train: 3,238 tasks (457 + 2,781)
+- Val: 151 tasks (51 + 100)
+- S3: `s3://endless-terminals-training/prepared_data/train_combined_457_8192.parquet`
+- Task dirs: `harbor_tasks_457/` + `harbor_tasks_8192_deduped/` on instance
+
+**Config** (p5e baseline — conservative, known safe):
+
+| Setting | Value |
+|---------|-------|
+| train_batch_size | 4 |
+| n_samples_per_prompt | 4 |
+| max_turns | 6 |
+| max_generate_length | 1024 |
+| max_seq_len | 4096 |
+| gpu_memory_utilization | 0.35 |
+| micro_train_batch_size_per_gpu | 1 |
+| update_epochs_per_batch | 1 |
+
+> **Critical**: `max_turns=6` must be set in both `generator.max_turns` (train script) AND `default.yaml → agent.kwargs.max_turns`. The dry run script sets both automatically.
+
+**Run**:
+```bash
+bash scripts/prepare_combined_data.sh                        # step 1: download + combine datasets
+bash scripts/train/train_harbor_qwen3_5_9b_dryrun.sh        # step 2: 20-step dry run
+```
+
+**Checkpointing**: every 5 steps, eval every 10 steps on 50 held-out tasks
+
+**Metrics collected** (automatically via `scripts/collect_metrics.py`, uploaded to S3 every 30s):
+
+Reward signal:
+
+| Metric | Good | Bad |
+|--------|------|-----|
+| std_reward | > 0.1 consistently | Near 0 — all-pass or all-fail batches, no GRPO gradient |
+| avg_pass@2 | Trending up from step 1 | Flat or dropping after step 10 |
+| avg_reward | Slowly trending up | Flat throughout |
+
+Stability:
+
+| Metric | Good | Bad |
+|--------|------|-----|
+| policy_entropy | Stable or slowly declining | Sharp drop — entropy collapse |
+| grad_norm | < 10, stable | Spiking above 50 (20260723 hit 64M at collapse) |
+| policy_loss | Small, stable | Exploding (20260723 hit 2471 at step 186) |
+
+Generation quality:
+
+| Metric | Good | Bad |
+|--------|------|-----|
+| response_length | Well below 1024 | Hitting ceiling every step — model being cut off |
+| sequence_length | Well below 4096 | Consistently at max |
+
+**Per-task eval results**: saved per checkpoint as `eval_metrics.json` with individual pass/fail per task, enabling analysis of which task categories and difficulty levels the model solves. Output files: `training_metrics.json`, `eval_metrics.json`, `metrics_summary.json`.
+
+**S3 output**: `s3://endless-terminals-training/<date>_combined-data_dryrun_grpo_qwen3.5-9b_20steps/`
+
+**Decision rule**:
+- If `std_reward ≈ 0` throughout → reward too sparse; filter to Opus-solvable tasks or implement partial rewards (Phase 7) before proceeding
+- If `policy_entropy` drops sharply → collapse; check `default.yaml max_turns` matches `generator.max_turns`
+- If both look healthy → proceed to Phase 3 ablation
+
+**Result (2026-08-25, run `20260825_combined-data_dryrun_grpo_qwen3.5-9b_20steps` on p5en)**:
+
+**S3**: `s3://endless-terminals-training/20260825_combined-data_dryrun_grpo_qwen3.5-9b_20steps/`
+
+**Script**: `scripts/train/train_harbor_qwen3_5_9b_dryrun.sh`
+
+- First run used `n_samples_per_prompt=4` — step 1 batch happened to draw all easy tasks → avg_pass_at_2=1.0, std_reward≈0. This was a bad batch, not a dataset problem.
+- Fixed to `n_samples_per_prompt=2` (matching eval metric avg_pass_at_2). Re-ran same dataset.
+
+**Training metrics (steps 1–20):**
+
+| Metric | Value |
+|--------|-------|
+| std_reward (avg) | 0.37 |
+| std_reward (range) | 0.33–0.50 (0.0 on 3/20 steps — all-pass batches, expected at batch_size=4) |
+| avg_pass_at_2 (avg) | 0.74 |
+| avg_pass_at_2 (range) | 0.25–1.0 (noisy — only 4 tasks/batch) |
+| avg_response_length | ~530 tokens/turn (well below 1024 cap) |
+
+**Eval metrics (step 20, 151 val tasks):**
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| avg_score(pass@1) | **43.7%** | 1 attempt, solved within 6 turns |
+| avg_score(pass@2) | N/A | Not measured — eval_n_samples_per_prompt=1 in this run |
+
+> Note: SkyRL always runs eval on the final step regardless of `eval_interval` (hardcoded `or self.global_step == self.total_training_steps`). `eval_batch_size` is the dataloader batch size, not the number of eval tasks — all val tasks are always evaluated.
+> For next run: set `trainer.eval_n_samples_per_prompt=2` so eval runs 2 independent attempts per task — making `avg_score(pass_any)` directly comparable to training's `avg_pass_at_2` (both measure "solved in at least 1 of 2 attempts"). Current eval used 1 attempt, making comparison invalid.
+
+- **Decision**: combined 457+8192 dataset is suitable for 9B training on p5en. Proceed to next dry run with higher settings.
+
+**Next dry run config (p5en, before moving to b300):**
+
+| Setting | Current dry run | Next dry run |
+|---------|----------------|--------------|
+| train_batch_size | 4 | 8 |
+| n_samples_per_prompt | 2 | 2 |
+| max_turns | 6 | 8 |
+| max_generate_length | 1024 | 1024 |
+| max_seq_len | 4096 | 8192 |
+| gpu_memory_utilization | 0.35 | 0.45 |
+| micro_train_batch_size_per_gpu | 1 | 1 |
+
+**S3**: `s3://endless-terminals-training/<date>_combined-data_dryrun2_grpo_qwen3.5-9b_20steps/`
+
+**Script**: `scripts/train/train_harbor_qwen3_5_9b_dryrun2.sh`
+
+**Result (2026-08-25, dryrun2, in progress):**
+
+**Training metrics (steps 1–16, updating):**
+
+| Metric | Value |
+|--------|-------|
+| std_reward (avg) | 0.42 |
+| std_reward (range) | 0.24–0.50 (no zero-std steps — larger batch_size=8 helping) |
+| avg_pass_at_2 (avg) | 0.82 |
+| avg_pass_at_2 (range) | 0.625–1.0 |
+
+> **Note on max_seq_len vs max_turns**: for target b300 settings with max_turns=16 and max_generate_length=2048, max_seq_len must be raised to 16384–32768 to avoid truncating long trajectories. The 8192 limit in the next dry run is safe with max_turns=8.
 
 ### Phase 2: Full Training (200-300 steps)
 
@@ -118,6 +236,12 @@ If std_reward is consistently near 0 (all tasks pass or all fail), fix reward de
 **Success criteria**:
 - 4B: eval avg_score at step 200 > 49% (base model) with clear upward trend
 - 9B: eval avg_score at step 200 > 58% (base model) with clear upward trend; std_reward > 0.1 throughout
+
+**Eval tracking**:
+- Save per-task pass/fail results at every checkpoint, not just avg_score — this lets you analyze which categories or difficulty levels the model learns vs stays stuck on
+- 100-200 eval tasks is fine; saving all results every checkpoint is cheap (10 checkpoints × 200 tasks = 2000 rows total)
+- At the end, check: is the model only improving on easy tasks? Are certain task categories solved well while others are not? This breakdown is needed for paper analysis
+- Extract checkpoints at steps ~100 and ~150 for terminal-bench eval to measure impact on external benchmarks
 
 ### Phase 3: Hyperparameter Tuning (Ablation)
 

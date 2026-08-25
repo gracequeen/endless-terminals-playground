@@ -69,6 +69,18 @@ tmux attach -t training
 bash scripts/prepare_data_s3.sh
 ```
 
+### S3 Dataset Paths
+
+**Original 457 tasks:**
+- Tasks: `s3://endless-terminals-training/data/harbor_4.5opus_tasks/harbor_tasks_claude4.5_opus/harbor_tasks_part2_2-{1..4}/`
+- Train parquet: `s3://endless-terminals-training/prepared_data/train_4.5opus-task_4.6sonnet-sol.parquet`
+- Val parquet: `s3://endless-terminals-training/prepared_data/validation_4.5opus-task_4.6sonnet-sol.parquet`
+
+**Deduped 8192 tasks:**
+- Tasks: `s3://endless-terminals-training/data/harbor_tasks_8192_deduped/`
+- Train parquet: `s3://endless-terminals-training/prepared_data/train_8192_deduped_4929tasks.parquet`
+- Val parquet: `s3://endless-terminals-training/prepared_data/validation_8192_deduped_4929tasks.parquet`
+
 ### Key multi-node config (train_harbor_qwen3_5_4b_g5_2node.sh)
 - `trainer.placement.colocate_all=false` — required for multi-node (colocate uses CUDA IPC which doesn't work across nodes)
 - `generator.inference_engine.weight_sync_backend=broadcast` — uses NCCL broadcast instead of CUDA IPC
