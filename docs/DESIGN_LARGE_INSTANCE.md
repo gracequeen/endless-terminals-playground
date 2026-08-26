@@ -1,6 +1,6 @@
 # Design: Large Instance Experiments — 4B and 9B
 
-## Motivation
+## 1. Motivation
 
 All previous training runs used p5.48xlarge (8× H100 80GB). The OOM root cause is:
 
@@ -17,7 +17,7 @@ These constraints caused model collapse in the 20260723 run. Larger instances re
 
 ---
 
-## Instance Comparison
+## 2. Instance Comparison
 
 | Instance | GPU | Memory/GPU | Total Memory | Use case |
 |----------|-----|-----------|--------------|----------|
@@ -27,7 +27,7 @@ These constraints caused model collapse in the 20260723 run. Larger instances re
 
 > **Note on p5e**: specs are inconsistent between this doc and experiment logs — 20260808 ran on `p5e.48xlarge` and observed H200 141GB behavior. Treat p5e and p5en as equivalent until confirmed with AWS.
 
-### Why p5en for 4B
+### 2.1. Why p5en for 4B
 
 The 4B model has ~8GB of weights. The memory bottleneck is the backward pass log_softmax allocation:
 
@@ -37,15 +37,15 @@ max_seq_len × vocab_size × 4 bytes = 8192 × 151k × 4 ≈ 5 GB per sequence
 
 p5en (141 GB/GPU) handles this comfortably and allows paper-equivalent settings (batch=16, turns=16, generate=2048) without OOM. p5 (80 GB) forces the too-small settings that caused the 20260723 collapse.
 
-### Why b300 for 9B
+### 2.2. Why b300 for 9B
 
 The 9B model has ~18 GB of weights. At paper-scale settings (batch=32, n_samples=16, turns=16), memory pressure is significant. b300 (288 GB/GPU) removes all memory constraints — every config in the ablation table below is safe, including paper-equivalent Test 4 (512 rollouts/step).
 
 ---
 
-## Models
+## 3. Models
 
-### 4B — Qwen3.5-4B on p5en
+### 3.1. 4B — Qwen3.5-4B on p5en
 
 **Base eval avg_score**: 49% on deduped 8192 dataset
 
@@ -53,7 +53,7 @@ The 4B model solves roughly half the deduped tasks at baseline. This gives GRPO 
 
 **Model path**: `Qwen/Qwen3.5-4B` (or instruct variant)
 
-### 9B — Qwen3.5-9B on b300
+### 3.2. 9B — Qwen3.5-9B on b300
 
 **Base eval avg_score**: 58% on deduped 8192 dataset (20260808 run)
 
@@ -67,7 +67,7 @@ Before running the ablation for 9B, verify reward density on the target dataset:
 
 ---
 
-## Datasets
+## 4. Datasets
 
 | Dataset | S3 Path (tasks) | Prepared Parquet | Solvable | Notes |
 |---------|----------------|-----------------|----------|-------|
@@ -85,7 +85,7 @@ Before running the ablation for 9B, verify reward density on the target dataset:
 
 
 
-### Phase 1: Dry Run (20 steps)
+## 5. Phase 1: Dry Run (20 steps)
 
 **Goal**: Verify the setup is stable and reward signal is non-zero before committing to a full run.
 
@@ -93,7 +93,7 @@ Before running the ablation for 9B, verify reward density on the target dataset:
 
 ---
 
-#### dryrun1:
+### 5.1. dryrun1:
 **Dataset**: Combined Original 457 + Deduped 8192 tasks
 - Train: 3,238 tasks (457 + 2,781)
 - Val: 151 tasks (51 + 100)
@@ -191,7 +191,7 @@ Generation quality:
 
 ---
 
-#### Next dry run — dryrun2:
+### 5.2. Next dry run — dryrun2:
 **Next dry run config (p5en, before moving to b300):**
 
 | Setting | Current dry run | Next dry run |
@@ -238,7 +238,7 @@ Generation quality:
 
 ---
 
-#### Next dry run — dryrun2B (Docker fix validation):
+### 5.3. Next dry run — dryrun2B (Docker fix validation):
 
 Same as dryrun2, with two changes to fix the Docker overload during eval:
 1. `eval_batch_size`: 50 → **20** (caps concurrent containers at 20×2=40)
@@ -303,7 +303,7 @@ During training this doesn't happen because Harbor always calls `docker compose 
 
 ---
 
-#### Next dry run — dryrun2C:
+### 5.4. Next dry run — dryrun2C:
 
 Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup loop to prevent IPv4 pool exhaustion.
 
@@ -344,7 +344,7 @@ Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup 
 
 ---
 
-#### Next dry run — dryrun2D (eval concurrency validation):
+### 5.5. Next dry run — dryrun2D (eval concurrency validation):
 
 | Setting | Dryrun2C | Dryrun2D |
 |---------|---------|---------|
@@ -374,7 +374,7 @@ Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup 
 
 
 ---
-#### Next dry run — dryrun3:
+### 5.6. Next dry run — dryrun3:
 
 | Setting | Dryrun2 | Dryrun3 |
 |---------|---------|---------|
@@ -449,7 +449,7 @@ Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup 
 
 ---
 
-#### Next dry run — dryrun3B:
+### 5.7. Next dry run — dryrun3B:
 
 | Setting | Dryrun3 | Dryrun3B |
 |---------|---------|---------|
@@ -505,7 +505,7 @@ Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup 
 
 ---
 
-#### Next dry run — dryrun3C:
+### 5.8. Next dry run — dryrun3C:
 
 | Setting | Dryrun3B | Dryrun3C |
 |---------|---------|---------|
@@ -530,7 +530,7 @@ Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup 
 
 ---
 
-### Phase 2: Full Training (200-300 steps)
+## 6. Phase 2: Full Training (200-300 steps)
 
 **Goal**: Train a model that actually improves beyond baseline.
 
@@ -575,13 +575,13 @@ Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup 
 - At the end, check: is the model only improving on easy tasks? Are certain task categories solved well while others are not? This breakdown is needed for paper analysis
 - Extract checkpoints at steps ~100 and ~150 for terminal-bench eval to measure impact on external benchmarks
 
-### Phase 3: Hyperparameter Tuning (Ablation)
+## 7. Phase 3: Hyperparameter Tuning (Ablation)
 
 **Goal**: Identify which settings have the most impact on training stability and reward signal. Run a controlled ablation — one baseline plus three tests, each changing exactly one group of parameters. This isolates cause from effect.
 
 **Duration**: 30 steps per test. Long enough to catch collapse (policy_entropy drop and grad_norm spike are usually visible by step 20-30) and see an early reward trend.
 
-#### Baseline (same for both 4B and 9B)
+### 7.1. Baseline (same for both 4B and 9B)
 
 | Setting | Value |
 |---------|-------|
@@ -593,7 +593,7 @@ Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup 
 
 ---
 
-#### Test 1 — More tasks per step
+### 7.2. Test 1 — More tasks per step
 
 Only `train_batch_size` changes. Tests whether more tasks per step gives GRPO enough reward variance.
 
@@ -607,7 +607,7 @@ Only `train_batch_size` changes. Tests whether more tasks per step gives GRPO en
 
 ---
 
-#### Test 2 — Longer episodes
+### 7.3. Test 2 — Longer episodes
 
 Only `max_turns`, `max_generate_length`, and `max_seq_len` change. These three are changed together because increasing turns without increasing per-turn length is not useful.
 
@@ -625,7 +625,7 @@ Tests whether giving the model more turns and more tokens per command helps it f
 
 ---
 
-#### Test 3 — More samples per task
+### 7.4. Test 3 — More samples per task
 
 Only `n_samples_per_prompt` changes. Tests whether more within-task contrast improves GRPO gradient quality.
 
@@ -639,7 +639,7 @@ Only `n_samples_per_prompt` changes. Tests whether more within-task contrast imp
 
 ---
 
-#### Metrics
+### 7.5. Metrics
 
 **Reward signal** — is GRPO getting anything to learn from?
 
@@ -668,7 +668,7 @@ Only `n_samples_per_prompt` changes. Tests whether more within-task contrast imp
 
 > **Note**: Value Loss and Explained Variance are PPO/critic metrics. They do not appear in GRPO runs — ignore them.
 
-#### Decision Rule
+### 7.6. Decision Rule
 
 At step 30 for each test:
 1. If `std_reward` is near 0 throughout → stop early, this config provides no GRPO signal
@@ -679,7 +679,7 @@ If one test looks promising but inconclusive at step 30, extend that test to 50 
 
 ---
 
-## Key Risks
+## 8. Key Risks
 
 1. **9B near-ceiling on deduped dataset** — avg_pass_at_4 = 95% means std_reward ≈ 0, no GRPO signal. Mitigate: filter to harder tasks or implement partial rewards (Phase 7) before training.
 2. **9B sparse reward on harder tasks** — measured pass@8 = 6.2% on the harder task set. With batch=16, expect only ~1 solvable task/step. Mitigate: filter training set to tasks with ≥1 pass in 8 attempts.
@@ -688,7 +688,7 @@ If one test looks promising but inconclusive at step 30, extend that test to 50 
 
 ---
 
-## Phase 4: GRPO vs DPPO Comparison
+## 9. Phase 4: GRPO vs DPPO Comparison
 
 **Motivation**: GRPO's core weakness is zero gradient when all samples in a batch pass or all fail — exactly the collapse pattern we saw in 20260723. DPPO (Distributed PPO) has a critic (value network) that estimates future returns and provides a training signal even when reward is sparse or all-zero.
 
@@ -712,7 +712,7 @@ Note: DPPO requires Direct Docker approach (`train/sky_endless.py`), not Harbor 
 
 ---
 
-## Phase 5: DAPO instead of Vanilla GRPO
+## 10. Phase 5: DAPO instead of Vanilla GRPO
 
 **Paper**: "DAPO: An Open-Source LLM Reinforcement Learning System at Scale" (Yu et al., 2025, arXiv:2503.14476, NeurIPS 2025)
 
@@ -730,7 +730,7 @@ Note: DPPO requires Direct Docker approach (`train/sky_endless.py`), not Harbor 
 
 ---
 
-## Phase 6: Curriculum Learning (Easy → Hard)
+## 11. Phase 6: Curriculum Learning (Easy → Hard)
 
 **Papers**:
 - "DUMP: Automated Distribution-Level Curriculum Learning for RL-based LLM Post-training" (Wang et al., 2025, arXiv:2504.09710)
@@ -762,7 +762,7 @@ This data is already in the parquet files — `extra_info` column has per-task s
 
 ---
 
-## Phase 7: Turn-Level Credit Assignment (Partial Rewards)
+## 12. Phase 7: Turn-Level Credit Assignment (Partial Rewards)
 
 **Papers**:
 - "Reinforcing Multi-Turn Reasoning in LLM Agents via Turn-Level Reward Design" (Wei et al., 2025, arXiv:2505.11821)
@@ -784,7 +784,7 @@ For example, a task with 5 assertions: passing 3/5 → reward=0.6. This is almos
 
 ---
 
-## Prerequisites
+## 13. Prerequisites
 
 Before starting Phase 1:
 - [x] Confirm 9B model base eval avg_score on deduped 8192 tasks — done (58%, 20260808)
