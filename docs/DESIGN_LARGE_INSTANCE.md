@@ -67,7 +67,23 @@ Before running the ablation for 9B, verify reward density on the target dataset:
 
 ---
 
-## Experiment Plan
+## Datasets
+
+| Dataset | S3 Path (tasks) | Prepared Parquet | Solvable | Notes |
+|---------|----------------|-----------------|----------|-------|
+| v1 | `data/harbor_4.5opus_tasks/` | — | 457 | Claude 4.5 Opus tasks |
+| v2 | `data/harbor_tasks_8192_deduped/` | — | 2,881 | Claude 4.6 Opus tasks, deduped |
+| v3 (hard) | `data/harbor_4.8opus_tasks_v3_internet_access_config/` | — | 3,657 | Claude 4.8 Opus, internet access tasks |
+| v3 easy (4B) | `data/harbor_4.8opus_tasks_v3_easy_shards_for_eval/harbor_tasks_easy_4b_shard{0,1}/` | — | 1,607 | Tasks easy for 4B model |
+| v3 easy (9B) | `data/harbor_4.8opus_tasks_v3_easy_shards_for_eval/harbor_tasks_easy_9b_shard{0,1,2}/` | — | 1,607 | Tasks easy for 9B model |
+| **v1+v2 combined** | | `prepared_data/train_combined_457_8192.parquet` / `val_combined_457_8192.parquet` | **3,338** | Used in dryrun1–2D |
+| **v1+v2+v3easy9B combined** | | `prepared_data/train_combined_v1v2v3easy9b.parquet` / `val_combined_v1v2v3easy9b.parquet` | **~4,784 train / ~312 val** | Used in dryrun3 |
+
+> "Easy for 4B" = tasks the 4B model can solve; "easy for 9B" = tasks the 9B model can solve (harder than 4B easy). Both are held-out eval sets, not training data.
+
+---
+
+
 
 ### Phase 1: Dry Run (20 steps)
 
@@ -185,18 +201,284 @@ Generation quality:
 
 **Script**: `scripts/train/train_harbor_qwen3_5_9b_dryrun2.sh`
 
-**Result (2026-08-25, dryrun2, in progress):**
+**Result (2026-08-25, run `20260825_combined-data_dryrun2_grpo_qwen3.5-9b_20steps` on p5en):**
 
-**Training metrics (steps 1–16, updating):**
+**S3**: `s3://endless-terminals-training/20260825_combined-data_dryrun2_grpo_qwen3.5-9b_20steps/`
+
+**Script**: `scripts/train/train_harbor_qwen3_5_9b_dryrun2.sh`
+
+**Training metrics (steps 1–20):**
+
+| Metric | Value |
+|--------|-------|
+| std_reward (avg) | 0.41 |
+| std_reward (range) | 0.24–0.50 (no zero-std steps — larger batch_size=8 eliminated the 3/20 zero-std steps from dryrun1) |
+| avg_pass_at_2 (avg) | 0.83 |
+| avg_pass_at_2 (range) | 0.625–1.0 |
+
+**Eval metrics (step 20, 151 val tasks, 2 attempts per task):**
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| avg_score(pass@2) | **2.65%** | 2 attempts × 8 turns each — at least 1 attempt solved the task |
+
+> **Note**: pass@2 = 2.65% is not a model regression. 146/151 tasks have `stop_reason: error` with no actual model output — Docker containers crashed before the model was called. Root cause: `eval_n_samples_per_prompt=2` doubled Docker concurrency to `eval_batch_size × 2 = 50 × 2 = 100` simultaneous containers, overwhelming the Docker daemon. Fix for next run: use `eval_n_samples_per_prompt=1` (clean pass@1, comparable to dryrun1's 43.7%) or reduce `eval_batch_size` to ≤20 to cap concurrent containers at 40.
+
+> **Note on max_seq_len vs max_turns**: for target b300 settings with max_turns=16 and max_generate_length=2048, max_seq_len must be raised to 16384–32768 to avoid truncating long trajectories. The 8192 limit in the next dry run is safe with max_turns=8.
+
+> **Note on max_seq_len vs max_turns**: for target b300 settings with max_turns=16 and max_generate_length=2048, max_seq_len must be raised to 16384–32768 to avoid truncating long trajectories. The 8192 limit in the next dry run is safe with max_turns=8.
+
+**Next dry run — dryrun2B (Docker fix validation):**
+
+Same as dryrun2, with two changes to fix the Docker overload during eval:
+1. `eval_batch_size`: 50 → **20** (caps concurrent containers at 20×2=40)
+2. Docker cleanup loop running every minute during training+eval (kills dead/zombie containers)
+3. `eval_n_samples_per_prompt`: keep at **2** (now safe with smaller batch + cleanup)
+
+| Setting | Dryrun2 | Dryrun2B |
+|---------|---------|---------|
+| eval_batch_size | 50 | **20** |
+| eval_n_samples_per_prompt | 2 (broken) | **2** (fixed) |
+| Docker cleanup loop | not running | **running (every 1 min)** |
+| Everything else | — | same |
+
+**S3**: `s3://endless-terminals-training/20260825_combined-data_dryrun2b_grpo_qwen3.5-9b_10steps/`
+
+**Script**: `scripts/train/train_harbor_qwen3_5_9b_dryrun2b.sh`
+
+**Expected**: pass@2 eval metric should recover to ~43%+ (comparable to dryrun1 pass@1), confirming the fix works before proceeding to dryrun3.
+
+**Result (2026-08-25, run `20260825_combined-data_dryrun2b_grpo_qwen3.5-9b_10steps` on p5en):**
+
+**Training metrics (steps 1–10):**
+
+| Metric | Value |
+|--------|-------|
+| std_reward (avg) | 0.45 |
+| std_reward (range) | 0.39–0.50 (0 zero-std steps) |
+| avg_pass_at_2 (avg) | 0.73 |
+| avg_pass_at_2 (range) | 0.375–0.875 |
+| policy_entropy | 0.145–0.188 (stable, no sharp drop) |
+| grad_norm | 0.018–1.98 (healthy, no spikes) |
+| response_length | 1021–11988 (step 5 spike at 11988; otherwise normal) |
+
+No flags raised on any step.
+
+**Eval metrics (step 10, 151 val tasks, 2 attempts per task):**
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| pass@2 | **5.3%** (8/151) | At least 1 of 2 attempts solved the task (`pass_any` in collect_metrics.py) |
+
+**Key anomaly**: 143/151 tasks show exactly 2 scores `[0.0, 0.0]` — the agent terminated after exactly 1 turn in each of the 2 attempts. Only 8 tasks ran full multi-turn trajectories (8–16 scores). This is a large regression from dryrun1's 43.7% base model eval.
+
+**Possible causes**:
+1. Docker containers still terminating after 1 turn — `eval_batch_size=20` reduced concurrency from 100→40 but may not have been sufficient, or a different failure mode (disk pressure, OOM) is killing containers after the first command.
+2. Model regression from 10 training steps — unlikely given stable training metrics, but cannot rule out.
+
+> Note: `collect_metrics.py`'s `avg_score_pass_at_2` checks whether the first 2 turn-level scores include a pass — not whether 2 independent attempts solved the task. With step-wise trajectories, this is a very early-turn metric, not the same as pass@2-attempts.
+
+**Root cause identified**: Docker network pool exhaustion. Each Docker Compose project creates a new IPv4 subnet. Docker has ~30 default subnets. When eval containers fail mid-setup, Harbor exits the error path without calling `docker compose down` — leaving the network as a zombie. Zombie networks pile up across eval batches until the pool is full, causing all subsequent containers to fail immediately.
+
+Error found in `train_debug.log`:
+```
+failed to create network task_004227_c47b1e7d__2hgsypp__env_default: Error response from daemon: 
+could not find an available, non-overlapping IPv4 address pool among the defaults to assign to the network
+```
+
+During training this doesn't happen because Harbor always calls `docker compose down` on trial completion, cleaning up networks automatically. During eval failures, cleanup is skipped.
+
+**Fix**: add `docker network prune -f` to the cleanup loop. This sweeps zombie networks before the pool exhausts.
+
+**Next dry run — dryrun2C:**
+
+Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup loop to prevent IPv4 pool exhaustion.
+
+| Setting | Dryrun2B | Dryrun2C |
+|---------|---------|---------|
+| docker network prune | ✗ | **✓ (every 1 min)** |
+| Everything else | — | same |
+
+**S3**: `s3://endless-terminals-training/20260826_combined-data_dryrun2c_grpo_qwen3.5-9b_10steps/`
+
+**Script**: `scripts/train/train_harbor_qwen3_5_9b_dryrun2c.sh`
+
+**Expected**: eval containers should no longer fail with network exhaustion → pass@2 recovers to ~65%+ (the true solve rate on good tasks).
+
+**Result (2026-08-26, run `20260826_combined-data_dryrun2c_grpo_qwen3.5-9b_10steps` on p5en):**
+
+**Training metrics (steps 1–10):**
 
 | Metric | Value |
 |--------|-------|
 | std_reward (avg) | 0.42 |
-| std_reward (range) | 0.24–0.50 (no zero-std steps — larger batch_size=8 helping) |
-| avg_pass_at_2 (avg) | 0.82 |
-| avg_pass_at_2 (range) | 0.625–1.0 |
+| std_reward (range) | 0.24–0.50 (no zero-std steps) |
+| avg_pass_at_2 (avg) | 0.78 |
+| avg_pass_at_2 (range) | 0.50–1.0 |
 
-> **Note on max_seq_len vs max_turns**: for target b300 settings with max_turns=16 and max_generate_length=2048, max_seq_len must be raised to 16384–32768 to avoid truncating long trajectories. The 8192 limit in the next dry run is safe with max_turns=8.
+**Eval metrics (step 10, 151 val tasks, 2 attempts per task):**
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| avg_score(pass@2) | **4.6%** | 144/152 tasks still erroring |
+
+> **Note**: Network prune fixed the IPv4 pool exhaustion (dryrun2b's error). New failure mode revealed: `Environment start timed out after 600 seconds` (112 occurrences) + `Docker compose command failed` (remaining IPv4 cases). Root cause: 40 simultaneous Docker builds during eval → CPU contention → builds queue up → 10-min timeout. Network fix removed the fast failure but uncovered the build contention.
+>
+> **Root cause (concurrency)**: Training runs 8 tasks × 2 samples = 16 concurrent containers and handles it via Harbor's retry (attempt 1/2 → attempt 2/2). Eval at 20×2=40 concurrent is 2.5× training. At that level, both retry attempts time out simultaneously — the system never reduces load between attempts. Reducing `eval_batch_size` to 8 (→ 16 concurrent, same as training) lets retries succeed.
+>
+> **Validation (dryrun2D)**: Before dryrun3, run 1-step validation with `eval_before_train=true`, `eval_batch_size=8`, `eval_n_samples_per_prompt=2` to confirm zero Docker errors at this concurrency.
+
+**Next dry run — dryrun2D (eval concurrency validation):**
+
+| Setting | Dryrun2C | Dryrun2D |
+|---------|---------|---------|
+| eval_batch_size | 20 | **8** (→ 16 concurrent containers) |
+| eval_before_train | false | **true** (run eval immediately to validate) |
+| TRAIN_STEPS | 10 | **1** (minimal — just enough to get an eval result) |
+| eval_n_samples_per_prompt | 2 | **2** (keeping pass@2) |
+| Everything else | — | same |
+
+**S3**: `s3://endless-terminals-training/<date>_combined-data_dryrun2d_grpo_qwen3.5-9b_1steps/`
+
+**Script**: `scripts/train/train_harbor_qwen3_5_9b_dryrun2d.sh`
+
+**Expected**: zero `stop_reason: error` in eval; pass@2 recovers to ~65%+ (actual result: 76.8%).
+
+**Result (2026-08-26, running):** In progress — 0 errors through 11/19 eval batches so far (batch_size=8 confirmed working).
+
+**Result (2026-08-26, eval_before_train completed):**
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| pass@2 (base model, step 0) | **76.8%** (116/151) | At least 1 of 2 attempts solved the task |
+| Docker errors | **1/151** | 1 intrinsically broken task — not a Docker overload issue |
+| Failed (ran, score=0) | 34/151 | Model attempted but didn't solve |
+
+> Confirmed: `eval_batch_size=8` (→ 16 concurrent containers) is the fix. Compared to dryrun1 pass@1=43.7% — expected since pass@2 > pass@1 (two attempts vs one). Step 1 eval result pending (second eval currently running).
+
+| Setting | Dryrun2 | Dryrun3 |
+|---------|---------|---------|
+| train_batch_size | 8 | 8 |
+| n_samples_per_prompt (training) | 2 | **8** |
+| eval_n_samples_per_prompt | 2 (broken — Docker overload) | **2** (fixed — eval_batch_size=8) |
+| eval_batch_size | 20 | **8** |
+| max_turns | 8 | 8 |
+| max_seq_len | 8192 | 8192 |
+| gpu_memory_utilization | 0.45 | 0.45 |
+
+**Training dataset (dryrun3):**
+
+| Source | Tasks | Notes |
+|--------|-------|-------|
+| v1 | 457 | |
+| v2 | 2,881 | |
+| v3 easy (9B) — train split (90%) | ~1,446 | |
+| **Total train** | **~4,784** | |
+
+**Val dataset (dryrun3):**
+
+| Source | Tasks | Notes |
+|--------|-------|-------|
+| v1 + v2 (existing) | 151 | 51 from v1 (~11%), 100 from v2 (~3.5%) |
+| v3 easy (9B) — eval split (10%) | ~161 | harder than v1/v2 eval tasks |
+| **Total val** | **~312** | |
+
+> v3 easy (9B) tasks are "easy" only relative to v3 hard — v3 overall is hard (pass@4 ≈ 6-7% for 9B). Split 10% for eval (consistent with v1/v2 split ratios). v3 hard reserved for a later round.
+
+**Metrics to track:**
+
+| Metric | Where | Notes |
+|--------|-------|-------|
+| pass@1 | training | fraction of tasks where the 1st sample solved it |
+| pass@2 | training | fraction of tasks with ≥1 of first 2 samples passing |
+| pass@4 | training | fraction of tasks with ≥1 of first 4 samples passing |
+| pass@8 | training | fraction of tasks with ≥1 of 8 samples passing (= avg_pass_at_8) |
+| std_reward | training | > 0.1 consistently; key GRPO health signal |
+| avg_score(pass@2) | eval (step 3) | 2 attempts per task, validated clean by dryrun2D |
+
+> **Note on pass@1/2 vs pass@4/8**: vLLM async engine returns samples in order of completion — shorter responses finish first. Shorter = less thinking = usually wrong. Longer = more `<think>` tokens = more likely to solve the task. So pass@1 and pass@2 measure whether the quickest (least-reasoned) samples solved the task, not whether the model can solve it in 1–2 independent attempts. Expect pass@1 and pass@2 to be lower than pass@4/8 for this reason. The meaningful training signal is `pass@8` and `std_reward`.
+
+**Goal**: Just 5 steps — enough to check if the v1+v2+v3easy9b dataset has the right difficulty for 9B. Key signals at step 1:
+- `avg_pass_at_8` > 0.9 → too easy, switch to harder tasks
+- `avg_pass_at_8` < 0.1 → too hard, expect sparse reward
+- `std_reward` > 0.1 consistently → good signal, proceed to longer run
+
+**Data prep**: Run `scripts/prepare_data_v3easy9b.sh` once before training to download v3 easy 9B tasks and generate combined parquets.
+
+**S3**: `s3://endless-terminals-training/<date>_combined-data_dryrun3_grpo_qwen3.5-9b_5steps/`
+
+**Script**: `scripts/train/train_harbor_qwen3_5_9b_dryrun3.sh`
+
+**Result (2026-08-26, stopped early at 4 steps):**
+
+**Training metrics:**
+
+| Step | pass@8 | std_reward | error_trajectories | Notes |
+|------|--------|-----------|-------------------|-------|
+| 1 | 0.0 | 0.0 | 50/64 | Docker overload — response_length=1 (containers killed before generation) |
+| 2 | 0.0 | 0.0 | 49/64 | Same |
+| 3 | **0.125** | **0.242** | 53/64 | Real training signal |
+| 4 | **0.125** | **0.211** | 53/64 | Stable |
+
+> **Root cause**: No `MAX_CONCURRENCY` set → Harbor launched all 64 trials simultaneously (n_samples=8 × batch=8). Steps 1-2: too many containers crashed for gradient to be non-zero. Steps 3-4: ~11/64 survived, giving pass@8=0.125.
+>
+> **Dataset difficulty**: pass@8=0.125 on the v1+v2+v3easy9b combined dataset is good signal — not too easy, not too sparse.
+>
+> **Fix for dryrun3B**: add `generator.rate_limit.max_concurrency=16` to serialize 64 trials into batches of 16 (the validated safe threshold from dryrun2D).
+
+**Next dry run — dryrun3B:**
+
+| Setting | Dryrun3 | Dryrun3B |
+|---------|---------|---------|
+| TRAIN_STEPS | 5 (stopped at 4) | **3** |
+| MAX_CONCURRENCY | none (64 concurrent) | **16** |
+| Docker network pool | ~30 subnets (default /20) | **256+ subnets (/24, configured in daemon.json)** |
+| Docker cleanup interval | 60s | **5s** |
+| pass@1/2/4 logging | ✗ | **✓ (inline trainer patch)** |
+| Everything else | — | same |
+
+> **Note on pass@1/2 vs pass@4/8**: vLLM async engine returns samples in order of completion — shorter responses finish first. Shorter = less thinking = usually wrong. Longer = more `<think>` tokens = more likely to solve the task. So pass@1 and pass@2 measure whether the quickest (least-reasoned) samples solved the task, not k independent random attempts. Expect pass@1/2 to be lower than pass@4/8. The meaningful training signal is `pass@8` and `std_reward`.
+>
+> - pass@1 = did the fastest sample (shortest thinking) solve it? → almost never → 0
+> - pass@2 = did either of the 2 fastest solve it? → still rarely → 0
+> - pass@4 = did any of first 4 solve it? → some, as longer responses start appearing
+> - pass@8 = did any of all 8 solve it? → yes → the true solvability signal
+
+> **Docker daemon config** (one-time instance setup, already applied on p5en):
+> `/etc/docker/daemon.json` — added `default-address-pools` with `/24` subnets:
+> ```json
+> {"base": "172.17.0.0/12", "size": 24},
+> {"base": "192.168.0.0/16", "size": 24}
+> ```
+> This gives 256+ available subnets vs the default ~30, preventing IPv4 pool exhaustion when zombie networks accumulate.
+> Run `sudo systemctl restart docker` after editing (kills running containers — do before training).
+
+**S3**: `s3://endless-terminals-training/20260826_combined-data_dryrun3b_grpo_qwen3.5-9b_3steps/`
+
+**Script**: `scripts/train/train_harbor_qwen3_5_9b_dryrun3b.sh`
+
+**Goal**: 3 steps with no Docker overload. If pass@8 > 0 on step 1 (no overload), proceed to full training.
+
+**Result (2026-08-26):**
+
+**Training metrics:**
+
+| Step | pass@1 | pass@2 | pass@4 | pass@8 | std_reward | avg_raw_reward | errors | grad_norm |
+|------|--------|--------|--------|--------|-----------|----------------|--------|-----------|
+| 1 | 0.0 | 0.0 | 0.375 | **0.75** | 0.45 | 0.72 | 8/64 | 0.47 |
+| 2 | 0.0 | 0.0 | 0.125 | **0.50** | 0.48 | 0.375 | 24/64 | 1.57 |
+| 3 | 0.0 | 0.0 | 0.0 | **0.25** | 0.41 | 0.22 | 40/64 | 1.33 |
+
+> Docker error count rising each step (8 → 24 → 40). IPv4 pool expansion + 5s cleanup helped but doesn't fully prevent accumulation over a long step. Needs investigation before a longer run.
+
+**Eval metrics (step 3, 312 val tasks, 2 attempts per task):**
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| avg_score_pass_any | **39.7%** (124/312) | Solved in at least 1 of 2 attempts within 8 turns |
+| num_tasks | 312 | v1+v2 (151) + v3easy9b val split (~161) |
+
+---
 
 ### Phase 2: Full Training (200-300 steps)
 
