@@ -91,6 +91,9 @@ Before running the ablation for 9B, verify reward density on the target dataset:
 
 **Model**: Qwen3.5-9B on p5en (H200 141GB)
 
+---
+
+#### dryrun1:
 **Dataset**: Combined Original 457 + Deduped 8192 tasks
 - Train: 3,238 tasks (457 + 2,781)
 - Val: 151 tasks (51 + 100)
@@ -185,6 +188,10 @@ Generation quality:
 
 - **Decision**: combined 457+8192 dataset is suitable for 9B training on p5en. Proceed to next dry run with higher settings.
 
+
+---
+
+#### Next dry run — dryrun2:
 **Next dry run config (p5en, before moving to b300):**
 
 | Setting | Current dry run | Next dry run |
@@ -228,7 +235,10 @@ Generation quality:
 
 > **Note on max_seq_len vs max_turns**: for target b300 settings with max_turns=16 and max_generate_length=2048, max_seq_len must be raised to 16384–32768 to avoid truncating long trajectories. The 8192 limit in the next dry run is safe with max_turns=8.
 
-**Next dry run — dryrun2B (Docker fix validation):**
+
+---
+
+#### Next dry run — dryrun2B (Docker fix validation):
 
 Same as dryrun2, with two changes to fix the Docker overload during eval:
 1. `eval_batch_size`: 50 → **20** (caps concurrent containers at 20×2=40)
@@ -290,7 +300,10 @@ During training this doesn't happen because Harbor always calls `docker compose 
 
 **Fix**: add `docker network prune -f` to the cleanup loop. This sweeps zombie networks before the pool exhausts.
 
-**Next dry run — dryrun2C:**
+
+---
+
+#### Next dry run — dryrun2C:
 
 Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup loop to prevent IPv4 pool exhaustion.
 
@@ -328,7 +341,10 @@ Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup 
 >
 > **Validation (dryrun2D)**: Before dryrun3, run 1-step validation with `eval_before_train=true`, `eval_batch_size=8`, `eval_n_samples_per_prompt=2` to confirm zero Docker errors at this concurrency.
 
-**Next dry run — dryrun2D (eval concurrency validation):**
+
+---
+
+#### Next dry run — dryrun2D (eval concurrency validation):
 
 | Setting | Dryrun2C | Dryrun2D |
 |---------|---------|---------|
@@ -355,6 +371,10 @@ Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup 
 | Failed (ran, score=0) | 34/151 | Model attempted but didn't solve |
 
 > Confirmed: `eval_batch_size=8` (→ 16 concurrent containers) is the fix. Compared to dryrun1 pass@1=43.7% — expected since pass@2 > pass@1 (two attempts vs one). Step 1 eval result pending (second eval currently running).
+
+
+---
+#### Next dry run — dryrun3:
 
 | Setting | Dryrun2 | Dryrun3 |
 |---------|---------|---------|
@@ -426,7 +446,10 @@ Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup 
 >
 > **Fix for dryrun3B**: add `generator.rate_limit.max_concurrency=16` to serialize 64 trials into batches of 16 (the validated safe threshold from dryrun2D).
 
-**Next dry run — dryrun3B:**
+
+---
+
+#### Next dry run — dryrun3B:
 
 | Setting | Dryrun3 | Dryrun3B |
 |---------|---------|---------|
@@ -434,8 +457,10 @@ Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup 
 | MAX_CONCURRENCY | none (64 concurrent) | **16** |
 | Docker network pool | ~30 subnets (default /20) | **256+ subnets (/24, configured in daemon.json)** |
 | Docker cleanup interval | 60s | **5s** |
-| pass@1/2/4 logging | ✗ | **✓ (inline trainer patch)** |
+| pass@1/2/4 logging | ✗ | **✓ (inline trainer patch in `train_harbor_qwen3_5_9b_dryrun3b.sh`)** |
 | Everything else | — | same |
+
+> **pass@k patch** (`PATCH_PASSATK=true` in dryrun3b): edits `SkyRL/skyrl/train/trainer.py` in-place to log `pass@1`, `pass@2`, `pass@4` in addition to `pass@n`. The patch is permanent (one-way file edit) — setting `PATCH_PASSATK=false` in a later script skips re-running it but does NOT revert it. With `n_samples=2`, the patch only adds `pass@1` (only k=1 < 2 qualifies) — `pass@2` is already logged by SkyRL natively. So for n_samples=2 runs, the patch is harmless but adds a noisy `pass@1` metric (always near 0 due to vLLM ordering).
 
 > **Note on pass@1/2 vs pass@4/8**: vLLM async engine returns samples in order of completion — shorter responses finish first. Shorter = less thinking = usually wrong. Longer = more `<think>` tokens = more likely to solve the task. So pass@1 and pass@2 measure whether the quickest (least-reasoned) samples solved the task, not k independent random attempts. Expect pass@1/2 to be lower than pass@4/8. The meaningful training signal is `pass@8` and `std_reward`.
 >
@@ -477,6 +502,31 @@ Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup 
 |--------|-------|-------|
 | avg_score_pass_any | **39.7%** (124/312) | Solved in at least 1 of 2 attempts within 8 turns |
 | num_tasks | 312 | v1+v2 (151) + v3easy9b val split (~161) |
+
+---
+
+#### Next dry run — dryrun3C:
+
+| Setting | Dryrun3B | Dryrun3C |
+|---------|---------|---------|
+| TRAIN_STEPS | 3 | **1** |
+| n_samples_per_prompt | 8 | **2** |
+| eval_before_train | false | false |
+| pass@k patch | applied | not re-applied (already in trainer.py, harmless) |
+| Everything else | — | same |
+
+**Goal**: 1 step to confirm dataset difficulty is in the right range with a fair pass@2 signal.
+
+> **Why pass@2 here differs from dryrun3b's pass@2**: With n_samples=8, vLLM returns samples ordered by completion speed — the first 2 are always the fastest/shortest responses (least reasoning = usually wrong), so pass@2 computed from those was always 0. With n_samples=2, there are only 2 samples total and no ordering bias — pass@2 is a genuine measure of whether the model solves the task in 2 independent attempts. The pass@2 from dryrun3c is the reliable difficulty signal.
+
+**Decision criteria:**
+- `pass@2` 0.3–0.7 → good difficulty, proceed to 200-step full training
+- `pass@2` > 0.9 → too easy
+- `pass@2` < 0.1 → too hard, reward too sparse
+
+**S3**: `s3://endless-terminals-training/<date>_combined-data_dryrun3c_grpo_qwen3.5-9b_1steps/`
+
+**Script**: `scripts/train/train_harbor_qwen3_5_9b_dryrun3c.sh`
 
 ---
 
