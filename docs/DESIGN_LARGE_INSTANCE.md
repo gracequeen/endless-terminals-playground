@@ -72,12 +72,13 @@ Before running the ablation for 9B, verify reward density on the target dataset:
 | Dataset | S3 Path (tasks) | Prepared Parquet | Solvable | Notes |
 |---------|----------------|-----------------|----------|-------|
 | v1 | `data/harbor_4.5opus_tasks/` | — | 457 | Claude 4.5 Opus tasks |
-| v2 | `data/harbor_tasks_8192_deduped/` | — | 2,881 | Claude 4.6 Opus tasks, deduped |
+| v2 | `data/harbor_tasks_8192_deduped/` | — | 2,781 | Claude 4.6 Opus tasks, deduped |
 | v3 (hard) | `data/harbor_4.8opus_tasks_v3_internet_access_config/` | — | 3,657 | Claude 4.8 Opus, internet access tasks |
 | v3 easy (4B) | `data/harbor_4.8opus_tasks_v3_easy_shards_for_eval/harbor_tasks_easy_4b_shard{0,1}/` | — | 1,607 | Tasks easy for 4B model |
 | v3 easy (9B) | `data/harbor_4.8opus_tasks_v3_easy_shards_for_eval/harbor_tasks_easy_9b_shard{0,1,2}/` | — | 1,607 | Tasks easy for 9B model |
-| **v1+v2 combined** | | `prepared_data/train_combined_457_8192.parquet` / `val_combined_457_8192.parquet` | **3,338** | Used in dryrun1–2D |
-| **v1+v2+v3easy9B combined** | | `prepared_data/train_combined_v1v2v3easy9b.parquet` / `val_combined_v1v2v3easy9b.parquet` | **~4,784 train / ~312 val** | Used in dryrun3 |
+| **v1+v2 combined** | | `prepared_data/train_combined_457_8192.parquet` / `val_combined_457_8192.parquet` | **3,238 train / 151 val** | Used in dryrun1–2D |
+| **v1+v2+v3easy9B combined** | | `prepared_data/train_combined_v1v2v3easy9b.parquet` / `val_combined_v1v2v3easy9b.parquet` | **4,684 train / 312 val** | Used in dryrun3 |
+| **v1+v2+v3hard combined** | | `prepared_data/train_combined_v1v2v3hard.parquet` / `val_combined_v1v2v3hard.parquet` | **6,529 train / 517 val** | Used in Phase 2 |
 
 > "Easy for 4B" = tasks the 4B model can solve; "easy for 9B" = tasks the 9B model can solve (harder than 4B easy). Both are held-out eval sets, not training data.
 
@@ -524,9 +525,33 @@ Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup 
 - `pass@2` > 0.9 → too easy
 - `pass@2` < 0.1 → too hard, reward too sparse
 
-**S3**: `s3://endless-terminals-training/<date>_combined-data_dryrun3c_grpo_qwen3.5-9b_1steps/`
+**S3**: `s3://endless-terminals-training/20260826_combined-data_dryrun3c_grpo_qwen3.5-9b_1steps/`
 
 **Script**: `scripts/train/train_harbor_qwen3_5_9b_dryrun3c.sh`
+
+**Result (2026-08-26)**:
+
+Training (step 1):
+
+| Metric | Value |
+|--------|-------|
+| avg_pass_at_2 | 0.625 |
+| std_reward | 0.484 |
+| avg_raw_reward | 0.625 |
+| policy_kl | 0.134 |
+| policy_entropy | 0.143 |
+| grad_norm | 0.018 |
+| num_error_trajectories | 2 |
+
+Eval (312 val tasks, 2 attempts each):
+
+| Metric | Value |
+|--------|-------|
+| avg_score_pass_any (solved in ≥1 of 2 attempts) | **41.7%** |
+| avg_score_pass_at_1 (solved on turn 1) | 0.0% |
+| avg_score_pass_at_2 (solved by turn 2) | 0.0% |
+
+> pass@2 training = 0.625 → dataset difficulty is in the healthy range (0.3–0.7). Pass_any eval = 41.7% confirms the v1+v2+v3easy9b dataset is well-calibrated for 9B. ✅ Proceed to Phase 2 full training.
 
 ---
 
@@ -574,6 +599,47 @@ Same as dryrun2B, with one change: add `docker network prune -f` to the cleanup 
 - 100-200 eval tasks is fine; saving all results every checkpoint is cheap (10 checkpoints × 200 tasks = 2000 rows total)
 - At the end, check: is the model only improving on easy tasks? Are certain task categories solved well while others are not? This breakdown is needed for paper analysis
 - Extract checkpoints at steps ~100 and ~150 for terminal-bench eval to measure impact on external benchmarks
+
+---
+
+### 6.1. Phase 2 Run — v1+v2+v3hard, 200 steps
+
+**S3**: `s3://endless-terminals-training/20260827_v1v2v3hard_phase2_grpo_qwen3.5-9b_200steps/`
+
+**Script**: `scripts/train/train_harbor_qwen3_5_9b_phase2.sh`
+
+**Model**: Qwen3.5-9B on p5en (H200 141GB)
+
+**Dataset**: v1+v2+v3hard combined (6,529 train / 517 val)
+
+**Config**:
+
+| Setting | Value |
+|---------|-------|
+| train_batch_size | 8 |
+| n_samples_per_prompt | 2 |
+| eval_n_samples_per_prompt | 2 |
+| max_turns | 8 |
+| max_generate_length | 1024 |
+| max_seq_len | 8192 |
+| gpu_memory_utilization | 0.45 |
+| MAX_CONCURRENCY | 16 |
+| ckpt_interval | 10 |
+| eval_interval | 10 |
+| eval_batch_size | 8 |
+| algorithm | GRPO |
+| reward signal | pass@2 (solved in ≥1 of 2 attempts within 8 turns) |
+| eval metric | avg_score_pass_any (solved in ≥1 of 2 attempts within 8 turns) |
+
+**Training metrics:**
+
+**Issue found (steps 1–10):** 75–87% of trajectories error per step. Step 10: complete failure — 0/16 trajectories complete, no gradient.
+
+**Root cause:** terminus-2 installs tmux/asciinema at runtime when they are missing. v3 hard Dockerfiles add `ppa:deadsnakes/ppa` (for Python 3.11), which leaves a PPA source file in the image. At training time, containers have no internet — `apt-get update` tries to reach `ppa.launchpad.net`, fails, and aborts. The fallbacks (build tmux from GitHub, pip install asciinema) also need internet and also fail. v1/v2 Dockerfiles only have standard Ubuntu apt sources, which work without internet, so tmux installs fine at runtime there.
+
+**Fix applied (2026-08-26):** Pre-install `tmux` and `asciinema` in all task Dockerfiles at image build time (when internet is available). Patched 18,179 Dockerfiles across all three datasets using `scripts/patch_dockerfiles_tmux.py`, inserting `RUN apt-get update && apt-get install -y tmux asciinema && rm -rf /var/lib/apt/lists/*` after the `FROM` line. Terminus-2's `tmux -V` check now passes on startup and the install path is never triggered.
+
+**Next action:** Restart Phase 2 training with the patched Dockerfiles.
 
 ## 7. Phase 3: Hyperparameter Tuning (Ablation)
 
