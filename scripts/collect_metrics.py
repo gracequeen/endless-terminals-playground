@@ -20,15 +20,23 @@ from pathlib import Path
 # Metrics block is bounded by "Finished: 'step'" ... "Started: 'step'"
 
 METRIC_RE = {
-    "avg_pass_at_2":   re.compile(r"'reward/avg_pass_at_2':\s*'([\d.]+)'"),
-    "avg_raw_reward":  re.compile(r"'loss/avg_final_rewards':\s*'([\d.]+)'"),
-    "std_reward":      re.compile(r"'reward/std_reward':\s*'([\d.eE+\-]+)'"),
-    "policy_loss":     re.compile(r"'policy/policy_loss':\s*'([-\d.eE+]+)'"),
-    "policy_kl":       re.compile(r"'policy/policy_kl':\s*'([-\d.eE+]+)'"),
-    "policy_entropy":  re.compile(r"'policy/policy_entropy':\s*'([-\d.eE+]+)'"),
-    "grad_norm":       re.compile(r"'policy/grad_norm':\s*'([\d.eE+]+)'"),
-    "response_length": re.compile(r"'policy/response_length':\s*'([\d.]+)'"),
-    "sequence_length": re.compile(r"'policy/sequence_length':\s*'([\d.]+)'"),
+    # quoted format (dryrun3b): 'reward/avg_pass_at_2': '0.625'
+    # unquoted format (dryrun3c): reward/avg_pass_at_2: 0.625,
+    "avg_pass_at_1":   re.compile(r"(?:'reward/avg_pass_at_1':\s*'([\d.]+)'|reward/avg_pass_at_1:\s*([\d.eE+\-]+))"),
+    "avg_pass_at_2":   re.compile(r"(?:'reward/avg_pass_at_2':\s*'([\d.]+)'|reward/avg_pass_at_2:\s*([\d.eE+\-]+))"),
+    "avg_pass_at_4":   re.compile(r"(?:'reward/avg_pass_at_4':\s*'([\d.]+)'|reward/avg_pass_at_4:\s*([\d.eE+\-]+))"),
+    "avg_pass_at_8":   re.compile(r"(?:'reward/avg_pass_at_8':\s*'([\d.]+)'|reward/avg_pass_at_8:\s*([\d.eE+\-]+))"),
+    # avg_raw_reward: quoted uses 'loss/avg_final_rewards', unquoted uses avg_final_rewards or reward/avg_raw_reward
+    "avg_raw_reward":  re.compile(r"(?:'loss/avg_final_rewards':\s*'([\d.]+)'|(?:avg_final_rewards|reward/avg_raw_reward):\s*([\d.eE+\-]+))"),
+    "std_reward":      re.compile(r"(?:'reward/std_reward':\s*'([\d.eE+\-]+)'|reward/std_reward:\s*([\d.eE+\-]+))"),
+    # policy metrics: quoted with policy/ prefix, or unquoted dict (no prefix)
+    "policy_loss":     re.compile(r"(?:'policy/policy_loss':\s*'([-\d.eE+]+)'|'policy_loss':\s*([-\d.eE+]+))"),
+    "policy_kl":       re.compile(r"(?:'policy/policy_kl':\s*'([-\d.eE+]+)'|'policy_kl':\s*([-\d.eE+]+))"),
+    "policy_entropy":  re.compile(r"(?:'policy/policy_entropy':\s*'([-\d.eE+]+)'|'policy_entropy':\s*([-\d.eE+]+))"),
+    "grad_norm":       re.compile(r"(?:'policy/grad_norm':\s*'([\d.eE+]+)'|'grad_norm':\s*([\d.eE+]+))"),
+    "response_length": re.compile(r"(?:'policy/response_length':\s*'([\d.]+)'|'response_length':\s*([\d.]+))"),
+    "sequence_length": re.compile(r"(?:'policy/sequence_length':\s*'([\d.]+)'|'sequence_length':\s*([\d.]+))"),
+    "num_error_trajectories": re.compile(r"'generate/num_error_trajectories':\s*(\d+)"),
 }
 
 STEP_RE = re.compile(r"'trainer/global_step':\s*(\d+)")
@@ -39,37 +47,43 @@ def parse_training_log(log_path: str) -> list[dict]:
     """Parse SkyRL training log → list of per-step metric dicts."""
     steps = {}
     current_block: dict = {}
-    in_metrics_block = False
+    in_step_block = False
 
     with open(log_path) as f:
         for line in f:
             clean = ANSI_RE.sub('', line)
 
-            if "Finished: 'step'" in clean:
-                in_metrics_block = True
+            if "Started: 'step'" in clean:
+                # Save previous block if it had a step number
+                if in_step_block and "step" in current_block:
+                    steps[current_block["step"]] = dict(current_block)
+                in_step_block = True
                 current_block = {}
                 continue
 
-            if "Started: 'step'" in clean:
-                in_metrics_block = False
+            if not in_step_block:
                 continue
 
-            if not in_metrics_block:
-                continue
-
+            # Step number: two possible formats
             step_m = STEP_RE.search(clean)
             if step_m:
-                step_num = int(step_m.group(1))
-                current_block["step"] = step_num
-                steps[step_num] = dict(current_block)
-                in_metrics_block = False
+                val = step_m.group(1)
+                if val and "step" not in current_block:
+                    current_block["step"] = int(val)
                 continue
 
             for name, pattern in METRIC_RE.items():
                 if name not in current_block:
                     m = pattern.search(clean)
                     if m:
-                        current_block[name] = float(m.group(1))
+                        # Take first non-None capture group
+                        val = next((g for g in m.groups() if g is not None), None)
+                        if val is not None:
+                            current_block[name] = float(val)
+
+    # Capture trailing block
+    if in_step_block and "step" in current_block:
+        steps[current_block["step"]] = dict(current_block)
 
     return sorted(steps.values(), key=lambda x: x["step"])
 
@@ -138,8 +152,9 @@ def parse_eval_exports(export_dir: str) -> dict[str, dict]:
         results[eval_dir.name] = {
             "eval_dir": str(eval_dir),
             "per_task": real_tasks,
-            "avg_score_pass_at_1": round(pass_any, 4),
+            "avg_score_pass_any": round(pass_any, 4),
             "avg_score_pass_at_2": round(pass2, 4),
+            "avg_score_pass_at_1": round(pass1, 4),
             "num_tasks": len(real_tasks),
         }
 
