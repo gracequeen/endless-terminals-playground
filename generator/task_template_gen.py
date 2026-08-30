@@ -610,11 +610,19 @@ def _bucket_for_category(category: str) -> Optional[str]:
     return None
 
 
-def pick_balanced_categories(n: int, difficulties: Optional[list[str]] = None) -> list[str]:
+def pick_balanced_categories(
+    n: int,
+    difficulties: Optional[list[str]] = None,
+    category_weights: Optional[dict[str, dict[str, float]]] = None,
+    bucket_weights: Optional[dict[str, float]] = None,
+) -> list[str]:
     """Pick n categories with balanced bucket coverage.
 
     When difficulties are provided, hard tasks are restricted to
     HARD_ELIGIBLE_BUCKETS and easy tasks prefer EASY_PREFERRED_BUCKETS.
+
+    category_weights: {bucket: {category: weight}} — within-bucket sampling weights.
+    bucket_weights: {bucket: weight} — across-bucket sampling weights.
     """
     bucket_names = list(CATEGORY_BUCKETS.keys())
     random.shuffle(bucket_names)
@@ -627,8 +635,19 @@ def pick_balanced_categories(n: int, difficulties: Optional[list[str]] = None) -
             eligible = [b for b in bucket_names if b in EASY_PREFERRED_BUCKETS] or bucket_names
         else:
             eligible = bucket_names
-        bucket = eligible[i % len(eligible)]
-        categories.append(random.choice(CATEGORY_BUCKETS[bucket]))
+
+        if bucket_weights:
+            weights = [bucket_weights.get(b, 1.0) for b in eligible]
+            bucket = random.choices(eligible, weights=weights, k=1)[0]
+        else:
+            bucket = eligible[i % len(eligible)]
+
+        bucket_cats = CATEGORY_BUCKETS[bucket]
+        if category_weights and bucket in category_weights:
+            w = [category_weights[bucket].get(c, 1.0) for c in bucket_cats]
+            categories.append(random.choices(bucket_cats, weights=w, k=1)[0])
+        else:
+            categories.append(random.choice(bucket_cats))
     return categories
 
 

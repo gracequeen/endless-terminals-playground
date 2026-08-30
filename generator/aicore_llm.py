@@ -118,12 +118,15 @@ class AICoreAnthropicLLM(BaseLLM):
         client = self._get_bedrock_client()
         system_msgs, conv_msgs = self._format_messages(prompt, message_history)
 
+        inference_config: dict[str, Any] = {"maxTokens": self._max_tokens}
+        supports_temperature = not any(
+            v in self._model_enum.model_name for v in ("4.7", "4.8")
+        )
+        if supports_temperature:
+            inference_config["temperature"] = self._temperature
         converse_kwargs: dict[str, Any] = {
             "messages": conv_msgs,
-            "inferenceConfig": {
-                "maxTokens": self._max_tokens,
-                "temperature": self._temperature,
-            },
+            "inferenceConfig": inference_config,
         }
         if system_msgs:
             converse_kwargs["system"] = system_msgs

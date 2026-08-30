@@ -19,6 +19,9 @@ print(int(total))
 
 echo "$LOG_PREFIX Docker usage: $(( total_bytes / 1048576 ))MB (threshold: 5120MB)"
 
+# Always prune unused networks to prevent IPv4 pool exhaustion
+docker network prune -f | grep -v '^$' | sed "s/^/$LOG_PREFIX /" || true
+
 if (( total_bytes > THRESHOLD_BYTES )); then
   echo "$LOG_PREFIX Threshold exceeded — pruning all images, containers, volumes, and build cache..."
   docker system prune -af --volumes

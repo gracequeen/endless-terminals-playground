@@ -215,7 +215,7 @@ Modify choices of arguments:
 - job-name: output subfolder for current job; MUST DELETE folder if already existing
 
 ```bash
-harbor run --agent-import-path aicore_agent:AICoreTerminus2 --model claude_4_5 --path harbor_tasks_part2_2-1 --n-attempts 8 --jobs-dir solution_grace --n-concurrent 2 --job-name harbor_tasks_part2_2-1
+harbor run --agent-import-path generator.aicore_agent:AICoreTerminus2 --model claude_4_6 --path harbor_tasks_v3_small-test --n-attempts 8 --jobs-dir solution_grace --n-concurrent 4 --job-name v3_small_test
 ```
 
 For each task, this:

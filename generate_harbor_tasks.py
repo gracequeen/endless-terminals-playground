@@ -78,6 +78,8 @@ class HarborPipelineConfig:
     verbose: bool = False
     difficulty: str = "mixed"
     difficulty_distribution: Optional[Dict[str, float]] = None
+    category_weights: Optional[Dict[str, Dict[str, float]]] = None  # {bucket: {category: weight}}
+    bucket_weights: Optional[Dict[str, float]] = None               # {bucket: weight}
 
 
 TEST_SH_TEMPLATE = """#!/bin/bash
@@ -205,7 +207,12 @@ def _generate_harbor_batch(
 
     # Pick difficulties first so bucket coupling can restrict hard→hard-eligible buckets
     difficulties = pick_difficulties(batch_count, cfg.difficulty, cfg.difficulty_distribution)
-    categories = pick_balanced_categories(batch_count, difficulties=difficulties)
+    categories = pick_balanced_categories(
+        batch_count,
+        difficulties=difficulties,
+        category_weights=cfg.category_weights,
+        bucket_weights=cfg.bucket_weights,
+    )
 
     # Stage 1: Task templates
     print(f"[1/5] Generating {batch_count} task templates ...")
@@ -373,6 +380,10 @@ def parse_args() -> HarborPipelineConfig:
                     help="Task difficulty level. 'mixed' uses --difficulty-distribution.")
     ap.add_argument("--difficulty-distribution", type=str, default=None,
                     help="Distribution for mixed difficulty, e.g. 'easy:0.2,medium:0.5,hard:0.3'")
+    ap.add_argument("--category-weights", type=str, default=None,
+                    help="JSON dict {bucket: {category: weight}} for within-bucket sampling, e.g. '{\"text_processing\": {\"INI configuration parsing\": 0.5}}'")
+    ap.add_argument("--bucket-weights", type=str, default=None,
+                    help="JSON dict {bucket: weight} for across-bucket sampling, e.g. '{\"text_processing\": 0.3, \"security\": 0.2}'")
     ap.add_argument("--author-name", type=str, default="Endless Terminals")
     ap.add_argument("--author-email", type=str, default="")
     ap.add_argument("--verbose", action="store_true")
@@ -385,6 +396,14 @@ def parse_args() -> HarborPipelineConfig:
         for part in args.difficulty_distribution.split(","):
             k, v = part.strip().split(":")
             diff_dist[k.strip()] = float(v.strip())
+
+    cat_weights = None
+    if args.category_weights:
+        cat_weights = json.loads(args.category_weights)
+
+    bkt_weights = None
+    if args.bucket_weights:
+        bkt_weights = json.loads(args.bucket_weights)
 
     return HarborPipelineConfig(
         num_tasks=args.num_tasks,
@@ -402,6 +421,8 @@ def parse_args() -> HarborPipelineConfig:
         verbose=args.verbose,
         difficulty=args.difficulty,
         difficulty_distribution=diff_dist,
+        category_weights=cat_weights,
+        bucket_weights=bkt_weights,
     )
 
 

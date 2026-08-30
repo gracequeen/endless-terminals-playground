@@ -15,6 +15,7 @@ DEPLOYMENT_ID_OPUS_4_5 = os.getenv("DEPLOYMENT_ID_OPUS")
 DEPLOYMENT_ID_SONNET_4_5 = os.getenv("DEPLOYMENT_ID_SONNET")
 DEPLOYMENT_ID_OPUS = os.getenv("AICORE_CLAUDE4.6_OPUS_DEPLOYMENT_ID")
 DEPLOYMENT_ID_SONNET = os.getenv("AICORE_CLAUDE4.6_SONNET_DEPLOYMENT_ID")
+DEPLOYMENT_ID_OPUS_4_7 = os.getenv("AICORE_CLAUDE4.7_OPUS_DEPLOYMENT_ID")
 DEPLOYMENT_ID_OPUS_4_8 = os.getenv("AICORE_CLAUDE4.8_OPUS_DEPLOYMENT_ID")
 
 DEFAULT_MESSAGES = [
@@ -41,6 +42,7 @@ class ClaudeModels(enum.Enum):
     CLAUDE_4_6 = ("claude_4_6", "anthropic--claude-4.6-sonnet", DEPLOYMENT_ID_SONNET)
     CLAUDE_OPUS = ("claude_opus", "anthropic--claude-4.6-opus", DEPLOYMENT_ID_OPUS)
 
+    CLAUDE_OPUS_4_7 = ("claude_opus_4_7", "anthropic--claude-4.7-opus", DEPLOYMENT_ID_OPUS_4_7)
     CLAUDE_OPUS_4_8 = ("claude_opus_4_8", "anthropic--claude-4.8-opus", DEPLOYMENT_ID_OPUS_4_8)
 
     def __init__(self, alias: str, model_name: str, deployment_id: str):
@@ -89,8 +91,8 @@ def get_anthropic_completion(
     model_id = next(m.model_name for m in ClaudeModels if m.alias == model)
     deployment_id = next(m.deployment_id for m in ClaudeModels if m.alias == model)
 
-    # claude-4.8+ does not accept temperature in inferenceConfig
-    supports_temperature = "4.8" not in model_id
+    # claude-4.7+ does not accept temperature in inferenceConfig
+    supports_temperature = not any(v in model_id for v in ("4.7", "4.8"))
 
     try:
         bedrock = Session().client(model_name=model_id, deployment_id=deployment_id)

@@ -42,6 +42,10 @@ class AICoreTerminus2(Terminus2):
             # Claude 4.6
             "claude_4_6": "claude-sonnet-4-6",
             "claude_opus": "claude-opus-4-6",
+            # Claude 4.7
+            "claude_opus_4_7": "claude-opus-4-7",
+            # Claude 4.8
+            "claude_opus_4_8": "claude-opus-4-8",
         }
         litellm_model = _LITELLM_NAMES.get(aicore_model)
         if litellm_model is None:

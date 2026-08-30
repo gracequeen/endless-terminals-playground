@@ -15,7 +15,12 @@
 #   --gen-concurrency N     LLM concurrency during task generation (default: 16)
 #   --gen-batch-size N      Batch size for task generation (default: 16)
 #   --gen-pipeline-depth N  Number of batches to run concurrently (default: 4)
-#   --gen-model MODEL       Model for task generation (default: claude_opus)
+#   --gen-model MODEL       Model for task generation (default: claude_opus_4_8)
+#   --gen-max-tokens N      Max tokens per LLM call (default: 8192)
+#   --gen-difficulty MODE   Difficulty mode: easy/medium/hard/mixed (default: mixed)
+#   --gen-difficulty-dist D Difficulty distribution for mixed, e.g. easy:0.2,medium:0.4,hard:0.4
+#   --gen-category-weights W  JSON {bucket: {category: weight}} for within-bucket sampling
+#   --gen-bucket-weights W    JSON {bucket: weight} for across-bucket sampling
 #   --skip-build            Skip Docker build during task generation
 #   --n-attempts N          Solution attempts per task (default: 8)
 #   --sol-concurrency N     Concurrent harbor trials (default: 10)
@@ -37,7 +42,12 @@ TASK_OUT_DIR=""
 GEN_CONCURRENCY=16
 GEN_BATCH_SIZE=16
 GEN_PIPELINE_DEPTH=4
-GEN_MODEL="claude_opus"
+GEN_MODEL="claude_opus_4_8"
+GEN_MAX_TOKENS=8192
+GEN_DIFFICULTY="mixed"
+GEN_DIFFICULTY_DIST="easy:0.2,medium:0.4,hard:0.4"
+GEN_CATEGORY_WEIGHTS=""
+GEN_BUCKET_WEIGHTS=""
 SKIP_BUILD=""
 N_ATTEMPTS=8
 SOL_CONCURRENCY=10
@@ -56,6 +66,11 @@ while [[ $# -gt 0 ]]; do
         --gen-batch-size)   GEN_BATCH_SIZE="$2";  shift 2 ;;
         --gen-pipeline-depth) GEN_PIPELINE_DEPTH="$2"; shift 2 ;;
         --gen-model)        GEN_MODEL="$2";       shift 2 ;;
+        --gen-max-tokens)   GEN_MAX_TOKENS="$2";  shift 2 ;;
+        --gen-difficulty)   GEN_DIFFICULTY="$2";  shift 2 ;;
+        --gen-difficulty-dist) GEN_DIFFICULTY_DIST="$2"; shift 2 ;;
+        --gen-category-weights) GEN_CATEGORY_WEIGHTS="$2"; shift 2 ;;
+        --gen-bucket-weights) GEN_BUCKET_WEIGHTS="$2"; shift 2 ;;
         --skip-build)       SKIP_BUILD="--skip-build"; shift ;;
         --n-attempts)       N_ATTEMPTS="$2";      shift 2 ;;
         --sol-concurrency)  SOL_CONCURRENCY="$2"; shift 2 ;;
@@ -137,6 +152,11 @@ if [[ "$MODE" == "both" || "$MODE" == "gen-only" ]]; then
         --num-tasks "$NUM_TASKS" \
         --out-dir "$TASK_OUT_DIR" \
         --model "$GEN_MODEL" \
+        --max-tokens "$GEN_MAX_TOKENS" \
+        --difficulty "$GEN_DIFFICULTY" \
+        --difficulty-distribution "$GEN_DIFFICULTY_DIST" \
+        ${GEN_CATEGORY_WEIGHTS:+--category-weights "$GEN_CATEGORY_WEIGHTS"} \
+        ${GEN_BUCKET_WEIGHTS:+--bucket-weights "$GEN_BUCKET_WEIGHTS"} \
         --max-concurrency "$GEN_CONCURRENCY" \
         --batch-size "$GEN_BATCH_SIZE" \
         --pipeline-depth "$GEN_PIPELINE_DEPTH" \
@@ -183,6 +203,7 @@ PREV_COMPLETED=0
 STEADY_COUNT=0
 STEADY_THRESHOLD=3   # 3 consecutive checks with progress = steady
 STEADY_REPORTED=0
+MONITOR_INTERVAL=60  # seconds between status checks
 
 while kill -0 "$SOL_PID" 2>/dev/null; do
     sleep "$MONITOR_INTERVAL"
