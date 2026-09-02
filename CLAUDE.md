@@ -49,6 +49,25 @@ python generate_harbor_tasks.py --num-tasks 10 --out-dir harbor_tasks --model cl
 uv run python -m app.server --port 5050   # http://127.0.0.1:5050
 ```
 
+**Terminal-Bench evaluation (before/after training):**
+```bash
+# Baseline — base model from HF hub
+bash scripts/run_terminal_bench.sh \
+  --mode base \
+  --model Qwen/Qwen3.5-9B \
+  --job-name tb-base-qwen3.5-9b
+
+# Post-training — HF checkpoint from trainer.export_path
+bash scripts/run_terminal_bench.sh \
+  --mode checkpoint \
+  --checkpoint /path/to/exports/global_step_100 \
+  --model Qwen/Qwen3.5-9B \
+  --job-name tb-ckpt-step100
+
+# Collect results (pass@k)
+python generator/collect_harbor_results.py --jobs-dir solution_tb
+```
+
 **Tests:**
 ```bash
 pytest                                    # all tests
