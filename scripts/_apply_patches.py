@@ -397,3 +397,38 @@ if f.exists():
         print('default.yaml: docker type not found, skipping')
 else:
     print('default.yaml: file not found, skipping')
+
+# --- harbor/environments/docker/docker.py: enable GPU support in Docker environments ---
+#     Harbor's DockerEnvironment.supports_gpus is hardcoded to False, so GPU-requiring
+#     tasks always fail even when the system Docker runtime is nvidia. Patching to True
+#     lets Harbor proceed; Docker containers get GPU access via the default nvidia runtime.
+try:
+    import harbor.environments.docker.docker as _harbor_docker
+    import pathlib as _pathlib
+    _f = _pathlib.Path(_harbor_docker.__file__)
+    _txt = _f.read_text()
+    _old = '    def supports_gpus(self) -> bool:\n        return False'
+    _new = '    def supports_gpus(self) -> bool:\n        return True'
+    if _new in _txt:
+        print('harbor docker.py supports_gpus already patched, skipping')
+    elif _old in _txt:
+        _f.write_text(_txt.replace(_old, _new))
+        print('Patched harbor docker.py: supports_gpus returns True')
+    else:
+        print('harbor docker.py: supports_gpus pattern not found, skipping')
+except ImportError:
+    print('harbor not installed, skipping docker.py patch')
+
+# --- vllm_server_actor.py: remove reuse_port kwarg not supported by newer vLLM ---
+f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/vllm_server_actor.py')
+if f.exists():
+    txt = f.read_text()
+    old = 'sock = create_server_socket(sock_addr, reuse_port=False)'
+    new = 'sock = create_server_socket(sock_addr)'
+    if old in txt:
+        f.write_text(txt.replace(old, new))
+        print('Patched vllm_server_actor.py: removed reuse_port kwarg')
+    else:
+        print('vllm_server_actor.py: reuse_port already removed, skipping')
+else:
+    print('vllm_server_actor.py: file not found, skipping')

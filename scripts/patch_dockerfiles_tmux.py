@@ -25,7 +25,7 @@ INJECT = "RUN apt-get update && apt-get install -y tmux asciinema && rm -rf /var
 
 def patch_dir(task_dir: str) -> int:
     count = 0
-    for dockerfile in Path(task_dir).glob("*/environment/Dockerfile"):
+    for dockerfile in Path(task_dir).rglob("environment/Dockerfile"):
         content = dockerfile.read_text()
         if "tmux" not in content.lower():
             patched = re.sub(r"(FROM [^\n]+\n)", r"\1" + INJECT, content, count=1)

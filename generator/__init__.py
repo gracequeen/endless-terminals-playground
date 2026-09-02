@@ -53,11 +53,18 @@ def chat_completion_batch(
     # vllm client — if model is a URL endpoint use it directly, else default port 8000
     if model and (model.startswith("http://") or model.startswith("https://")):
         base_url = model if model.endswith("/v1") else model.rstrip("/") + "/v1"
+        # Get actual served model name — vLLM rejects the URL as a model id
+        import requests as _r
+        try:
+            model_name = _r.get(f"{base_url}/models", headers={"Authorization": "Bearer nokey"}, timeout=5).json()["data"][0]["id"]
+        except Exception:
+            model_name = model
     else:
         base_url = "http://localhost:8000/v1"
+        model_name = model or "default"
     client = OpenAI(base_url=base_url, api_key="nokey")
     clients = {
-        model: client
+        model_name: client
     }
     model_keys = list(clients.keys())
     max_retries = MAX_RETRIES

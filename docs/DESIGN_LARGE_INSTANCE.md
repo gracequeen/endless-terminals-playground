@@ -82,6 +82,14 @@ Before running the ablation for 9B, verify reward density on the target dataset:
 
 > "Easy for 4B" = tasks the 4B model can solve; "easy for 9B" = tasks the 9B model can solve (harder than 4B easy). Both are held-out eval sets, not training data.
 
+### Claude Opus Baseline Solve Rates (val splits, 2026-09-02)
+
+| Split | Tasks | Attempts | Passed | Errors | Solve Rate |
+|-------|-------|----------|--------|--------|------------|
+| val_v1 | 51 | 102 | 75 | 25 | **73.5%** |
+| val_v2 | 100 | 200 | 195 | 2 | **97.5%** |
+| val_v3 | 366 | 732 | 51 | 103 | **7.0%** |
+
 ---
 
 
