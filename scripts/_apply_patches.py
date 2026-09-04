@@ -419,16 +419,17 @@ try:
 except ImportError:
     print('harbor not installed, skipping docker.py patch')
 
-# --- vllm_server_actor.py: remove reuse_port kwarg not supported by newer vLLM ---
+# --- vllm_server_actor.py: ensure reuse_port kwarg is present (required by newer vLLM) ---
 f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/vllm_server_actor.py')
 if f.exists():
     txt = f.read_text()
-    old = 'sock = create_server_socket(sock_addr, reuse_port=False)'
-    new = 'sock = create_server_socket(sock_addr)'
-    if old in txt:
-        f.write_text(txt.replace(old, new))
-        print('Patched vllm_server_actor.py: removed reuse_port kwarg')
+    if 'create_server_socket(sock_addr, reuse_port=False)' in txt:
+        print('vllm_server_actor.py: reuse_port already present, skipping')
+    elif 'create_server_socket(sock_addr)' in txt:
+        txt = txt.replace('create_server_socket(sock_addr)', 'create_server_socket(sock_addr, reuse_port=False)')
+        f.write_text(txt)
+        print('Patched vllm_server_actor.py: added reuse_port=False kwarg')
     else:
-        print('vllm_server_actor.py: reuse_port already removed, skipping')
+        print('vllm_server_actor.py: create_server_socket pattern not found, skipping')
 else:
     print('vllm_server_actor.py: file not found, skipping')

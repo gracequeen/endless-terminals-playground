@@ -179,6 +179,10 @@ def main():
         "--tasks-dir", type=Path, default=None,
         help="Path to harbor_tasks/ directory. If not set, inferred from trial configs.",
     )
+    parser.add_argument(
+        "--out", type=Path, default=None,
+        help="Write aggregate metrics JSON to this path (pass_any, pass@k, per_task).",
+    )
     args = parser.parse_args()
 
     print("=" * 60)
@@ -234,6 +238,7 @@ def main():
         agg = {
             "total_tasks": total_tasks,
             "solved": solved,
+            "pass_any": solved / total_tasks,
             "avg_pass_at_k": {
                 str(k): sum(float(s["pass_at_k"].get(str(k), 0)) for s in all_summaries) / total_tasks
                 for k in range(1, max_n + 1)
@@ -249,6 +254,10 @@ def main():
         }
         agg_path.write_text(json.dumps(agg, indent=2), encoding="utf-8")
         print(f"\nAggregate results saved to {agg_path}")
+        if args.out:
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            args.out.write_text(json.dumps(agg, indent=2), encoding="utf-8")
+            print(f"Aggregate results also saved to {args.out}")
     else:
         print("No results collected.")
 

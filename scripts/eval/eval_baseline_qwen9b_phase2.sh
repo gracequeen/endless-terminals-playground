@@ -35,7 +35,8 @@ export FLASHINFER_DISABLE_VERSION_CHECK=1
 
 MODE="${MODE:-val}"  # val | train | all
 case "$MODE" in
-  val)   SPLITS="val_v1 val_v2 val_v3" ;;
+  # val)   SPLITS="val_v1 val_v2 val_v3" ;;  # TEMP: commented out, revert when re-running all
+  val)   SPLITS="val_v3" ;;
   train) SPLITS="train_v1 train_v2 train_v3" ;;
   *)     SPLITS="val_v1 val_v2 val_v3 train_v1 train_v2 train_v3" ;;
 esac
@@ -116,7 +117,7 @@ for SPLIT in $SPLITS; do
     2>&1 | tee "$CKPT_DIR/eval_log.log"
   cd "$REPO_ROOT"
 
-  python scripts/collect_metrics.py \
+  python3.13 scripts/collect_metrics.py \
     --log "$CKPT_DIR/eval_log.log" \
     --export-dir "$EXPORT_DIR" \
     --out-dir "$CKPT_DIR/metrics" \
