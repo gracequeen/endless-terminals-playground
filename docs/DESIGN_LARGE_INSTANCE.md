@@ -82,13 +82,15 @@ Before running the ablation for 9B, verify reward density on the target dataset:
 
 > "Easy for 4B" = tasks the 4B model can solve; "easy for 9B" = tasks the 9B model can solve (harder than 4B easy). Both are held-out eval sets, not training data.
 
-### Claude Opus Baseline Solve Rates (val splits, 2026-09-02)
+### Baseline Solve Rates — pass@2 (val splits)
 
-| Split | Tasks | Attempts | Passed | Errors | Solve Rate |
-|-------|-------|----------|--------|--------|------------|
-| val_v1 | 51 | 102 | 75 | 25 | **73.5%** |
-| val_v2 | 100 | 200 | 195 | 2 | **97.5%** |
-| val_v3 | 366 | 732 | 51 | 103 | **7.0%** |
+| Model | Checkpoint | val_v1 | val_v2 | val_v3 |
+|-------|------------|--------|--------|--------|
+| Claude Opus 4.6 | BASE | **94.1%** | **98.0%** | **11.2%** |
+| Qwen 3.5-9B | BASE | **86.3%** | **92.0%** | **9.8%** |
+| Qwen 3.5-9B | ckpt 190 | **68.6%** | **79.0%** | **10.1%** |
+
+> pass@2 = fraction of tasks solved in ≥1 of 2 attempts. Claude Opus 4.6 baseline run 2026-09-02. Qwen 3.5-9B baseline run 2026-09-03/04 (p5 + p4de). Qwen 3.5-9B ckpt 190 is checkpoint from Phase 2 training at step 190.
 
 ---
 

@@ -16,13 +16,12 @@ JOBS_DIR="/home/ec2-user/xin/baseline_claude_opus_splits"
 S3_BASE="s3://endless-terminals-training/baselines/claude-opus_splits"
 N_CONCURRENT=10
 
-# MODE="${MODE:-val}"  # val | train | all
-# case "$MODE" in
-#   val)   SPLITS="val_v1 val_v2 val_v3" ;;
-#   train) SPLITS="train_v1 train_v2 train_v3" ;;
-#   *)     SPLITS="val_v1 val_v2 val_v3 train_v1 train_v2 train_v3" ;;
-# esac
-SPLITS="val_v3"
+MODE="${MODE:-val}"  # val | train | all
+case "$MODE" in
+  val)   SPLITS="val_v1 val_v2 val_v3" ;;
+  train) SPLITS="train_v1 train_v2 train_v3" ;;
+  *)     SPLITS="val_v1 val_v2 val_v3 train_v1 train_v2 train_v3" ;;
+esac
 
 mkdir -p "$JOBS_DIR"
 docker rm -f $(docker ps -aq) 2>/dev/null || true
@@ -67,7 +66,7 @@ print(f'Linked {linked}/{len(tasks)} tasks to $TASK_LINK_DIR')
     2>&1 | tee "$JOBS_DIR/${SPLIT}_log.log"
 
   # Collect solve rate
-  python generator/collect_harbor_results.py \
+  python3.13 generator/collect_harbor_results.py \
     --jobs-dir "$JOBS_DIR/$JOB_NAME" \
     --out "$JOBS_DIR/${SPLIT}_results.json" || true
 

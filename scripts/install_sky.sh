@@ -34,10 +34,10 @@ pip install packaging wheel setuptools_scm "setuptools<75"
 # Apply patches to SkyRL (idempotent — safe to re-run)
 python3.13 scripts/_apply_patches.py
 
-# Patch SkyRL's flashinfer pin: skyrl[fsdp] requires 0.6.13 but vllm 0.26.0 requires 0.6.14
-find SkyRL -name "*.toml" -o -name "*.cfg" -o -name "*.txt" | xargs grep -l "flashinfer-python==0.6.13" 2>/dev/null | xargs sed -i 's/flashinfer-python==0.6.13/flashinfer-python==0.6.14/g'
+# Patch SkyRL's flashinfer-python pin to 0.6.14 (vllm requires it)
+find SkyRL -name "*.toml" -o -name "*.cfg" -o -name "*.txt" | xargs grep -rl "flashinfer-python==0.6.13" 2>/dev/null | xargs -r sed -i 's/flashinfer-python==0.6.13/flashinfer-python==0.6.14/g'
 
-PIP_NO_BUILD_ISOLATION=1 pip install -e "SkyRL[fsdp]"
+PIP_NO_BUILD_ISOLATION=1 pip install -e "./SkyRL[fsdp]"
 pip install "ray[default]==2.51.1"
 pip install harbor --upgrade  # Install latest harbor with mini-swe-agent support
 pip install -e .
