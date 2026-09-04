@@ -50,10 +50,14 @@ def chat_completion_batch(
     """Submit multiple chat completion requests concurrently with improved performance."""
     
 
-    # vllm client
-    client = OpenAI(base_url="http://localhost:8000/v1", api_key="nokey")
+    # vllm client — if model is a URL endpoint use it directly, else default port 8000
+    if model and (model.startswith("http://") or model.startswith("https://")):
+        base_url = model if model.endswith("/v1") else model.rstrip("/") + "/v1"
+    else:
+        base_url = "http://localhost:8000/v1"
+    client = OpenAI(base_url=base_url, api_key="nokey")
     clients = {
-        model : client
+        model: client
     }
     model_keys = list(clients.keys())
     max_retries = MAX_RETRIES
