@@ -42,6 +42,7 @@ import pandas as pd
 S3_SOURCES: dict[str, str] = {
     "val_combined_457_8192": "s3://endless-terminals-training/data/harbor_tasks_8192_deduped/",
     "val_combined_v1v2v3easy9b": "s3://endless-terminals-training/data/harbor_tasks_easy_9b/",
+    "val_combined_v1v2v3hard": "s3://endless-terminals-training/data/harbor_4.8opus_tasks_v3_internet_access_config/",
 }
 
 # Default local base dir for downloaded task dirs
@@ -75,6 +76,7 @@ def _local_tasks_dir(parquet_stem: str, base_dir: str | Path) -> Path:
     stem_to_subdir = {
         "val_combined_457_8192": "harbor_tasks_8192_deduped",
         "val_combined_v1v2v3easy9b": "harbor_tasks_easy_9b",
+        "val_combined_v1v2v3hard": "harbor_tasks_v3hard",
     }
     subdir = stem_to_subdir[parquet_stem]
     return Path(base_dir) / subdir
@@ -93,20 +95,19 @@ def _sync_task_dirs(
         print(f"  All {len(task_names)} task dirs already present in {local_tasks_dir}")
         return 0
 
-    print(f"  Downloading {len(missing)} missing task dirs from {s3_prefix} ...")
+    print(f"  {len(missing)} task dirs missing locally, attempting S3 sync from {s3_prefix} ...")
     if dry_run:
         print(f"  [dry-run] would sync {len(missing)} dirs")
         return len(missing)
 
-    # For large missing sets, a full sync is fastest and most reliable.
-    # For small sets, sync each task dir individually.
+    # Only sync individually (small sets). Skip bulk sync — a full bucket sync is
+    # wasteful when the missing tasks simply don't exist under that S3 prefix.
     if len(missing) > 20:
-        cmd = ["aws", "s3", "sync", s3_prefix, str(local_tasks_dir), "--no-progress"]
+        print(f"  Skipping S3 sync: {len(missing)} missing tasks likely not in this S3 prefix (naming mismatch). Use tasks already on disk.")
+        return 0
+    for name in missing:
+        cmd = ["aws", "s3", "sync", f"{s3_prefix}{name}/", str(local_tasks_dir / name), "--no-progress"]
         subprocess.run(cmd, check=True)
-    else:
-        for name in missing:
-            cmd = ["aws", "s3", "sync", f"{s3_prefix}{name}/", str(local_tasks_dir / name), "--no-progress"]
-            subprocess.run(cmd, check=True)
     downloaded = sum(1 for t in missing if (local_tasks_dir / t).is_dir())
     print(f"  Downloaded {downloaded}/{len(missing)} task dirs")
     return downloaded
