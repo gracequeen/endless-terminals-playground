@@ -120,19 +120,12 @@ else
 fi
 
 # ── prepare local task directory from parquet ─────────────────────────────────
+TASK_DIR="$REPO/data/harbor_tasks_${PARQUET_STEM}"
 echo "Preparing local task directory from parquet..."
-TASK_DIR="$($VENV/bin/python utility/val_parquet_to_tasks.py \
+$VENV/bin/python utility/val_parquet_to_tasks.py \
     --parquet "$PARQUET" \
-    --base-dir "$BASE_DIR" \
-    | grep '^  Done →' | sed 's/.*→ //')"
-
-if [[ -z "$TASK_DIR" ]]; then
-    # fallback: run again and capture the path directly
-    TASK_DIR="$($VENV/bin/python -c "
-from utility.val_parquet_to_tasks import prepare_val_tasks
-print(prepare_val_tasks('$PARQUET', base_dir='$BASE_DIR'))
-")"
-fi
+    --out-dir "$TASK_DIR" \
+    --base-dir "$BASE_DIR"
 echo "Task directory: $TASK_DIR"
 
 # ── build harbor run command ──────────────────────────────────────────────────
