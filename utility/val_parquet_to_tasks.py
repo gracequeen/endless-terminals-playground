@@ -98,18 +98,15 @@ def _sync_task_dirs(
         print(f"  [dry-run] would sync {len(missing)} dirs")
         return len(missing)
 
-    # Use aws s3 sync with --exclude '*' then --include per task for precision,
-    # but that's slow for many tasks. Simpler: sync the whole prefix with
-    # --exclude then re-include only needed task dirs.
-    # For the common case (first run, many tasks missing) a full sync is fastest.
-    cmd = [
-        "aws", "s3", "sync", s3_prefix, str(local_tasks_dir),
-        "--no-progress",
-        "--exclude", "*",
-    ]
-    for name in missing:
-        cmd += ["--include", f"{name}/*"]
-    result = subprocess.run(cmd, check=True)
+    # For large missing sets, a full sync is fastest and most reliable.
+    # For small sets, sync each task dir individually.
+    if len(missing) > 20:
+        cmd = ["aws", "s3", "sync", s3_prefix, str(local_tasks_dir), "--no-progress"]
+        subprocess.run(cmd, check=True)
+    else:
+        for name in missing:
+            cmd = ["aws", "s3", "sync", f"{s3_prefix}{name}/", str(local_tasks_dir / name), "--no-progress"]
+            subprocess.run(cmd, check=True)
     downloaded = sum(1 for t in missing if (local_tasks_dir / t).is_dir())
     print(f"  Downloaded {downloaded}/{len(missing)} task dirs")
     return downloaded

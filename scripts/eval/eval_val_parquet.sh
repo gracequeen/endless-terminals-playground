@@ -34,7 +34,8 @@
 
 set -euo pipefail
 
-REPO="$(cd "$(dirname "$0")/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VENV="$REPO/.venv"
 if [[ ! -d "$VENV" ]]; then
     VENV="$(cd "$REPO/../../.." && pwd)/.venv"
@@ -46,7 +47,7 @@ JOBS_DIR="solution_val"
 N_CONCURRENT=4
 N_ATTEMPTS=4
 AGENT="endless_harbor.endless_agent:EndlessAgent"
-VLLM_PORT=8100
+VLLM_PORT=8001
 VLLM_API_KEY="nokey"
 BASE_DIR="$HOME/endless-terminals-playground/data"
 
@@ -113,7 +114,7 @@ if [[ "$MODE" == "checkpoint" ]]; then
     [[ ! -d "$CHECKPOINT" ]] && echo "Error: checkpoint dir not found: $CHECKPOINT" && exit 1
     MODEL_OR_ENDPOINT="http://localhost:${VLLM_PORT}/v1"
 elif [[ "$MODE" == "base" ]]; then
-    MODEL_OR_ENDPOINT="$MODEL"
+    MODEL_OR_ENDPOINT="http://localhost:${VLLM_PORT}/v1"
 else
     echo "Error: --mode must be 'base' or 'checkpoint'"
     usage
@@ -122,17 +123,14 @@ fi
 # ── prepare local task directory from parquet ─────────────────────────────────
 TASK_DIR="$REPO/data/harbor_tasks_${PARQUET_STEM}"
 echo "Preparing local task directory from parquet..."
-$VENV/bin/python utility/val_parquet_to_tasks.py \
+$VENV/bin/python "$REPO/utility/val_parquet_to_tasks.py" \
     --parquet "$PARQUET" \
     --out-dir "$TASK_DIR" \
     --base-dir "$BASE_DIR"
 echo "Task directory: $TASK_DIR"
 
 # ── build harbor run command ──────────────────────────────────────────────────
-TOKENIZER_KWARG=""
-if [[ "$MODE" == "checkpoint" ]]; then
-    TOKENIZER_KWARG="--ak tokenizer_model=$MODEL"
-fi
+TOKENIZER_KWARG="--ak tokenizer_model=$MODEL"
 
 ATTEMPTS_ARG="--n-attempts $N_ATTEMPTS"
 
