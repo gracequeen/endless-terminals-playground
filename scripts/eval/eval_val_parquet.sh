@@ -112,9 +112,9 @@ mkdir -p "$LOG_DIR" "$REPO/$JOBS_DIR"
 if [[ "$MODE" == "checkpoint" ]]; then
     [[ -z "$CHECKPOINT" ]] && echo "Error: --checkpoint required for checkpoint mode" && usage
     [[ ! -d "$CHECKPOINT" ]] && echo "Error: checkpoint dir not found: $CHECKPOINT" && exit 1
-    MODEL_OR_ENDPOINT="http://localhost:${VLLM_PORT}/v1"
+    MODEL_OR_ENDPOINT="http://localhost:${VLLM_PORT}"
 elif [[ "$MODE" == "base" ]]; then
-    MODEL_OR_ENDPOINT="http://localhost:${VLLM_PORT}/v1"
+    MODEL_OR_ENDPOINT="http://localhost:${VLLM_PORT}"
 else
     echo "Error: --mode must be 'base' or 'checkpoint'"
     usage
