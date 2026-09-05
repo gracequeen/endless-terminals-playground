@@ -43,12 +43,12 @@ fi
 SESSION="endless"
 LOG_DIR="$REPO/harbor_logs"
 JOBS_DIR="solution_val"
-N_CONCURRENT=10
-N_ATTEMPTS=""
+N_CONCURRENT=4
+N_ATTEMPTS=4
 AGENT="endless_harbor.endless_agent:EndlessAgent"
 VLLM_PORT=8100
 VLLM_API_KEY="nokey"
-BASE_DIR="/home/ec2-user/xin"
+BASE_DIR="$HOME/endless-terminals-playground/data"
 
 MODE=""
 MODEL=""
@@ -71,7 +71,7 @@ For checkpoint mode:
 Optional:
   --job-name NAME          Job name (default: val-<mode>-<model-basename>-<parquet-stem>)
   --n-concurrent N         Concurrent Harbor tasks (default: $N_CONCURRENT)
-  --n-attempts K           Attempts per task, feeds pass@k (default: 1)
+  --n-attempts K           Attempts per task, feeds pass@k (default: $N_ATTEMPTS)
   --jobs-dir DIR           Results directory (default: $JOBS_DIR)
   --base-dir DIR           Local root for downloaded task dirs (default: $BASE_DIR)
   --vllm-port PORT         Local vLLM port for checkpoint mode (default: $VLLM_PORT)
@@ -141,8 +141,7 @@ if [[ "$MODE" == "checkpoint" ]]; then
     TOKENIZER_KWARG="--ak tokenizer_model=$MODEL"
 fi
 
-ATTEMPTS_ARG=""
-[[ -n "$N_ATTEMPTS" ]] && ATTEMPTS_ARG="--n-attempts $N_ATTEMPTS"
+ATTEMPTS_ARG="--n-attempts $N_ATTEMPTS"
 
 HARBOR_CMD="$VENV/bin/harbor run \
   --path $TASK_DIR \
@@ -167,7 +166,7 @@ if [[ "$MODE" == "checkpoint" ]]; then
     echo "vLLM port:    $VLLM_PORT"
 fi
 echo "Concurrent:   $N_CONCURRENT"
-echo "Attempts:     ${N_ATTEMPTS:-1 (default)}"
+echo "Attempts:     $N_ATTEMPTS"
 echo "Job name:     $JOB_NAME"
 echo "Results dir:  $JOBS_DIR"
 echo "Log:          $LOG_FILE"
