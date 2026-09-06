@@ -114,7 +114,15 @@ if [[ "$MODE" == "checkpoint" ]]; then
     [[ ! -d "$CHECKPOINT" ]] && echo "Error: checkpoint dir not found: $CHECKPOINT" && exit 1
     MODEL_OR_ENDPOINT="http://localhost:${VLLM_PORT}"
 elif [[ "$MODE" == "base" ]]; then
-    MODEL_OR_ENDPOINT="http://localhost:${VLLM_PORT}"
+    # Query the actual served model ID from vLLM — avoids hardcoding URL vs name
+    MODEL_OR_ENDPOINT=$(curl -sf "http://localhost:${VLLM_PORT}/v1/models" \
+        -H "Authorization: Bearer nokey" \
+        | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['data'][0]['id'])" 2>/dev/null)
+    if [[ -z "$MODEL_OR_ENDPOINT" ]]; then
+        echo "Error: could not query vLLM model ID from port ${VLLM_PORT}. Is the server running?"
+        exit 1
+    fi
+    echo "vLLM served model ID: $MODEL_OR_ENDPOINT"
 else
     echo "Error: --mode must be 'base' or 'checkpoint'"
     usage
