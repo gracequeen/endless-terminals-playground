@@ -71,14 +71,15 @@ Before running the ablation for 9B, verify reward density on the target dataset:
 
 | Dataset | S3 Path (tasks) | Prepared Parquet | Solvable | Notes |
 |---------|----------------|-----------------|----------|-------|
-| v1 | `data/harbor_4.5opus_tasks/` | — | 457 | Claude 4.5 Opus tasks |
-| v2 | `data/harbor_tasks_8192_deduped/` | — | 2,781 | Claude 4.6 Opus tasks, deduped |
+| v1 | `data/harbor_4.5opus_tasks/` | — | 508 | Claude 4.5 Opus tasks |
+| v2 | `data/harbor_tasks_8192_deduped/` | — | 2,881 | Claude 4.6 Opus tasks, deduped |
 | v3 (hard) | `data/harbor_4.8opus_tasks_v3_internet_access_config/` | — | 3,657 | Claude 4.8 Opus, internet access tasks |
 | v3 easy (4B) | `data/harbor_4.8opus_tasks_v3_easy_shards_for_eval/harbor_tasks_easy_4b_shard{0,1}/` | — | 1,607 | Tasks easy for 4B model |
 | v3 easy (9B) | `data/harbor_4.8opus_tasks_v3_easy_shards_for_eval/harbor_tasks_easy_9b_shard{0,1,2}/` | — | 1,607 | Tasks easy for 9B model |
 | **v1+v2 combined** | | `prepared_data/train_combined_457_8192.parquet` / `val_combined_457_8192.parquet` | **3,238 train / 151 val** | Used in dryrun1–2D |
 | **v1+v2+v3easy9B combined** | | `prepared_data/train_combined_v1v2v3easy9b.parquet` / `val_combined_v1v2v3easy9b.parquet` | **4,684 train / 312 val** | Used in dryrun3 |
 | **v1+v2+v3hard combined** | | `prepared_data/train_combined_v1v2v3hard.parquet` / `val_combined_v1v2v3hard.parquet` | **6,529 train / 517 val** | Used in Phase 2 |
+| **v1+v2+v3hard stratified combined** | | `prepared_data/train_v1v2v3hard_stratified.parquet` / `val_v1v2v3hard_stratified.parquet` | **6,243 train / 716 val** | Used in Phase 2 (6.2); per-dataset 90/10 split by category |
 
 > "Easy for 4B" = tasks the 4B model can solve; "easy for 9B" = tasks the 9B model can solve (harder than 4B easy). Both are held-out eval sets, not training data.
 
@@ -650,6 +651,59 @@ Eval (312 val tasks, 2 attempts each):
 **Fix applied (2026-08-26):** Pre-install `tmux` and `asciinema` in all task Dockerfiles at image build time (when internet is available). Patched 18,179 Dockerfiles across all three datasets using `scripts/patch_dockerfiles_tmux.py`, inserting `RUN apt-get update && apt-get install -y tmux asciinema && rm -rf /var/lib/apt/lists/*` after the `FROM` line. Terminus-2's `tmux -V` check now passes on startup and the install path is never triggered.
 
 **Next action:** Restart Phase 2 training with the patched Dockerfiles.
+
+### 6.2. Phase 2 Run — v1+v2+v3hard **stratified**, 200 steps
+
+**S3**: `s3://endless-terminals-training/20260922_v1v2v3hard_phase2_stratified_grpo_qwen3.5-9b_200steps/`
+
+**Script**: `scripts/train/train_harbor_qwen3_5_9b_phase2.sh`
+
+**Data prep**: `scripts/prepare_data_stratified.sh`
+
+**Model**: Qwen3.5-9B on p5e (H200 141GB, 8 GPUs)
+
+**Dataset**: v1+v2+v3hard combined (6,243 train / 716 val). Each dataset split independently 90/10 by `category` (from `task.toml`), so rare categories appear in both train and val. Prepared by `scripts/prepare_data_stratified.sh`.
+
+**Config** (differences from 6.1 in **bold**):
+
+| Setting | Value |
+|---------|-------|
+| train_batch_size | 8 |
+| n_samples_per_prompt | 2 |
+| eval_n_samples_per_prompt | 2 |
+| max_turns | 8 |
+| max_generate_length | 1024 |
+| **max_seq_len** | **16384** (was 8192) |
+| **max_input_tokens** (terminus-2, `default.yaml`) | **16384** (was 32768) |
+| gpu_memory_utilization | 0.45 |
+| MAX_CONCURRENCY | 16 |
+| ckpt_interval | 10 |
+| eval_interval | 999 (eval disabled during training) |
+| eval_batch_size | 8 |
+| algorithm | GRPO |
+| reward signal | pass@2 (solved in ≥1 of 2 attempts within 8 turns) |
+
+**Results — 6.1 vs 6.2 comparison (50-step averages):**
+
+| Metric | 6.1 steps 1–50 | 6.2 steps 1–50 | 6.1 steps 51–100 | 6.2 steps 51–100 | 6.1 steps 101–150 | 6.2 steps 101–150 |
+|--------|---------------|----------------|------------------|------------------|-------------------|-------------------|
+| pass@2 | 0.235 | **0.416** | 0.413 | **0.430** | 0.363 | **0.383** |
+| raw_reward | 0.195 | **0.367** | 0.368 | **0.383** | 0.300 | **0.346** |
+| std_reward | 0.366 | **0.457** | 0.431 | 0.446 | 0.410 | **0.444** |
+| errors/step | 1.02 | **0.24** | 0.62 | **0.24** | 0.14 | **0.24** |
+| resp_len | 3,531 | 3,577 | 4,209 | **3,206** | 6,946 | **4,517** |
+| policy_kl | 0.156 | 0.169 | 0.173 | **0.167** | 0.222 | **0.135** |
+| entropy | **0.271** | 0.149 | **0.297** | 0.120 | **0.303** | 0.064 |
+| grad_norm | **0.344** | 0.472 | **0.358** | 0.525 | 0.461 | **0.606** |
+
+Key takeaways: 6.2 starts much stronger (+77% pass@2 in steps 1–50) because 6.1 had ~1 Docker error per step early on. Both converge to similar pass@2 by steps 51–100. 6.1's response length grew to ~7k by steps 101–150 (context bloat leading to OOM); 6.2 stays controlled at ~4.5k. 6.2 entropy is declining steadily (0.149 → 0.064) while 6.1 stayed flat — 6.2's model is converging more aggressively, worth monitoring past step 150.
+
+**Incident — OOM crash (2026-09-22):**
+
+*Root cause:* Each task runs for up to 8 turns — the model writes a command, the terminal replies, repeat. All turns get squashed into one sequence for training. The terminal output per command is capped at 10,000 bytes but not the total, so across 8 turns a single trajectory can grow to ~34k tokens (model output + all terminal replies accumulated). The agent only starts trimming context when fewer than 4,000 tokens remain relative to the `max_input_tokens=32768` limit — so it waits until ~28k before trimming anything. GPU memory is determined by the *single longest sequence in the batch*, not the average — one outlier trajectory is enough to OOM. The crash happened here but not in the earlier 6.1 run at the same step; 6.1 just got lucky with shorter trajectories in those batches.
+
+*Fix:* Cap `max_input_tokens: 16384` in `default.yaml` (terminus-2 token budget) and `max_seq_len=16384` in the train script (SkyRL's sequence length limit). Both must match — `max_input_tokens` bounds what the agent accumulates, and `max_seq_len` bounds what the trainer will process. At 16384 tokens and the 151k-vocab Qwen model, peak GPU memory per sequence is ~15GB, well within the 30GB headroom available with `gpu_memory_utilization=0.45`.
+
 
 ## 7. Phase 3: Hyperparameter Tuning (Ablation)
 
