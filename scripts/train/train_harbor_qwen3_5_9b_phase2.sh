@@ -32,7 +32,7 @@ DATA_DIR="/home/ec2-user/xin/data_harbor_combined"
 CKPT_DIR="/home/ec2-user/xin/checkpoints_harbor_qwen3_5_9b_phase2"
 EXPORT_DIR="/home/ec2-user/xin/exports_harbor_qwen3_5_9b_phase2"
 METRICS_DIR="/home/ec2-user/xin/metrics_phase2"
-S3_CKPT="s3://endless-terminals-training/20260827_v1v2v3hard_phase2_grpo_qwen3.5-9b_${TRAIN_STEPS}steps"
+S3_CKPT="s3://endless-terminals-training/20260922_v1v2v3hard_phase2_stratified_grpo_qwen3.5-9b_${TRAIN_STEPS}steps"
 
 mkdir -p "$CKPT_DIR" "$EXPORT_DIR" "$METRICS_DIR" "$DATA_DIR"
 
@@ -82,15 +82,15 @@ fi
 
 # ── download combined parquets ──────────────────────────────────────────────
 echo "Downloading combined parquets..."
-aws s3 cp s3://endless-terminals-training/prepared_data/train_combined_v1v2v3hard.parquet \
-  "$DATA_DIR/train_combined_v1v2v3hard.parquet" --no-progress
-aws s3 cp s3://endless-terminals-training/prepared_data/val_combined_v1v2v3hard.parquet \
-  "$DATA_DIR/val_combined_v1v2v3hard.parquet" --no-progress
+aws s3 cp s3://endless-terminals-training/prepared_data/train_v1v2v3hard_stratified.parquet \
+  "$DATA_DIR/train_v1v2v3hard_stratified.parquet" --no-progress --region us-east-1
+aws s3 cp s3://endless-terminals-training/prepared_data/val_v1v2v3hard_stratified.parquet \
+  "$DATA_DIR/val_v1v2v3hard_stratified.parquet" --no-progress --region us-east-1
 
 # ── write task dir lists to JSON files ──────────────────────────────────────
 python3.13 -c "
 import pandas as pd, json
-df = pd.read_parquet('$DATA_DIR/train_combined_v1v2v3hard.parquet')
+df = pd.read_parquet('$DATA_DIR/train_v1v2v3hard_stratified.parquet')
 dirs = list(df['extra_info'].apply(lambda x: x['task_dir']).unique())
 with open('$DATA_DIR/train_task_dirs_v3hard.json', 'w') as f:
     json.dump(dirs, f)
@@ -98,7 +98,7 @@ print(f'Train: {len(dirs)} task dirs → $DATA_DIR/train_task_dirs_v3hard.json')
 "
 python3.13 -c "
 import pandas as pd, json
-df = pd.read_parquet('$DATA_DIR/val_combined_v1v2v3hard.parquet')
+df = pd.read_parquet('$DATA_DIR/val_v1v2v3hard_stratified.parquet')
 dirs = list(df['extra_info'].apply(lambda x: x['task_dir']).unique())
 with open('$DATA_DIR/val_task_dirs_v3hard.json', 'w') as f:
     json.dump(dirs, f)
@@ -138,7 +138,7 @@ fi
       if [ -f "$state" ] && { [ ! -f "$marker" ] || [ "$state" -nt "$marker" ]; }; then
         echo "[uploader] Uploading $step..."
         aws s3 sync "$step_dir" "$S3_CKPT/$step/" --no-progress --quiet \
-          --exclude ".uploaded"
+          --region us-east-1 --exclude ".uploaded"
         touch "$marker"
         latest=$(cat "$CKPT_DIR/latest_ckpt_global_step.txt" 2>/dev/null)
         if [ -n "$latest" ] && [ "$step" != "global_step_$latest" ]; then
@@ -160,7 +160,7 @@ UPLOADER_PID=$!
       --log "$LOG_FILE" \
       --export-dir "$EXPORT_DIR" \
       --out-dir "$METRICS_DIR" \
-      --s3-prefix "$S3_CKPT/metrics" 2>/dev/null || true
+      --s3-prefix "$S3_CKPT/metrics" --region us-east-1 2>/dev/null || true
   done
 ) &
 METRICS_PID=$!
@@ -169,8 +169,8 @@ METRICS_PID=$!
 (
   while true; do
     sleep 60
-    aws s3 cp "$LOG_FILE" "$S3_CKPT/train_debug.log" --quiet 2>/dev/null || true
-    aws s3 sync "$EXPORT_DIR/" "$S3_CKPT/evals/" --quiet 2>/dev/null || true
+    aws s3 cp "$LOG_FILE" "$S3_CKPT/train_debug.log" --quiet --region us-east-1 2>/dev/null || true
+    aws s3 sync "$EXPORT_DIR/" "$S3_CKPT/evals/" --quiet --region us-east-1 2>/dev/null || true
   done
 ) &
 LOG_SYNC_PID=$!
@@ -202,7 +202,7 @@ python -m examples.train_integrations.harbor.entrypoints.main_harbor \
   trainer.micro_forward_batch_size_per_gpu=1 \
   trainer.micro_train_batch_size_per_gpu=1 \
   trainer.max_prompt_length=4096 \
-  trainer.algorithm.max_seq_len=8192 \
+  trainer.algorithm.max_seq_len=16384 \
   trainer.max_training_steps=$TRAIN_STEPS \
   trainer.update_epochs_per_batch=1 \
   trainer.ckpt_interval=$CKPT_INTERVAL \
@@ -234,7 +234,7 @@ python -m examples.train_integrations.harbor.entrypoints.main_harbor \
   generator.rate_limit.max_concurrency=$MAX_CONCURRENCY \
   "generator.sampling_params.max_generate_length=1024" \
   "generator.sampling_params.temperature=0.6" \
-  2>&1 | tee "$LOG_FILE"
+  2>&1 | tee -a "$LOG_FILE"
 cd ..
 
 kill $UPLOADER_PID $METRICS_PID $LOG_SYNC_PID $DOCKER_CLEANUP_PID 2>/dev/null

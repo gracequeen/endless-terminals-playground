@@ -187,6 +187,7 @@ def main():
     parser.add_argument("--export-dir", required=True,  help="Path to Harbor eval export dir")
     parser.add_argument("--out-dir",    required=True,  help="Output directory for JSON files")
     parser.add_argument("--s3-prefix",  default=None,   help="S3 prefix to upload results (optional)")
+    parser.add_argument("--region",     default="us-east-1", help="AWS region for S3 uploads")
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -233,7 +234,7 @@ def main():
         for fname in ["training_metrics.json", "eval_metrics.json", "metrics_summary.json"]:
             local = os.path.join(args.out_dir, fname)
             s3_dest = f"{args.s3_prefix.rstrip('/')}/{fname}"
-            result = subprocess.run(["aws", "s3", "cp", local, s3_dest], capture_output=True)
+            result = subprocess.run(["aws", "s3", "cp", local, s3_dest, "--region", args.region], capture_output=True)
             if result.returncode == 0:
                 print(f"Uploaded: {s3_dest}")
             else:

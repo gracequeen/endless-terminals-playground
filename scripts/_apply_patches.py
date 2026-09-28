@@ -25,13 +25,6 @@ for pattern in removals:
         txt = new_txt
         changed = True
 
-# Remove standalone key entries (non-quoted lines) for these patterns
-for pattern in removals:
-    new_txt = re.sub(rf'^{re.escape(pattern)}\s*=.*\n', '', txt, flags=re.MULTILINE)
-    if new_txt != txt:
-        txt = new_txt
-        changed = True
-
 if changed:
     f.write_text(txt)
     print('Patched pyproject.toml')
@@ -275,20 +268,8 @@ if f.exists():
     else:
         print('default.yaml: daytona not found, skipping')
 
-# --- default.yaml: set cost_limit and OPENAI_API_KEY for mini-swe-agent ---
-f = pathlib.Path('SkyRL/examples/train_integrations/harbor/harbor_trial_config/default.yaml')
-if f.exists():
-    txt = f.read_text()
-    if 'cost_limit' in txt:
-        print('default.yaml cost_limit already set, skipping')
-    else:
-        old = '    # Maximum number of agent episodes/iterations\n    max_turns: 32'
-        new = '    # Maximum number of agent episodes/iterations\n    max_turns: 32\n\n    # Cost limit for mini-swe-agent (set high since we use local vLLM with zero cost)\n    cost_limit: "999"\n\n    # API key for local vLLM endpoint\n    env:\n      OPENAI_API_KEY: "nokey"'
-        if old in txt:
-            f.write_text(txt.replace(old, new))
-            print('Patched default.yaml: added cost_limit and OPENAI_API_KEY')
-        else:
-            print('default.yaml: max_turns pattern not found, skipping')
+# cost_limit and env.OPENAI_API_KEY removed — no longer valid in terminus-2 schema.
+# api_base is injected at runtime by SkyRL from the vLLM inference server endpoint.
 
 # --- vllm_router.py: fix AttributeError for pd_disaggregation ---
 f = pathlib.Path('SkyRL/skyrl/backends/skyrl_train/inference_servers/vllm_router.py')

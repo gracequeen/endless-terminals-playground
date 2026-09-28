@@ -31,6 +31,9 @@ echo "Using CUDA_HOME=$CUDA_HOME"
 pip install torch --index-url https://download.pytorch.org/whl/cu126
 pip install packaging wheel setuptools_scm "setuptools<75"
 
+# Reset SkyRL working tree before patching so re-runs start clean
+git -C SkyRL checkout -- . 2>/dev/null || true
+
 # Apply patches to SkyRL (idempotent — safe to re-run)
 python3.13 scripts/_apply_patches.py
 
@@ -38,7 +41,7 @@ python3.13 scripts/_apply_patches.py
 find SkyRL -name "*.toml" -o -name "*.cfg" -o -name "*.txt" | xargs grep -rl "flashinfer-python==0.6.13" 2>/dev/null | xargs -r sed -i 's/flashinfer-python==0.6.13/flashinfer-python==0.6.14/g'
 find SkyRL -name "*.toml" -o -name "*.cfg" -o -name "*.txt" | xargs grep -rl "flashinfer" 2>/dev/null | xargs -r sed -i 's/flashinfer-cubin==[^;", ]*/flashinfer-cubin==0.6.13/g'
 # Relax torch pin in fsdp extra (SkyRL pins 2.11.0 but vllm requires 2.13.0)
-find SkyRL -name "*.toml" | xargs grep -rl "torch==2\." 2>/dev/null | xargs -r sed -i 's/torch==[0-9][^"]*"/torch>=2.0.0"/g'
+find SkyRL -name "*.toml" | xargs grep -rl '"torch==' 2>/dev/null | xargs -r sed -i 's/"torch==[^"]*"/"torch>=2.0.0"/g'
 
 PIP_NO_BUILD_ISOLATION=1 pip install -e "./SkyRL[fsdp]"
 pip install "ray[default]==2.51.1"
