@@ -18,6 +18,8 @@ OUTPUT_ROOT="$MAIN_REPO/eval_tb_ckpt"
 S3_BASE="s3://endless-terminals-training/terminal-bench"
 MODEL="Qwen/Qwen3.5-9B"
 N_SAMPLES=2
+MAX_CONCURRENCY=32
+MAX_OUTPUT_TOKENS=4096
 RUN_NAME=""
 TEST_MODE=0
 DRY_RUN=0
@@ -98,7 +100,10 @@ CHECKPOINT_STEP="$("$SKY_ENV/bin/python" -c 'import sys, torch; print(torch.load
 [[ "$CHECKPOINT_STEP" =~ ^[0-9]+$ ]] || { echo "Invalid checkpoint global step: $CHECKPOINT_STEP" >&2; exit 1; }
 RESUME_CHECKPOINT="$RUN_DIR/global_step_$CHECKPOINT_STEP"
 TRAIN_BATCH_SIZE=8
-EVAL_BATCH_SIZE=${#TASKS[@]}
+EVAL_BATCH_SIZE=8
+if [[ ${#TASKS[@]} -lt $EVAL_BATCH_SIZE ]]; then
+    EVAL_BATCH_SIZE=${#TASKS[@]}
+fi
 
 SKYRL_CMD=(
     "$SKY_ENV/bin/python" -m examples.train_integrations.harbor.entrypoints.main_harbor
@@ -149,10 +154,11 @@ SKYRL_CMD=(
     generator.step_wise_trajectories=true
     generator.merge_stepwise_output=true
     generator.rate_limit.enabled=true
-    generator.rate_limit.max_concurrency=16
-    generator.sampling_params.max_generate_length=4096
+    "generator.rate_limit.max_concurrency=$MAX_CONCURRENCY"
+    "generator.sampling_params.max_generate_length=$MAX_OUTPUT_TOKENS"
+    "generator.eval_sampling_params.max_generate_length=$MAX_OUTPUT_TOKENS"
     "harbor_trial_config.trials_dir=$TRIALS_DIR"
-    harbor_trial_config.environment.delete=false
+    harbor_trial_config.environment.delete=true
     harbor_trial_config.agent.kwargs.max_turns=8
     harbor_trial_config.agent.kwargs.trajectory_config.raw_content=true
 )
@@ -161,6 +167,8 @@ echo "TerminalBench checkpoint evaluation"
 echo "  mode:       $MODE_NAME"
 echo "  tasks:      ${#TASKS[@]}"
 echo "  trials:     $N_SAMPLES per task"
+echo "  concurrency:$MAX_CONCURRENCY"
+echo "  max output: $MAX_OUTPUT_TOKENS tokens"
 echo "  checkpoint: $CHECKPOINT"
 echo "  resume as:  $RESUME_CHECKPOINT"
 echo "  SkyRL:      $SKYRL_DIR"

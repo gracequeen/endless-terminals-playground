@@ -75,12 +75,17 @@ def main() -> None:
         solution_path = destination / "solution.json"
         if source_solution.is_file():
             shutil.copy2(source_solution, solution_path)
+            native_solution_path = destination / "agent" / "trajectory.json"
+            native_solution_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_solution, native_solution_path)
             solution_source = str(source_solution)
+            harbor_solution_path = "agent/trajectory.json"
         else:
             solution_path.write_text(
                 json.dumps({"agent_result": result.get("agent_result")}, indent=2) + "\n"
             )
             solution_source = "result.json:agent_result"
+            harbor_solution_path = None
 
         reward = reward_from(result)
         exception = result.get("exception_info")
@@ -119,6 +124,7 @@ def main() -> None:
             },
             "raw_solution": {
                 "path": "solution.json",
+                "harbor_path": harbor_solution_path,
                 "source": solution_source,
             },
         }
