@@ -34,7 +34,7 @@ Options:
   --output-dir DIR   Local run output root (default: $OUTPUT_ROOT)
   --run-name NAME    Run directory name (default: generated from model/mode/time)
   --n-samples N      Solution trials per task (default: $N_SAMPLES)
-  --test             Evaluate only the first three sorted TB2.1 tasks
+  --test             Evaluate only the first two sorted TB2.1 tasks
   --dry-run          Validate inputs and print the command without launching SkyRL
   -h, --help         Show this help
 EOF
@@ -74,8 +74,8 @@ for task_dir in "${ALL_TASKS[@]}"; do
 done
 
 if [[ $TEST_MODE -eq 1 ]]; then
-    TASKS=("${ALL_TASKS[@]:0:3}")
-    MODE_NAME="test3"
+    TASKS=("${ALL_TASKS[@]:0:2}")
+    MODE_NAME="test2"
 else
     TASKS=("${ALL_TASKS[@]}")
     MODE_NAME="full89"
@@ -216,6 +216,30 @@ train_path.write_text(json.dumps(train_tasks, indent=2) + "\n")
 eval_path.write_text(json.dumps(tasks, indent=2) + "\n")
 PY
 
+archive_and_upload() {
+    "$SKY_ENV/bin/python" "$REPO/scripts/archive_tb_trials.py" \
+        --trials-dir "$TRIALS_DIR" \
+        --archive-dir "$ARCHIVE_DIR" \
+        --run-name "$RUN_NAME" \
+        --checkpoint "$CHECKPOINT" \
+        --model "$MODEL" \
+        --dataset terminal-bench/terminal-bench-2-1 \
+        --mode "$MODE_NAME" \
+        --n-samples "$N_SAMPLES"
+    aws s3 sync "$ARCHIVE_DIR/" "$S3_RUN_URI/" --only-show-errors
+}
+
+UPLOAD_STOP_FILE="$RUN_DIR/.incremental-upload-stop"
+rm -f "$UPLOAD_STOP_FILE"
+(
+    while [[ ! -f "$UPLOAD_STOP_FILE" ]]; do
+        archive_and_upload || echo "Incremental upload failed; retrying in 10 seconds." >&2
+        sleep 10
+    done
+    archive_and_upload
+) &
+UPLOADER_PID=$!
+
 cd "$SKYRL_DIR"
 set +e
 RAY_memory_usage_threshold=0.99 \
@@ -230,17 +254,15 @@ MSWEA_API_KEY=nokey \
 EVAL_STATUS=${PIPESTATUS[0]}
 set -e
 
-"$SKY_ENV/bin/python" "$REPO/scripts/archive_tb_trials.py" \
-    --trials-dir "$TRIALS_DIR" \
-    --archive-dir "$ARCHIVE_DIR" \
-    --run-name "$RUN_NAME" \
-    --checkpoint "$CHECKPOINT" \
-    --model "$MODEL" \
-    --dataset terminal-bench/terminal-bench-2-1 \
-    --mode "$MODE_NAME" \
-    --n-samples "$N_SAMPLES"
+touch "$UPLOAD_STOP_FILE"
+UPLOAD_STATUS=0
+wait "$UPLOADER_PID" || UPLOAD_STATUS=$?
+rm -f "$UPLOAD_STOP_FILE"
+if [[ $UPLOAD_STATUS -eq 0 ]]; then
+    echo "Uploaded trial artifacts to $S3_RUN_URI/"
+else
+    echo "Final trial artifact upload failed." >&2
+fi
 
-aws s3 sync "$ARCHIVE_DIR/" "$S3_RUN_URI/" --only-show-errors
-echo "Uploaded trial artifacts to $S3_RUN_URI/"
-
-exit "$EVAL_STATUS"
+[[ $EVAL_STATUS -eq 0 ]] || exit "$EVAL_STATUS"
+exit "$UPLOAD_STATUS"
