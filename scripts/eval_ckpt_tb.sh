@@ -94,6 +94,9 @@ SCRATCH_CKPT_DIR="$RUN_DIR/checkpoint-unused"
 ARCHIVE_DIR="$RUN_DIR/s3-artifacts"
 LOG_FILE="$RUN_DIR/eval.log"
 S3_RUN_URI="${S3_BASE%/}/$RUN_NAME"
+CHECKPOINT_STEP="$("$SKY_ENV/bin/python" -c 'import sys, torch; print(torch.load(sys.argv[1], map_location="cpu", weights_only=False)["global_step"])' "$CHECKPOINT/trainer_state.pt")"
+[[ "$CHECKPOINT_STEP" =~ ^[0-9]+$ ]] || { echo "Invalid checkpoint global step: $CHECKPOINT_STEP" >&2; exit 1; }
+RESUME_CHECKPOINT="$RUN_DIR/global_step_$CHECKPOINT_STEP"
 TRAIN_BATCH_SIZE=8
 EVAL_BATCH_SIZE=${#TASKS[@]}
 
@@ -130,7 +133,7 @@ SKYRL_CMD=(
     "trainer.ckpt_path=$SCRATCH_CKPT_DIR"
     "trainer.export_path=$EXPORT_DIR"
     trainer.resume_mode=from_path
-    "trainer.resume_path=$CHECKPOINT"
+    "trainer.resume_path=$RESUME_CHECKPOINT"
     generator.inference_engine.num_engines=1
     generator.inference_engine.tensor_parallel_size=8
     generator.inference_engine.run_engines_locally=true
@@ -159,6 +162,7 @@ echo "  mode:       $MODE_NAME"
 echo "  tasks:      ${#TASKS[@]}"
 echo "  trials:     $N_SAMPLES per task"
 echo "  checkpoint: $CHECKPOINT"
+echo "  resume as:  $RESUME_CHECKPOINT"
 echo "  SkyRL:      $SKYRL_DIR"
 echo "  output:     $RUN_DIR"
 echo "  S3:         $S3_RUN_URI"
@@ -201,6 +205,14 @@ command -v nvidia-smi >/dev/null || { echo "nvidia-smi is required" >&2; exit 1;
 [[ "$(nvidia-smi --query-gpu=index --format=csv,noheader | wc -l)" -eq 8 ]] || { echo "Expected 8 visible GPUs" >&2; exit 1; }
 
 mkdir -p "$RUN_DIR" "$TRIALS_DIR" "$EXPORT_DIR" "$SCRATCH_CKPT_DIR" "$ARCHIVE_DIR"
+if [[ -e "$RESUME_CHECKPOINT" || -L "$RESUME_CHECKPOINT" ]]; then
+    [[ "$RESUME_CHECKPOINT" -ef "$CHECKPOINT" ]] || {
+        echo "Checkpoint alias already exists with a different target: $RESUME_CHECKPOINT" >&2
+        exit 1
+    }
+else
+    ln -s "$CHECKPOINT" "$RESUME_CHECKPOINT"
+fi
 "$SKY_ENV/bin/python" - "$TRAIN_TASKS_JSON" "$EVAL_TASKS_JSON" "$TRAIN_BATCH_SIZE" "${TASKS[@]}" <<'PY'
 import json
 import sys
