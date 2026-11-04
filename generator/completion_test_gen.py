@@ -52,7 +52,8 @@ Evaluation approach guidelines:
 * For file tasks, validate structure and key content, not exact byte-for-byte match.
 * Never check exact whitespace, trailing newlines, or formatting that the task didn't explicitly specify.
 * For easy tasks, tests should check simple outcomes (file exists, content contains expected value).
-* For hard tasks, tests can check complex multi-faceted state but should still validate semantics over exact formatting."""
+* For hard tasks, tests can check complex multi-faceted state but should still validate semantics over exact formatting.
+* Always use raw strings (e.g. r\"\\d+\") for regex patterns to avoid invalid escape sequence warnings."""
 
 USER_TEMPLATE = """The task description is: {task_description}
 The truth value is: {truth}
